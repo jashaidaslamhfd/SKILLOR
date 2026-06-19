@@ -86,6 +86,8 @@ class ViralTopicEngine:
         query = topic_data['query']
         return f"{angle} {query}".title()
 
-    def _get_fallback_topics(self) -> List[Dict]:
+    def _get_fallback_topics(self) -> List:
         return [
-            {"query": "dark psychology secrets", "
+             {"query": "dark psychology secrets", "keyword": "psychology", "growth": 500, "source": "fallback", "viral_score": 90},
+             {"query": "brain hacks for memory", "keyword": "brain science", "growth": 450, "source": "fallback", "viral_score": 85}, # ← comma add
+               ]
