@@ -85,6 +85,25 @@ class AudioGenerator:
         if total_duration == 0.0 and word_timings:
             total_duration = word_timings[-1]["end"]
 
+        # FIX: edge-tts sometimes doesn't emit any "WordBoundary" chunks at all
+        # (known intermittent issue with the Microsoft Edge TTS endpoint). When
+        # that happens word_timings stays empty, so subtitles never render.
+        # As a safety net, estimate evenly-spaced word timings from the script
+        # text and the real measured audio duration.
+        if not word_timings and script_text and total_duration > 0:
+            words = script_text.split()
+            if words:
+                per_word = total_duration / len(words)
+                t = 0.0
+                for w in words:
+                    word_timings.append({
+                        "word": w,
+                        "start": round(t, 3),
+                        "end": round(t + per_word, 3)
+                    })
+                    t += per_word
+                print("    ⚠️ No WordBoundary data from TTS — using estimated timings instead.")
+
         # 3. Apply safety mix masks
         mixed_audio_path = os.path.join(output_dir, "final_audio_mixed.mp3")
         self._add_bg_music_and_fan(final_audio_path, mixed_audio_path, total_duration)
