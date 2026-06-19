@@ -1,5 +1,5 @@
 """
-YouTube Automation System - Main Orchestrator (Testing & KeyError Fix Optimized)
+YouTube Automation System - Main Orchestrator (Testing & Rate-Limit Bypass Optimized)
 """
 
 import asyncio
@@ -34,18 +34,17 @@ class YouTubeAutomationSystem:
         
     async def create_video(self, topic_data):
         topic = topic_data['query']
-        angle = self.topic_engine.get_topic_angle(topic_data)
+        angle = self.topic_engine.get_topic_angle(topic_data) if hasattr(self.topic_engine, 'get_topic_angle') else "psychological mystery"
         
         print(f"\n🎬 Creating video for: {topic}")
         
         # 1. Generate Content
         script_data = self.content_gen.generate_script(topic, angle)
         
-        # FIX: Safe extraction logic to prevent KeyError: 'script'
+        # Safe extraction logic to prevent KeyError: 'script'
         script_text = ""
         if isinstance(script_data, dict):
             script_text = script_data.get('script') or script_data.get('script_text') or script_data.get('text') or ""
-            # If still empty but has segments, reconstruct it
             if not script_text and 'segments' in script_data:
                 script_text = " ".join([seg.get('text', '') for seg in script_data['segments'] if 'text' in seg])
         elif isinstance(script_data, str):
@@ -69,7 +68,6 @@ class YouTubeAutomationSystem:
         # 4. Assemble Final Video (with fixed precision subtitles & absolute path lookup)
         output_video_path = os.path.join(self.output_dir, f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
         
-        # Fallback segments check to ensure video generator does not crash
         segments = script_data.get('segments') or [{'type': 'story', 'duration': audio_data['total_duration'], 'is_pause': False}]
         
         video_path = self.video_assembler.create_video(
@@ -96,10 +94,18 @@ class YouTubeAutomationSystem:
         print("🚀 Starting Automation System in [TESTING MODE]...")
         print("⚠️ All uploads are bypassed. Output files will be stored in 'output/' directory.")
         
-        topics = self.topic_engine.fetch_trending_topics()
+        # FIX: Try fetching live, if 429 rate limit occurs, use mock topics instantly
+        try:
+            topics = self.topic_engine.fetch_trending_topics()
+        except Exception:
+            topics = []
+            
         if not topics:
-            print("❌ No trending topics discovered.")
-            return
+            print("⚠️ Live Trends Rate-Limited (429) or Blocked. Injecting local dark psychology testing nodes...")
+            topics = [
+                {"query": "cognitive dissonance", "category": "psychology"},
+                {"query": "dark psychology secrets", "category": "behavior"}
+            ]
             
         for i, topic in enumerate(topics):
             print(f"\n{'='*50}")
@@ -114,7 +120,6 @@ class YouTubeAutomationSystem:
                 print(f"   🖼️  Thumbnail preview: {video_data['thumbnail_path']}")
                 print(f"   ⏱️  Duration: {video_data['duration']:.1f}s")
                 print(f"   📝 Title: {video_data['title']}")
-                print(f"   🌐 [INFO] Upload skipped to protect production channel spam limits.")
                 
                 if i < len(topics) - 1:
                     print(f"\n⏳ Waiting 10 seconds before next test video...")
