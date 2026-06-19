@@ -1,4 +1,4 @@
-"""Video Assembler — Fast Cuts + Aggressive Zoom + 9:16 Portrait"""
+"""Video Assembler â€” Fast Cuts + Aggressive Zoom + 9:16 Portrait"""
 
 import os
 import subprocess
@@ -9,28 +9,28 @@ from typing import List, Dict
 
 from config.settings import VIDEO_CONFIG, CAPTION_CONFIG
 
+
 class VideoAssembler:
     def __init__(self):
         self.width = 1080
         self.height = 1920
         self.fps = 30
-        self.crf = VIDEO_CONFIG.CRF # 18
-        self.preset = VIDEO_CONFIG.PRESET # slow
+        self.crf = VIDEO_CONFIG.CRF       # 18
+        self.preset = VIDEO_CONFIG.PRESET  # slow
         self.bitrate = VIDEO_CONFIG.BITRATE
 
-        assert self.width < self.height, "❌ Portrait check failed: width must be < height"
-        print(f" 📐 {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
+        assert self.width < self.height, f"âŒ Portrait check failed"
+        print(f"  ðŸ“ {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
 
-    # ─── ASS Subtitles ────────────────────────────────────────────
+    # â”€â”€â”€ ASS Subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _seconds_to_ass(self, s: float) -> str:
-        h = int(s // 3600)
-        m = int((s % 3600) // 60)
-        sc = int(s % 60)
-        cs = int((s % 1) * 100)
+        h = int(s // 3600); m = int((s % 3600) // 60)
+        sc = int(s % 60); cs = int((s % 1) * 100)
         return f"{h}:{m:02d}:{sc:02d}.{cs:02d}"
 
-    def _create_ass(self, word_timings: List, ass_path: str, font_size: int = 90):
+    def _create_ass(self, word_timings: List[Dict], ass_path: str, font_size: int = 90):
         c = CAPTION_CONFIG
+        # FIX: Two styles â€” White and Red â€” so words alternate color, centered, bold
         header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {self.width}
@@ -39,8 +39,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: White,{c.FONT_NAME},{font_size},{c.PRIMARY_COLOR},&H000FF,{c.OUTLINE_COLOR},&H00000,1,0,0,0,100,100,2,0,1,{c.OUTLINE_WIDTH},{c.SHADOW},{c.ALIGNMENT},10,10,{c.MARGIN_V},1
-Style: Red,{c.FONT_NAME},{font_size},{c.SECONDARY_COLOR},&H00FFFFFF,{c.OUTLINE_COLOR},&H00000,1,0,0,0,100,100,2,0,1,{c.OUTLINE_WIDTH},{c.SHADOW},{c.ALIGNMENT},10,10,{c.MARGIN_V},1
+Style: White,{c.FONT_NAME},{font_size},{c.PRIMARY_COLOR},&H000000FF,{c.OUTLINE_COLOR},&H00000000,1,0,0,0,100,100,2,0,1,{c.OUTLINE_WIDTH},{c.SHADOW},{c.ALIGNMENT},10,10,{c.MARGIN_V},1
+Style: Red,{c.FONT_NAME},{font_size},{c.SECONDARY_COLOR},&H00FFFFFF,{c.OUTLINE_COLOR},&H00000000,1,0,0,0,100,100,2,0,1,{c.OUTLINE_WIDTH},{c.SHADOW},{c.ALIGNMENT},10,10,{c.MARGIN_V},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -48,26 +48,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lines = []
         for idx, wt in enumerate(word_timings):
             word = str(wt.get('word', '')).strip()
-            # FIX: KeyError se bachao - start/end check
-            if word and 'start' in wt and 'end' in wt:
+            if word:
+                # FIX: Alternate White/Red per word â€” even index=White, odd index=Red
                 style = "White" if idx % 2 == 0 else "Red"
                 lines.append(f"Dialogue: 0,{self._seconds_to_ass(wt['start'])},{self._seconds_to_ass(wt['end'])},{style},,0,0,0,,{word.upper()}")
         if not lines:
-            lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,White,,0,0,0,, ")
-        with open(ass_path, 'w', encoding='utf-8') as f: # FIX: encoding
+            lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,, ")
+        with open(ass_path, 'w', encoding='utf-8') as f:
             f.write(header + "\n".join(lines) + "\n")
-        print(f" 📝 ASS: {len(lines)} words | size:{font_size}px")
+        print(f"    ðŸ“ ASS: {len(lines)} words | size:{font_size}px")
 
-    # ─── Fast Cuts from Footage ───────────────────────────────────
+    # â”€â”€â”€ Fast Cuts from Footage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _fast_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
+        """
+        TikTok/Reels style fast cuts:
+        - Every 1.5â€“2.5s clip changes
+        - Each cut: random start point from source footage
+        - Each cut: random zoom (1.05â€“1.30x) + random direction
+        - Portrait scale enforced after every zoom
+        """
+        # Get source clip duration
         try:
-            # FIX: check=False + empty stdout handle
             probe = subprocess.run([
                 'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1', clip_file
-            ], capture_output=True, text=True, check=False)
-            src_dur = float(probe.stdout.strip()) if probe.stdout.strip() else 30.0
-        except Exception:
+            ], capture_output=True, text=True)
+            src_dur = float(probe.stdout.strip())
+        except:
             src_dur = 30.0
 
         cuts = []
@@ -75,27 +82,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         cut_idx = 0
 
         while current < total_dur:
-            cut_len = min(random.uniform(0.8, 1.5), total_dur - current)
+            cut_len = min(random.uniform(0.8, 1.5), total_dur - current)  # FIX: faster cuts (was 1.5-2.5)
             if cut_len < 0.4:
                 break
 
             cut_path = os.path.join(temp_dir, f"fastcut_{seg_idx}_{cut_idx}.mp4")
+
+            # Random start in source clip
             max_start = max(0.0, src_dur - cut_len - 0.5)
             ss = random.uniform(0, max_start)
 
-            z = random.uniform(1.15, 1.35)
-            dirs_x = ["iw/2-(iw/zoom/2)", "0", "iw-(iw/zoom)"]
-            dirs_y = ["ih/2-(ih/zoom/2)", "0", "ih-(ih/zoom)"]
+            # Random zoom + direction â€” each cut looks different
+            z = random.uniform(1.15, 1.35)  # FIX: stronger zoom (was 1.05-1.30)
+            dirs_x = [f"iw/2-(iw/zoom/2)", "0", f"iw-(iw/zoom)"]
+            dirs_y = [f"ih/2-(ih/zoom/2)", "0", f"ih-(ih/zoom)"]
             dx = random.choice(dirs_x)
             dy = random.choice(dirs_y)
 
+            # FIX: d=1 made zoompan jump one frame at a time (stop-motion /
+            # "photo click" look instead of smooth video motion). zoompan
+            # needs d = total number of output frames for this cut, and a
+            # per-frame zoom increment small enough to reach `z` exactly
+            # over that many frames â€” that's what makes the zoom glide
+            # continuously instead of snapping.
             total_frames = max(1, int(round(cut_len * self.fps)))
             zoom_step = (z - 1.0) / total_frames
 
             vf = (
+                # Step 1: Scale footage to portrait
                 f"scale={self.width}:{self.height}:force_original_aspect_ratio=increase,"
                 f"crop={self.width}:{self.height},setsar=1,"
+                # Step 2: Zoom in random direction â€” smooth over full clip length
                 f"zoompan=z='min(zoom+{zoom_step:.6f},{z})':d={total_frames}:x='{dx}':y='{dy}':s={self.width}x{self.height}:fps={self.fps},"
+                # Step 3: Force portrait back (zoompan resets resolution)
                 f"scale={self.width}:{self.height},setsar=1"
             )
 
@@ -106,7 +125,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
                 cut_path
             ]
-            r = subprocess.run(cmd, capture_output=True, text=True) # FIX: text=True
+            r = subprocess.run(cmd, capture_output=True)
             if r.returncode == 0 and os.path.exists(cut_path) and os.path.getsize(cut_path) > 1000:
                 cuts.append(cut_path)
 
@@ -116,9 +135,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not cuts:
             return None
 
+        # Concat cuts into one segment
         out_path = os.path.join(temp_dir, f"seg_footage_{seg_idx}.mp4")
         cut_list = os.path.join(temp_dir, f"cuts_{seg_idx}.txt")
-        with open(cut_list, 'w', encoding='utf-8') as f: # FIX: encoding
+        with open(cut_list, 'w') as f:
             for c in cuts:
                 f.write(f"file '{c}'\n")
 
@@ -127,18 +147,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "-t", str(total_dur), "-c:v", "libx264", "-crf", str(self.crf),
             "-preset", "fast", "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
             out_path
-        ], capture_output=True, text=True) # FIX: text=True
+        ], capture_output=True)
 
         if os.path.exists(out_path):
-            print(f" ✅ Seg {seg_idx}: {len(cuts)} fast cuts | footage")
+            print(f"    âœ… Seg {seg_idx}: {len(cuts)} fast cuts | footage")
             return out_path
         return None
 
     def _color_bg_segment(self, seg_type: str, duration: float, temp_dir: str, idx: int) -> str:
-        colors = {"hook": "0x050510", "suspense": "0x100005", "story": "0x050010", "ctr": "0x100500", "pause": "0x000"}
+        """Dark color bg with pulsing zoom â€” for when no footage"""
+        colors = {"hook": "0x050510", "suspense": "0x100005", "story": "0x050010", "ctr": "0x100500", "pause": "0x000000"}
         color = colors.get(seg_type, "0x050510")
 
         z = random.uniform(1.08, 1.25)
+        # FIX: d=1 caused a stop-motion "photo click" pulse instead of a
+        # smooth zoom â€” same fix as the footage cuts above.
         total_frames = max(1, int(round(duration * self.fps)))
         zoom_step = (z - 1.0) / total_frames
         vf = (
@@ -153,17 +176,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "-vf", vf, "-c:v", "libx264", "-crf", str(self.crf),
             "-preset", "fast", "-r", str(self.fps), "-pix_fmt", "yuv420p",
             "-t", str(duration), "-an", out
-        ], capture_output=True, text=True) # FIX: text=True
+        ], capture_output=True)
         return out if os.path.exists(out) else None
 
-    # ─── Main Create ──────────────────────────────────────────────
-    def create_video(self, script_segments: List, audio_data: Dict,
-                     footage_clips: List, word_timings: List,
+    # â”€â”€â”€ Main Create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    def create_video(self, script_segments: List[Dict], audio_data: Dict,
+                     footage_clips: List[Dict], word_timings: List[Dict],
                      output_path: str) -> str:
 
         total_audio = audio_data.get('total_duration', 0)
-        print(f"\n 🎬 VideoAssembler | Audio: {total_audio:.1f}s | Words: {len(word_timings)}")
+        print(f"\n  ðŸŽ¬ VideoAssembler | Audio: {total_audio:.1f}s | Words: {len(word_timings)}")
 
+        # Sync segment durations to audio
         if total_audio > 0 and script_segments:
             non_pause_dur = sum(s.get('duration', 0) for s in script_segments if not s.get('is_pause'))
             pause_dur = sum(s.get('duration', 0) for s in script_segments if s.get('is_pause'))
@@ -173,13 +197,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 for s in script_segments:
                     if not s.get('is_pause'):
                         s['duration'] = round(s['duration'] * ratio, 3)
-                print(f" 🔧 Duration ratio: {ratio:.2f}")
+                print(f"  ðŸ”§ Duration ratio: {ratio:.2f}")
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         temp_dir = tempfile.mkdtemp()
         footage_dir = os.path.join("output", "footage")
 
-        print(f" 🎬 Building {len(script_segments)} segments...")
+        # Build video segments
+        print(f"  ðŸŽ¬ Building {len(script_segments)} segments...")
         segment_files = []
         footage_idx = 0
 
@@ -189,11 +214,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             is_pause = seg.get('is_pause', False)
 
             if is_pause:
+                # Black frame for pause duration
                 black = self._color_bg_segment('pause', duration, temp_dir, i)
                 if black:
                     segment_files.append(black)
                 continue
 
+            # Try footage first
             clip_file = os.path.join(footage_dir, f"clip_{footage_idx}.mp4")
             has_footage = os.path.exists(clip_file) and os.path.getsize(clip_file) > 10000
 
@@ -204,6 +231,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     footage_idx += 1
                     continue
 
+            # Fallback color bg
             out = self._color_bg_segment(seg_type, duration, temp_dir, i)
             if out:
                 segment_files.append(out)
@@ -212,9 +240,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not segment_files:
             raise Exception("No segments created!")
 
-        print(f" 🔗 Concat {len(segment_files)} segments...")
+        # Concat segments
+        print(f"  ðŸ”— Concat {len(segment_files)} segments...")
         concat_list = os.path.join(temp_dir, "concat.txt")
-        with open(concat_list, 'w', encoding='utf-8') as f: # FIX: encoding
+        with open(concat_list, 'w') as f:
             for sf in segment_files:
                 f.write(f"file '{sf}'\n")
 
@@ -243,13 +272,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                           "-r", str(self.fps), "-movflags", "+faststart"]
         concat_cmd.append(video_raw)
 
-        r = subprocess.run(concat_cmd, capture_output=True, text=True) # FIX: text=True
-        if r.returncode!= 0:
-            print(f" ❌ Concat error: {r.stderr[-200:]}")
+        r = subprocess.run(concat_cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"    âŒ Concat error: {r.stderr[-200:]}")
         if not os.path.exists(video_raw):
             raise Exception("Video concat failed")
 
-        print(f" 📝 Burning captions...")
+        # Burn captions
+        print(f"  ðŸ“ Burning captions...")
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
         safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
@@ -262,8 +292,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             output_path
         ], capture_output=True, text=True)
 
-        if r.returncode!= 0 or not os.path.exists(output_path):
-            print(f" ⚠️ Captions failed, saving without")
+        if r.returncode != 0 or not os.path.exists(output_path):
+            print(f"    âš ï¸ Captions failed, saving without")
             shutil.copy(video_raw, output_path)
 
         if os.path.exists(output_path):
@@ -276,9 +306,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ], capture_output=True, text=True)
             info = dict(l.split('=',1) for l in probe.stdout.splitlines() if '=' in l)
             dur = float(info.get('duration', 0))
-            print(f"\n ✅ FINAL: {output_path}")
-            print(f" 📐 {info.get('width')}x{info.get('height')} @ {info.get('r_frame_rate')}fps")
-            print(f" ⏱️ {dur:.1f}s {'✅' if 40<=dur<=55 else '⚠️'} | {size:.1f}MB")
+            print(f"\n  âœ… FINAL: {output_path}")
+            print(f"  ðŸ“ {info.get('width')}x{info.get('height')} @ {info.get('r_frame_rate')}fps")
+            print(f"  â±ï¸  {dur:.1f}s {'âœ…' if 40<=dur<=55 else 'âš ï¸'} | {size:.1f}MB")
         else:
             raise Exception("Final video not created")
 
