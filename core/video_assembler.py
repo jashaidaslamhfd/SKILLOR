@@ -1,4 +1,4 @@
-"""Video Assembler â€” Fast Cuts + Aggressive Zoom + 9:16 Portrait"""
+"""Video Assembler — Fast Cuts + Aggressive Zoom + 9:16 Portrait"""
 
 import os
 import subprocess
@@ -19,10 +19,10 @@ class VideoAssembler:
         self.preset = VIDEO_CONFIG.PRESET  # slow
         self.bitrate = VIDEO_CONFIG.BITRATE
 
-        assert self.width < self.height, f"âŒ Portrait check failed"
-        print(f"  ðŸ“ {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
+        assert self.width < self.height, f"❌ Portrait check failed"
+        print(f"  📐 {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
 
-    # â”€â”€â”€ ASS Subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── ASS Subtitles ────────────────────────────────────────────
     def _seconds_to_ass(self, s: float) -> str:
         h = int(s // 3600); m = int((s % 3600) // 60)
         sc = int(s % 60); cs = int((s % 1) * 100)
@@ -30,7 +30,7 @@ class VideoAssembler:
 
     def _create_ass(self, word_timings: List[Dict], ass_path: str, font_size: int = 90):
         c = CAPTION_CONFIG
-        # FIX: Two styles â€” White and Red â€” so words alternate color, centered, bold
+        # FIX: Two styles — White and Red — so words alternate color, centered, bold
         header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {self.width}
@@ -49,22 +49,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for idx, wt in enumerate(word_timings):
             word = str(wt.get('word', '')).strip()
             if word:
-                # FIX: Alternate White/Red per word â€” even index=White, odd index=Red
+                # FIX: Alternate White/Red per word — even index=White, odd index=Red
                 style = "White" if idx % 2 == 0 else "Red"
                 lines.append(f"Dialogue: 0,{self._seconds_to_ass(wt['start'])},{self._seconds_to_ass(wt['end'])},{style},,0,0,0,,{word.upper()}")
         if not lines:
             lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,, ")
         with open(ass_path, 'w', encoding='utf-8') as f:
             f.write(header + "\n".join(lines) + "\n")
-        print(f"    ðŸ“ ASS: {len(lines)} words | size:{font_size}px")
+        print(f"    📝 ASS: {len(lines)} words | size:{font_size}px")
 
-    # â”€â”€â”€ Fast Cuts from Footage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── Fast Cuts from Footage ───────────────────────────────────
     def _fast_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
         """
         TikTok/Reels style fast cuts:
-        - Every 1.5â€“2.5s clip changes
+        - Every 1.5–2.5s clip changes
         - Each cut: random start point from source footage
-        - Each cut: random zoom (1.05â€“1.30x) + random direction
+        - Each cut: random zoom (1.05–1.30x) + random direction
         - Portrait scale enforced after every zoom
         """
         # Get source clip duration
@@ -92,7 +92,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             max_start = max(0.0, src_dur - cut_len - 0.5)
             ss = random.uniform(0, max_start)
 
-            # Random zoom + direction â€” each cut looks different
+            # Random zoom + direction — each cut looks different
             z = random.uniform(1.15, 1.35)  # FIX: stronger zoom (was 1.05-1.30)
             dirs_x = [f"iw/2-(iw/zoom/2)", "0", f"iw-(iw/zoom)"]
             dirs_y = [f"ih/2-(ih/zoom/2)", "0", f"ih-(ih/zoom)"]
@@ -103,16 +103,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # "photo click" look instead of smooth video motion). zoompan
             # needs d = total number of output frames for this cut, and a
             # per-frame zoom increment small enough to reach `z` exactly
-            # over that many frames â€” that's what makes the zoom glide
+            # over that many frames — that's what makes the zoom glide
             # continuously instead of snapping.
             total_frames = max(1, int(round(cut_len * self.fps)))
             zoom_step = (z - 1.0) / total_frames
 
             vf = (
+                # Step 0: FIX — normalize source fps to match output fps
+                # BEFORE zoompan. zoompan's frame stepping is driven by the
+                # *input* frame rate; if a Pexels/Pixabay clip is 24/25/60fps
+                # and we only set output fps afterward, zoompan still steps
+                # on the original cadence, which is what produced the
+                # jumpy "photo click" motion even after the d= fix.
+                f"fps={self.fps},"
                 # Step 1: Scale footage to portrait
                 f"scale={self.width}:{self.height}:force_original_aspect_ratio=increase,"
                 f"crop={self.width}:{self.height},setsar=1,"
-                # Step 2: Zoom in random direction â€” smooth over full clip length
+                # Step 2: Zoom in random direction — smooth over full clip length
                 f"zoompan=z='min(zoom+{zoom_step:.6f},{z})':d={total_frames}:x='{dx}':y='{dy}':s={self.width}x{self.height}:fps={self.fps},"
                 # Step 3: Force portrait back (zoompan resets resolution)
                 f"scale={self.width}:{self.height},setsar=1"
@@ -150,18 +157,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ], capture_output=True)
 
         if os.path.exists(out_path):
-            print(f"    âœ… Seg {seg_idx}: {len(cuts)} fast cuts | footage")
+            print(f"    ✅ Seg {seg_idx}: {len(cuts)} fast cuts | footage")
             return out_path
         return None
 
     def _color_bg_segment(self, seg_type: str, duration: float, temp_dir: str, idx: int) -> str:
-        """Dark color bg with pulsing zoom â€” for when no footage"""
+        """Dark color bg with pulsing zoom — for when no footage"""
         colors = {"hook": "0x050510", "suspense": "0x100005", "story": "0x050010", "ctr": "0x100500", "pause": "0x000000"}
         color = colors.get(seg_type, "0x050510")
 
         z = random.uniform(1.08, 1.25)
         # FIX: d=1 caused a stop-motion "photo click" pulse instead of a
-        # smooth zoom â€” same fix as the footage cuts above.
+        # smooth zoom — same fix as the footage cuts above.
         total_frames = max(1, int(round(duration * self.fps)))
         zoom_step = (z - 1.0) / total_frames
         vf = (
@@ -179,16 +186,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ], capture_output=True)
         return out if os.path.exists(out) else None
 
-    # â”€â”€â”€ Main Create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── Main Create ──────────────────────────────────────────────
     def create_video(self, script_segments: List[Dict], audio_data: Dict,
                      footage_clips: List[Dict], word_timings: List[Dict],
                      output_path: str) -> str:
 
         total_audio = audio_data.get('total_duration', 0)
-        print(f"\n  ðŸŽ¬ VideoAssembler | Audio: {total_audio:.1f}s | Words: {len(word_timings)}")
+        print(f"\n  🎬 VideoAssembler | Audio: {total_audio:.1f}s | Words: {len(word_timings)}")
 
-        # Sync segment durations to audio
-        if total_audio > 0 and script_segments:
+        # FIX: segment durations now derived from REAL word_timings
+        # (actual edge-tts timestamps) instead of scaling an estimated
+        # duration by a global ratio. The ratio approach kept segments
+        # roughly proportional but not actually aligned to where each
+        # segment's words are spoken — this is why footage cuts visually
+        # drifted out of sync with the audio over the course of a video.
+        if word_timings and script_segments:
+            wt_idx = 0
+            for s in script_segments:
+                if s.get('is_pause'):
+                    continue
+                seg_word_count = len(s.get('text', '').split())
+                seg_words = word_timings[wt_idx:wt_idx + seg_word_count]
+                wt_idx += seg_word_count
+                if seg_words:
+                    s['duration'] = round(max(0.2, seg_words[-1]['end'] - seg_words[0]['start']), 3)
+            print(f"  🔧 Segment durations re-aligned to real word timestamps")
+        elif total_audio > 0 and script_segments:
+            # Fallback: old ratio-based estimate, only used if word_timings is empty
             non_pause_dur = sum(s.get('duration', 0) for s in script_segments if not s.get('is_pause'))
             pause_dur = sum(s.get('duration', 0) for s in script_segments if s.get('is_pause'))
             speech_audio = total_audio - pause_dur
@@ -197,14 +221,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 for s in script_segments:
                     if not s.get('is_pause'):
                         s['duration'] = round(s['duration'] * ratio, 3)
-                print(f"  ðŸ”§ Duration ratio: {ratio:.2f}")
+                print(f"  🔧 Duration ratio: {ratio:.2f}")
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         temp_dir = tempfile.mkdtemp()
         footage_dir = os.path.join("output", "footage")
 
         # Build video segments
-        print(f"  ðŸŽ¬ Building {len(script_segments)} segments...")
+        print(f"  🎬 Building {len(script_segments)} segments...")
         segment_files = []
         footage_idx = 0
 
@@ -241,7 +265,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             raise Exception("No segments created!")
 
         # Concat segments
-        print(f"  ðŸ”— Concat {len(segment_files)} segments...")
+        print(f"  🔗 Concat {len(segment_files)} segments...")
         concat_list = os.path.join(temp_dir, "concat.txt")
         with open(concat_list, 'w') as f:
             for sf in segment_files:
@@ -274,12 +298,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         r = subprocess.run(concat_cmd, capture_output=True, text=True)
         if r.returncode != 0:
-            print(f"    âŒ Concat error: {r.stderr[-200:]}")
+            print(f"    ❌ Concat error: {r.stderr[-200:]}")
         if not os.path.exists(video_raw):
             raise Exception("Video concat failed")
 
         # Burn captions
-        print(f"  ðŸ“ Burning captions...")
+        print(f"  📝 Burning captions...")
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
         safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
@@ -293,7 +317,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ], capture_output=True, text=True)
 
         if r.returncode != 0 or not os.path.exists(output_path):
-            print(f"    âš ï¸ Captions failed, saving without")
+            print(f"    ⚠️ Captions failed, saving without")
             shutil.copy(video_raw, output_path)
 
         if os.path.exists(output_path):
@@ -306,9 +330,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ], capture_output=True, text=True)
             info = dict(l.split('=',1) for l in probe.stdout.splitlines() if '=' in l)
             dur = float(info.get('duration', 0))
-            print(f"\n  âœ… FINAL: {output_path}")
-            print(f"  ðŸ“ {info.get('width')}x{info.get('height')} @ {info.get('r_frame_rate')}fps")
-            print(f"  â±ï¸  {dur:.1f}s {'âœ…' if 40<=dur<=55 else 'âš ï¸'} | {size:.1f}MB")
+            print(f"\n  ✅ FINAL: {output_path}")
+            print(f"  📐 {info.get('width')}x{info.get('height')} @ {info.get('r_frame_rate')}fps")
+            print(f"  ⏱️  {dur:.1f}s {'✅' if 40<=dur<=55 else '⚠️'} | {size:.1f}MB")
         else:
             raise Exception("Final video not created")
 
