@@ -1,4 +1,4 @@
-"""Video Assembler — Fast Cuts, Safe Zoompan scaling, and 9:16 Center-Locked ASS Rendering"""
+"""Video Assembler — Fast Cuts + Aggressive Zoom + 9:16 Portrait"""
 
 import os
 import subprocess
@@ -12,34 +12,25 @@ from config.settings import VIDEO_CONFIG, CAPTION_CONFIG
 
 class VideoAssembler:
     def __init__(self):
-        self.width = VIDEO_CONFIG.RESOLUTION[0] if hasattr(VIDEO_CONFIG, 'RESOLUTION') else 1080
-        self.height = VIDEO_CONFIG.RESOLUTION[1] if hasattr(VIDEO_CONFIG, 'RESOLUTION') else 1920
-        self.fps = VIDEO_CONFIG.FPS if hasattr(VIDEO_CONFIG, 'FPS') else 30
+        self.width = 1080
+        self.height = 1920
+        self.fps = 30
         self.crf = VIDEO_CONFIG.CRF       # 18
         self.preset = VIDEO_CONFIG.PRESET  # slow
+        self.bitrate = VIDEO_CONFIG.BITRATE
 
-        assert self.width < self.height, f"❌ Portrait dimension validation check failed"
-        print(f"  📐 Canvas Bounds: {self.width}x{self.height} @ {self.fps}fps | Target CRF: {self.crf}")
+        assert self.width < self.height, f"❌ Portrait check failed"
+        print(f"  📐 {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
 
+    # ─── ASS Subtitles ────────────────────────────────────────────
     def _seconds_to_ass(self, s: float) -> str:
-        """Converts float seconds to precise ASS timestamp format with safe millisecond rounding"""
-        h = int(s // 3600)
-        m = int((s % 3600) // 60)
-        sc = int(s % 60)
-        cs = int(round((s % 1) * 100))
-        if cs >= 100:
-            sc += 1
-            cs -= 100
-            if sc >= 60:
-                sc -= 60
-                m += 1
-                if m >= 60:
-                    m -= 60
-                    h += 1
+        h = int(s // 3600); m = int((s % 3600) // 60)
+        sc = int(s % 60); cs = int((s % 1) * 100)
         return f"{h}:{m:02d}:{sc:02d}.{cs:02d}"
 
     def _create_ass(self, word_timings: List[Dict], ass_path: str, font_size: int = 90):
         c = CAPTION_CONFIG
+        # FIX: Two styles — White and Red — so words alternate color, centered, bold
         header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {self.width}
@@ -58,24 +49,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for idx, wt in enumerate(word_timings):
             word = str(wt.get('word', '')).strip()
             if word:
+                # FIX: Alternate White/Red per word — even index=White, odd index=Red
                 style = "White" if idx % 2 == 0 else "Red"
-                start_str = self._seconds_to_ass(wt['start'])
-                end_str = self._seconds_to_ass(wt['end'])
-                lines.append(f"Dialogue: 0,{start_str},{end_str},{style},,0,0,0,,{word.upper()}")
-        
+                lines.append(f"Dialogue: 0,{self._seconds_to_ass(wt['start'])},{self._seconds_to_ass(wt['end'])},{style},,0,0,0,,{word.upper()}")
         if not lines:
-            lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,White,,0,0,0,, ")
-            
+            lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,, ")
         with open(ass_path, 'w', encoding='utf-8') as f:
             f.write(header + "\n".join(lines) + "\n")
-        print(f"    📝 Subtitles Rendered: {len(lines)} word nodes successfully packed.")
+        print(f"    📝 ASS: {len(lines)} words | size:{font_size}px")
 
+    # ─── Fast Cuts from Footage ───────────────────────────────────
     def _fast_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
+        """
+        TikTok/Reels style fast cuts:
+        - Every 1.5–2.5s clip changes
+        - Each cut: random start point from source footage
+        - Each cut: random zoom (1.05–1.30x) + random direction
+        - Portrait scale enforced after every zoom
+        """
+        # Get source clip duration
         try:
             probe = subprocess.run([
                 'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1', clip_file
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True)
             src_dur = float(probe.stdout.strip())
         except:
             src_dur = 30.0
@@ -83,32 +80,51 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         cuts = []
         current = 0.0
         cut_idx = 0
-        interval_min = VIDEO_CONFIG.FAST_CUT_INTERVAL if hasattr(VIDEO_CONFIG, 'FAST_CUT_INTERVAL') else 0.8
-        
+
         while current < total_dur:
-            cut_len = min(random.uniform(interval_min, interval_min + 0.5), total_dur - current)
-            if cut_len < 0.3:
+            cut_len = min(random.uniform(0.8, 1.5), total_dur - current)  # FIX: faster cuts (was 1.5-2.5)
+            if cut_len < 0.4:
                 break
 
             cut_path = os.path.join(temp_dir, f"fastcut_{seg_idx}_{cut_idx}.mp4")
+
+            # Random start in source clip
             max_start = max(0.0, src_dur - cut_len - 0.5)
             ss = random.uniform(0, max_start)
-            zoom_factor = VIDEO_CONFIG.ZOOM_INTENSITY if hasattr(VIDEO_CONFIG, 'ZOOM_INTENSITY') else 1.25
-            
+
+            # Random zoom + direction — each cut looks different
+            z = random.uniform(1.15, 1.35)  # FIX: stronger zoom (was 1.05-1.30)
+            dirs_x = [f"iw/2-(iw/zoom/2)", "0", f"iw-(iw/zoom)"]
+            dirs_y = [f"ih/2-(ih/zoom/2)", "0", f"ih-(ih/zoom)"]
+            dx = random.choice(dirs_x)
+            dy = random.choice(dirs_y)
+
+            # FIX: d=1 made zoompan jump one frame at a time (stop-motion /
+            # "photo click" look instead of smooth video motion). zoompan
+            # needs d = total number of output frames for this cut, and a
+            # per-frame zoom increment small enough to reach `z` exactly
+            # over that many frames — that's what makes the zoom glide
+            # continuously instead of snapping.
+            total_frames = max(1, int(round(cut_len * self.fps)))
+            zoom_step = (z - 1.0) / total_frames
+
             vf = (
-                f"scale=2*iw:-1,crop={self.width}:{self.height},"
-                f"zoompan=z='min(zoom+0.006,{zoom_factor})':d={int(cut_len*self.fps)}:x='(iw-ow)/2':y='(ih-oh)/2':s={self.width}x{self.height},"
-                f"setsar=1"
+                # Step 1: Scale footage to portrait
+                f"scale={self.width}:{self.height}:force_original_aspect_ratio=increase,"
+                f"crop={self.width}:{self.height},setsar=1,"
+                # Step 2: Zoom in random direction — smooth over full clip length
+                f"zoompan=z='min(zoom+{zoom_step:.6f},{z})':d={total_frames}:x='{dx}':y='{dy}':s={self.width}x{self.height}:fps={self.fps},"
+                # Step 3: Force portrait back (zoompan resets resolution)
+                f"scale={self.width}:{self.height},setsar=1"
             )
 
             cmd = [
-                "ffmpeg", "-y", "-ss", str(round(ss, 2)), "-i", clip_file,
-                "-t", str(round(cut_len, 2)), "-vf", vf,
-                "-c:v", "libx264", "-crf", str(self.crf), "-preset", "ultrafast",
+                "ffmpeg", "-y", "-ss", str(ss), "-i", clip_file,
+                "-t", str(cut_len), "-vf", vf,
+                "-c:v", "libx264", "-crf", str(self.crf), "-preset", "fast",
                 "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
                 cut_path
             ]
-            
             r = subprocess.run(cmd, capture_output=True)
             if r.returncode == 0 and os.path.exists(cut_path) and os.path.getsize(cut_path) > 1000:
                 cuts.append(cut_path)
@@ -119,6 +135,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not cuts:
             return None
 
+        # Concat cuts into one segment
         out_path = os.path.join(temp_dir, f"seg_footage_{seg_idx}.mp4")
         cut_list = os.path.join(temp_dir, f"cuts_{seg_idx}.txt")
         with open(cut_list, 'w') as f:
@@ -128,62 +145,68 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         subprocess.run([
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", cut_list,
             "-t", str(total_dur), "-c:v", "libx264", "-crf", str(self.crf),
-            "-preset", "ultrafast", "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
+            "-preset", "fast", "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
             out_path
         ], capture_output=True)
 
-        return out_path if os.path.exists(out_path) else None
+        if os.path.exists(out_path):
+            print(f"    ✅ Seg {seg_idx}: {len(cuts)} fast cuts | footage")
+            return out_path
+        return None
 
     def _color_bg_segment(self, seg_type: str, duration: float, temp_dir: str, idx: int) -> str:
-        # High contrast fallback colors so it's never pitch black
-        colors = {"hook": "0x3A1A1A", "suspense": "0x1A3A1A", "story": "0x1A1A3A", "ctr": "0x3A3A1A", "pause": "0x111111"}
-        color = colors.get(seg_type, "0x222222")
-        
-        vf = f"format=yuv420p,setsar=1"
+        """Dark color bg with pulsing zoom — for when no footage"""
+        colors = {"hook": "0x050510", "suspense": "0x100005", "story": "0x050010", "ctr": "0x100500", "pause": "0x000000"}
+        color = colors.get(seg_type, "0x050510")
+
+        z = random.uniform(1.08, 1.25)
+        # FIX: d=1 caused a stop-motion "photo click" pulse instead of a
+        # smooth zoom — same fix as the footage cuts above.
+        total_frames = max(1, int(round(duration * self.fps)))
+        zoom_step = (z - 1.0) / total_frames
+        vf = (
+            f"format=yuv420p,"
+            f"zoompan=z='if(lte(zoom,1.0),{z},max(1.0,zoom-{zoom_step:.6f}))':d={total_frames}:s={self.width}x{self.height}:fps={self.fps},"
+            f"scale={self.width}:{self.height},setsar=1"
+        )
         out = os.path.join(temp_dir, f"seg_color_{idx}.mp4")
         subprocess.run([
             "ffmpeg", "-y", "-f", "lavfi",
             "-i", f"color=c={color}:s={self.width}x{self.height}:r={self.fps}:d={duration}",
             "-vf", vf, "-c:v", "libx264", "-crf", str(self.crf),
-            "-preset", "ultrafast", "-r", str(self.fps), "-pix_fmt", "yuv420p",
+            "-preset", "fast", "-r", str(self.fps), "-pix_fmt", "yuv420p",
             "-t", str(duration), "-an", out
         ], capture_output=True)
         return out if os.path.exists(out) else None
 
+    # ─── Main Create ──────────────────────────────────────────────
     def create_video(self, script_segments: List[Dict], audio_data: Dict,
                      footage_clips: List[Dict], word_timings: List[Dict],
                      output_path: str) -> str:
 
         total_audio = audio_data.get('total_duration', 0)
-        print(f"\n🎬 Assembler Execution | Target Render Time: {total_audio:.2f}s")
+        print(f"\n  🎬 VideoAssembler | Audio: {total_audio:.1f}s | Words: {len(word_timings)}")
 
-        # FIX 1: Safe fallback for Word Timings if edge-tts drop boundaries
-        if not word_timings:
-            print("⚠️ Word timings empty! Generating artificial precise text maps...")
-            raw_words = []
-            for seg in script_segments:
-                text_content = seg.get('text', '') or seg.get('script_text', '')
-                if text_content:
-                    raw_words.extend(text_content.split())
-            if not raw_words:
-                raw_words = ["DISCOVER", "THE", "SHOCKING", "TRUTH", "RIGHT", "NOW"]
-            
-            word_count = len(raw_words)
-            time_per_word = total_audio / max(1, word_count)
-            for idx, w in enumerate(raw_words):
-                word_timings.append({
-                    "word": w,
-                    "start": round(idx * time_per_word, 3),
-                    "end": round((idx + 1) * time_per_word, 3)
-                })
+        # Sync segment durations to audio
+        if total_audio > 0 and script_segments:
+            non_pause_dur = sum(s.get('duration', 0) for s in script_segments if not s.get('is_pause'))
+            pause_dur = sum(s.get('duration', 0) for s in script_segments if s.get('is_pause'))
+            speech_audio = total_audio - pause_dur
+            if non_pause_dur > 0:
+                ratio = speech_audio / non_pause_dur
+                for s in script_segments:
+                    if not s.get('is_pause'):
+                        s['duration'] = round(s['duration'] * ratio, 3)
+                print(f"  🔧 Duration ratio: {ratio:.2f}")
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         temp_dir = tempfile.mkdtemp()
-        
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if '__file__' in locals() else os.getcwd()
-        footage_dir = os.path.join(base_dir, "output", "footage")
+        footage_dir = os.path.join("output", "footage")
 
+        # Build video segments
+        print(f"  🎬 Building {len(script_segments)} segments...")
         segment_files = []
+        footage_idx = 0
 
         for i, seg in enumerate(script_segments):
             duration = seg.get('duration', 2.0)
@@ -191,75 +214,103 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             is_pause = seg.get('is_pause', False)
 
             if is_pause:
+                # Black frame for pause duration
                 black = self._color_bg_segment('pause', duration, temp_dir, i)
                 if black:
                     segment_files.append(black)
                 continue
 
-            # FIX 2: Resolve clip file paths from the actual 'footage_clips' array passed by Fetcher
-            clip_file = None
-            if footage_clips and i < len(footage_clips):
-                target = footage_clips[i]
-                if isinstance(target, dict):
-                    clip_file = target.get('path') or target.get('file')
-                elif isinstance(target, str):
-                    clip_file = target
+            # Try footage first
+            clip_file = os.path.join(footage_dir, f"clip_{footage_idx}.mp4")
+            has_footage = os.path.exists(clip_file) and os.path.getsize(clip_file) > 10000
 
-            # Cross check Directory fallback if array mapping references are skewed
-            if not clip_file or not os.path.exists(clip_file):
-                if os.path.exists(footage_dir):
-                    valid_mp4s = [os.path.join(footage_dir, f) for f in os.listdir(footage_dir) if f.endswith('.mp4')]
-                    if valid_mp4s:
-                        clip_file = valid_mp4s[i % len(valid_mp4s)]
-
-            if clip_file and os.path.exists(clip_file) and os.path.getsize(clip_file) > 1000:
+            if has_footage:
                 out = self._fast_cut_segment(clip_file, duration, temp_dir, i)
                 if out:
                     segment_files.append(out)
+                    footage_idx += 1
                     continue
-            else:
-                print(f"⚠️ Clip asset missing for segment {i} ({clip_file}) -> Rendering color fallback layer.")
 
+            # Fallback color bg
             out = self._color_bg_segment(seg_type, duration, temp_dir, i)
             if out:
                 segment_files.append(out)
+            footage_idx += 1
 
         if not segment_files:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            raise Exception("Processing Exception: Zero compilation assets produced.")
+            raise Exception("No segments created!")
 
+        # Concat segments
+        print(f"  🔗 Concat {len(segment_files)} segments...")
         concat_list = os.path.join(temp_dir, "concat.txt")
         with open(concat_list, 'w') as f:
             for sf in segment_files:
                 f.write(f"file '{sf}'\n")
 
+        video_raw = os.path.join(temp_dir, "video_raw.mp4")
         audio_path = audio_data.get("final_audio", "")
+
+        if audio_path and not os.path.exists(audio_path):
+            audio_dir = os.path.join("output", "audio")
+            if os.path.exists(audio_dir):
+                mp3s = [f for f in os.listdir(audio_dir) if f.endswith('.mp3')]
+                if mp3s:
+                    audio_path = os.path.join(audio_dir, max(mp3s, key=lambda x: os.path.getsize(os.path.join(audio_dir, x))))
+
         has_audio = audio_path and os.path.exists(audio_path)
 
+        concat_cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+        ]
+        if has_audio:
+            concat_cmd += ["-i", audio_path,
+                          "-c:v", "libx264", "-crf", str(self.crf), "-preset", self.preset,
+                          "-r", str(self.fps), "-c:a", "aac", "-b:a", "192k",
+                          "-ar", "44100", "-ac", "2", "-shortest", "-movflags", "+faststart"]
+        else:
+            concat_cmd += ["-c:v", "libx264", "-crf", str(self.crf), "-preset", self.preset,
+                          "-r", str(self.fps), "-movflags", "+faststart"]
+        concat_cmd.append(video_raw)
+
+        r = subprocess.run(concat_cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"    ❌ Concat error: {r.stderr[-200:]}")
+        if not os.path.exists(video_raw):
+            raise Exception("Video concat failed")
+
+        # Burn captions
+        print(f"  📝 Burning captions...")
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
-        
         safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
 
-        master_cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list
-        ]
-        if has_audio:
-            master_cmd += ["-i", audio_path]
+        r = subprocess.run([
+            "ffmpeg", "-y", "-i", video_raw,
+            "-vf", f"ass={safe_ass}",
+            "-c:v", "libx264", "-crf", str(self.crf), "-preset", self.preset,
+            "-r", str(self.fps), "-c:a", "copy", "-movflags", "+faststart",
+            output_path
+        ], capture_output=True, text=True)
 
-        master_cmd += [
-            "-vf", f"ass='{safe_ass}'",
-            "-c:v", "libx264", "-crf", str(self.crf), "-preset", "ultrafast",
-            "-r", str(self.fps),
-        ]
+        if r.returncode != 0 or not os.path.exists(output_path):
+            print(f"    ⚠️ Captions failed, saving without")
+            shutil.copy(video_raw, output_path)
 
-        if has_audio:
-            master_cmd += ["-c:a", "aac", "-b:a", "192k", "-shortest"]
-            
-        master_cmd += ["-movflags", "+faststart", output_path]
-
-        print("🚀 Compiling rendering pipes — burning assets & sub layers...")
-        subprocess.run(master_cmd, capture_output=True)
+        if os.path.exists(output_path):
+            size = os.path.getsize(output_path) / (1024*1024)
+            probe = subprocess.run([
+                "ffprobe", "-v", "error",
+                "-show_entries", "stream=width,height,r_frame_rate",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1", output_path
+            ], capture_output=True, text=True)
+            info = dict(l.split('=',1) for l in probe.stdout.splitlines() if '=' in l)
+            dur = float(info.get('duration', 0))
+            print(f"\n  ✅ FINAL: {output_path}")
+            print(f"  📐 {info.get('width')}x{info.get('height')} @ {info.get('r_frame_rate')}fps")
+            print(f"  ⏱️  {dur:.1f}s {'✅' if 40<=dur<=55 else '⚠️'} | {size:.1f}MB")
+        else:
+            raise Exception("Final video not created")
 
         shutil.rmtree(temp_dir, ignore_errors=True)
         return output_path
