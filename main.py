@@ -44,12 +44,22 @@ class YouTubeAutomationSystem:
         # Safe extraction logic to prevent KeyError: 'script'
         script_text = ""
         if isinstance(script_data, dict):
-            script_text = script_data.get('script') or script_data.get('script_text') or script_data.get('text') or ""
+            # FIX: ContentGenerator.generate_script() returns the key 'full_script',
+            # not 'script'/'script_text'/'text'. The old lookup never matched it,
+            # so the real AI-generated script was silently discarded every time
+            # and the generic fallback line was used instead.
+            script_text = (
+                script_data.get('full_script')
+                or script_data.get('script')
+                or script_data.get('script_text')
+                or script_data.get('text')
+                or ""
+            )
             if not script_text and 'segments' in script_data:
                 script_text = " ".join([seg.get('text', '') for seg in script_data['segments'] if 'text' in seg])
         elif isinstance(script_data, str):
             script_text = script_data
-            script_data = {'script': script_text, 'segments': []}
+            script_data = {'full_script': script_text, 'segments': []}
 
         if not script_text:
             script_text = f"Discover the shocking truth behind {topic}."
@@ -81,13 +91,23 @@ class YouTubeAutomationSystem:
         # 5. Generate Thumbnail Concept for review
         thumbnail_path = os.path.join(self.output_dir, "thumb_preview.jpg")
         self.thumbnail_gen.generate_thumbnail(topic, thumbnail_path)
-        
+
+        # 6. Generate the actual viral title + SEO description/tags
+        # FIX: these were written in ContentGenerator but never called from main.py,
+        # so every test video used the generic "The Truth About {topic}" title
+        # and a placeholder description with no real tags. Now we generate the
+        # real values so the testing-mode output reflects what would actually
+        # be uploaded later (no upload happens here, this is just preview data).
+        title = self.content_gen.generate_title(topic)
+        seo_data = self.content_gen.generate_seo(topic, script_text)
+
         return {
             "video_path": video_path,
             "thumbnail_path": thumbnail_path,
             "duration": audio_data['total_duration'],
-            "title": script_data.get('title', f'The Truth About {topic}'),
-            "description": script_data.get('description', '')
+            "title": title,
+            "description": seo_data['description'],
+            "tags": seo_data['tags']
         }
 
     async def run(self):
@@ -120,6 +140,8 @@ class YouTubeAutomationSystem:
                 print(f"   🖼️  Thumbnail preview: {video_data['thumbnail_path']}")
                 print(f"   ⏱️  Duration: {video_data['duration']:.1f}s")
                 print(f"   📝 Title: {video_data['title']}")
+                print(f"   📄 Description:\n{video_data['description']}")
+                print(f"   🏷️  Tags: {', '.join(video_data['tags'])}")
                 
                 if i < len(topics) - 1:
                     print(f"\n⏳ Waiting 10 seconds before next test video...")
