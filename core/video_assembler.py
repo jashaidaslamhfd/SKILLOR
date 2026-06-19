@@ -22,13 +22,23 @@ class VideoAssembler:
         assert self.width < self.height, f"❌ Portrait dimension validation check failed"
         print(f"  📐 Canvas Bounds: {self.width}x{self.height} @ {self.fps}fps | Target CRF: {self.crf}")
 
-    # ─── ASS Subtitles ────────────────────────────────────────────
+    # ─── ASS Subtitles Timing Fix ─────────────────────────────────
     def _seconds_to_ass(self, s: float) -> str:
-        h = int(s // 3600); m = int((s % 3600) // 60)
-        sc = int(s % 60); cs = int(round((s % 1) * 100))
+        """Converts float seconds to precise ASS timestamp format with safe millisecond rounding"""
+        h = int(s // 3600)
+        m = int((s % 3600) // 60)
+        sc = int(s % 60)
+        # FIX: Rounding fractions precisely up to 2 decimal places to avoid subtitle delay lag
+        cs = int(round((s % 1) * 100))
         if cs >= 100:
             sc += 1
             cs -= 100
+            if sc >= 60:
+                sc -= 60
+                m += 1
+                if m >= 60:
+                    m -= 60
+                    h += 1
         return f"{h}:{m:02d}:{sc:02d}.{cs:02d}"
 
     def _create_ass(self, word_timings: List[Dict], ass_path: str, font_size: int = 90):
@@ -62,7 +72,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
         with open(ass_path, 'w', encoding='utf-8') as f:
             f.write(header + "\n".join(lines) + "\n")
-        print(f"    📝 Subtitles Rendered: {len(lines)} active word nodes mapped.")
+        print(f"    📝 Subtitles Rendered: {len(lines)} word nodes successfully packed.")
 
     # ─── Fast Cuts from Footage ───────────────────────────────────
     def _fast_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
@@ -92,14 +102,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             zoom_factor = VIDEO_CONFIG.ZOOM_INTENSITY if hasattr(VIDEO_CONFIG, 'ZOOM_INTENSITY') else 1.25
             
-            # Safe directional focus logic mapping
             dirs_x = ["(iw-ow)/2", "0", "iw-ow"]
             dirs_y = ["(ih-oh)/2", "0", "ih-oh"]
             dx = random.choice(dirs_x)
             dy = random.choice(dirs_y)
 
-            # FIX: Single pass unified transformation filter chain preventing standard aspect crunching
-            # Ensures target frame sizing match constraints explicitly before calling internal zoom filters
+            # FIX: Scaling filter adjustments preventing system from collapsing landscape layouts into 9:16 portrait
             vf = (
                 f"scale=2*iw:-1,max_vfilters=1,"
                 f"crop={self.width}:{self.height},"
@@ -180,7 +188,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         temp_dir = tempfile.mkdtemp()
-        footage_dir = os.path.join("output", "footage")
+        
+        # FIX: Cross-platform directory resolver validation checking absolute maps
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if '__file__' in locals() else os.getcwd()
+        footage_dir = os.path.join(base_dir, "output", "footage")
+        if not os.path.exists(footage_dir):
+            footage_dir = os.path.join(os.getcwd(), "output", "footage")
 
         segment_files = []
         footage_idx = 0
@@ -205,6 +218,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     segment_files.append(out)
                     footage_idx += 1
                     continue
+            else:
+                print(f"⚠️ Clip missing or too small at path: {clip_file} | Generating visual fallback layer.")
 
             out = self._color_bg_segment(seg_type, duration, temp_dir, i)
             if out:
@@ -222,7 +237,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         audio_path = audio_data.get("final_audio", "")
         if audio_path and not os.path.exists(audio_path):
-            audio_dir = os.path.join("output", "audio")
+            audio_dir = os.path.join(base_dir, "output", "audio")
             if os.path.exists(audio_dir):
                 mp3s = [f for f in os.listdir(audio_dir) if f.endswith('.mp3')]
                 if mp3s:
@@ -233,7 +248,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
         
-        # Path escaping configurations for cross-platform safety
         safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
 
         master_cmd = [
