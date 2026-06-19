@@ -11,7 +11,9 @@ try:
 except ImportError:
     Groq = None
 
+# IMPORT ALL DYNAMIC CONFIGS AND REMOVE HARDCODED PROMPTS
 from config.settings import API_KEYS, NICHE_CONFIG, SEO_CONFIG
+from config import prompts as pr
 
 
 class ContentGenerator:
@@ -33,7 +35,7 @@ class ContentGenerator:
 
     def _generate(self, prompt: str, max_tokens: int = 600) -> str:
         msgs = [
-            {"role": "system", "content": "You are a viral short-form video script writer for USA/UK dark psychology and science mystery channels. Every section must be tightly focused on ONE topic. Create content optimized for 2026 YouTube Shorts algorithm."},
+            {"role": "system", "content": "You are a viral short-form video content strategist for USA/UK audiences. Your target is absolute uniqueness based strictly on the user topic. Never output intro/outro filler context."},
             {"role": "user", "content": prompt}
         ]
         if self.client:
@@ -45,13 +47,14 @@ class ContentGenerator:
                 return r.choices[0].message.content.strip()
             except Exception as e:
                 print(f"Groq SDK error: {e}")
+                
         import requests
         try:
             r = requests.post(f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json={"model": self.model, "messages": msgs,
-                      "temperature": 0.85, "max_tokens": max_tokens},
-                timeout=30)
+                               headers=self.headers,
+                               json={"model": self.model, "messages": msgs,
+                                     "temperature": 0.85, "max_tokens": max_tokens},
+                               timeout=30)
             data = r.json()
             return data['choices'][0]['message']['content'].strip() if 'choices' in data else ""
         except Exception as e:
@@ -60,81 +63,52 @@ class ContentGenerator:
 
     def generate_script(self, topic: str, angle: str) -> Dict:
         """
-        Video structure optimized for 2026 Shorts algorithm:
-        HOOK     0-3s   ~15 words  - instant pattern interrupt
-        PAUSE    0.35s  - breath
-        SUSPENSE 3-7s   ~12 words  - shocking twist
-        PAUSE    0.3s   - breath
-        STORY    7-40s  ~70 words  - science/truth, one mid-story breath
-        PAUSE    0.3s   - breath
-        CTR      40-45s ~12 words  - follow/subscribe CTA
-
-        ALL sections must be about the SAME topic: {topic}
+        Uses VIRAL_SCRIPT_GENERATOR from prompts.py to maintain 45-55 seconds strict duration flow.
         """
-        prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
+        # Dynamic prompt allocation from prompts.py
+        prompt = pr.VIRAL_SCRIPT_GENERATOR.format(topic=topic, angle=angle)
+        raw_script = self._generate(prompt, max_tokens=500)
+        
+        if not raw_script or len(raw_script.split()) < 100:
+            # Topic-specific solid high-retention fallback
+            topic_lower = topic.lower()
+            raw_script = (
+                f"What if I told you that {topic_lower} is hiding a dark truth that scientists just uncovered. "
+                f"Imagine walking into a room and realizing your mind has been quietly manipulated without your consent. "
+                f"But here's what they don't tell you... it is happening right now inside your subconscious brain. "
+                f"Picture this, your neural pathways are constantly receiving secret signals forcing you to react. "
+                f"This shocking mechanism completely overrides your logical thinking system which means you are not in control. "
+                f"Most people think they are safe but this psychological trigger is secretly being exploited by elite architects. "
+                f"Once you understand this forbidden loop... your perception of reality will be shattered forever. "
+                f"Comment if you experienced this and watch this loop twice because tomorrow we expose the dangerous group behind it."
+            )
 
-Every section must be about "{topic}" only. Do NOT drift to other topics.
-
-Write these 4 sections:
-
-HOOK: (15-18 words)
-A shocking curiosity question about "{topic}". 
-Example format: "What if I told you [topic thing]... because scientists just discovered something terrifying."
-End with "..."
-
-SUSPENSE: (10-12 words)
-A one-sentence shocking twist directly about "{topic}".
-End with "..."
-
-STORY: (65-70 words)
-Explain the real science/psychology behind "{topic}".
-Use "and", "but", "because", "which means" to connect sentences - NO full stops mid-story except ONE "..." naturally placed where narrator breathes.
-Loop back to hook theme at the end.
-
-CTR: (12-14 words)
-Urgent follow/subscribe CTA. Example: "Follow right now because tomorrow we reveal the dark truth."
-
-RULES:
-- Second person "you/your"  
-- USA/UK English only
-- NO hashtags NO emojis
-- Total 105-115 words across all 4 sections
-- 2026 optimized: instant hook, no fluff, high retention"""
-
-        raw = self._generate(prompt, max_tokens=450)
-
-        hook     = self._extract("HOOK", raw)
-        suspense = self._extract("SUSPENSE", raw)
-        story    = self._extract("STORY", raw)
-        ctr      = self._extract("CTR", raw)
-
-        # Topic-specific fallbacks
-        topic_lower = topic.lower()
-        if not hook:
-            hook = f"What if I told you {topic_lower} happens for a terrifying reason... because scientists just discovered the dark truth."
-        if not suspense:
-            suspense = f"And the terrifying truth about {topic_lower}... nobody is telling you."
-        if not story:
-            story = (f"The science behind {topic_lower} is more shocking than you realize and researchers have spent decades trying to understand exactly why it happens and what they found is that your brain is actually protecting you in the most bizarre way possible "
-                    f"but this same mechanism... can be exploited by the wrong people and once you understand this you will never look at {topic_lower} the same way again.")
-        if not ctr:
-            ctr = "Follow right now because tomorrow we reveal exactly how to use this to your advantage."
-
-        hook     = self._clean(hook)
-        suspense = self._clean(suspense)
-        story    = self._clean(story)
-        ctr      = self._clean(ctr)
-
-        # Build segments
-        wps = 145 / 60.0  # 2026: Faster pace for retention
+        raw_script = self._clean(raw_script)
+        
+        # Split into analytical blocks for the timeline assembly
+        words_list = raw_script.split()
+        total_w = len(words_list)
+        
+        # Dynamic calculation based on settings 145WPM conversation limits
+        wps = 2.6  
+        
         segments = []
+        # Breakdown script into structured sub-components natively mapped for rendering loops
+        h_end = int(total_w * 0.15)
+        s_end = h_end + int(total_w * 0.12)
+        st_end = s_end + int(total_w * 0.60)
+        
+        hook_text = " ".join(words_list[:h_end])
+        suspense_text = " ".join(words_list[h_end:s_end])
+        story_text = " ".join(words_list[s_end:st_end])
+        ctr_text = " ".join(words_list[st_end:])
+        
         t = 0.0
-
-        def seg(stype, text, is_pause=False):
+        def add_seg(stype, text, is_pause=False, pause_dur=0.15):
             nonlocal t
-            if not str(text).strip():
+            if not is_pause and not text.strip():
                 return
-            dur = float(text) if is_pause else round(len(text.split()) / wps, 2)
+            dur = pause_dur if is_pause else round(len(text.split()) / wps, 2)
             segments.append({
                 'type': stype,
                 'text': '' if is_pause else text.strip(),
@@ -144,137 +118,102 @@ RULES:
             })
             t += dur
 
-        seg('hook', hook)
-        seg('pause', '0.35', is_pause=True)
-        seg('suspense', suspense)
-        seg('pause', '0.3', is_pause=True)
+        add_seg('hook', hook_text)
+        add_seg('pause', '', is_pause=True, pause_dur=0.15)
+        add_seg('suspense', suspense_text)
+        add_seg('pause', '', is_pause=True, pause_dur=0.15)
+        
+        # Split story segments safely to prevent speech overlap drops
+        s_words = story_text.split()
+        mid = len(s_words) // 2
+        add_seg('story', " ".join(s_words[:mid]))
+        add_seg('pause', '', is_pause=True, pause_dur=0.15)
+        add_seg('story', " ".join(s_words[mid:]))
+        
+        add_seg('pause', '', is_pause=True, pause_dur=0.15)
+        add_seg('ctr', ctr_text)
 
-        # Story - split at "..." if present, otherwise split at midpoint
-        if '...' in story:
-            parts = story.split('...', 1)
-            seg('story', parts[0].strip() + '...')
-            seg('pause', '0.3', is_pause=True)
-            seg('story', parts[1].strip())
-        else:
-            sw = story.split()
-            mid = len(sw) // 2
-            seg('story', ' '.join(sw[:mid]))
-            seg('pause', '0.3', is_pause=True)
-            seg('story', ' '.join(sw[mid:]))
-
-        seg('pause', '0.3', is_pause=True)
-        seg('ctr', ctr)
-
-        full = ' '.join(s['text'] for s in segments if not s.get('is_pause'))
-        print(f"    📊 Topic: '{topic}' | {len(full.split())} words | ~{round(t,1)}s")
+        print(f"    📊 Script Synchronized: '{topic}' | {total_w} words | Dynamic Target: {round(t,1)}s")
 
         return {
-            'full_script': full,
+            'full_script': raw_script,
             'segments': segments,
-            'word_count': len(full.split()),
+            'word_count': total_w,
             'duration': round(t, 2),
-            'hook': hook, 'suspense': suspense,
-            'story': story, 'ctr': ctr
+            'hook': hook_text, 'suspense': suspense_text,
+            'story': story_text, 'ctr': ctr_text
         }
-
-    def _extract(self, label: str, text: str) -> str:
-        if not text:
-            return ""
-        pattern = rf'{label}:\s*(.+?)(?=\n\s*(?:HOOK|SUSPENSE|STORY|CTR):|$)'
-        m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        return m.group(1).strip() if m else ""
 
     def _clean(self, text: str) -> str:
         text = re.sub(r'#\w+', '', text)
-        # Keep ellipsis, remove other non-ASCII
-        text = re.sub(r'[^\x00-\x7F]', '', text)
+        text = re.sub(r'\[.*?\]', '', text)  # Removes text inside brackets [Hook], [Story] etc
+        text = re.sub(r'\(.*?\)', '', text)
+        text = re.sub(r'[^\x00-\x7F]', '', text) # Removes non-ASCII symbols
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
     def generate_title(self, topic: str) -> str:
-        """2026: EXACTLY 4 words + 1 emoji for maximum viral impact"""
-        prompt = f"""Write ONE viral YouTube Shorts title about: "{topic}"
-STRICT RULES (2026 algorithm optimized):
-- EXACTLY 4 words only (no more, no less)
-- 1 emoji at the end (choose from: 🤯 ⚠️ 🧠 🚫 ❌ 💀)
-- Max 60 characters
-- Shocking/Curiosity hook
-- USA/UK English
-- Power words: Dark, Hidden, Banned, Secret, Illegal, Truth
-- NO punctuation except the emoji
-
-Examples: 
-- "Your Brain Is Lying 🧠"
-- "This Is Illegal Now 🚫" 
-- "Dark Secret Revealed ⚠️"
-- "Truth They Hide 🤯"
-
-Return ONLY the title, nothing else."""
+        """2026: UNIQUE search-optimized script titles matching USA/UK algorithms"""
+        prompt = pr.VIRAL_TITLE_GENERATOR.format(topic=topic)
+        raw_titles = self._generate(prompt, max_tokens=100)
         
-        title = self._generate(prompt, max_tokens=30)
+        # Parse output down to extract the best option safely
+        lines = [l.strip() for l in raw_titles.split('\n') if l.strip()]
+        selected = lines[0] if lines else f"Dark Secret Of {topic}"
         
-        # Enforce 4 words + emoji
-        if title:
-            clean_title = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251]', '', title).strip()
-            words = clean_title.split()
+        # Strip prefixes like "1.", "-", "Title:"
+        selected = re.sub(r'^\d+[\s\.\)]+', '', selected)
+        selected = re.sub(r'^[-\s]+', '', selected)
+        selected = re.sub(r'(?i)title:\s*', '', selected)
+        
+        # Enforce structural integrity of 4 words + emoji rule dynamically
+        clean_words = [w for w in selected.split() if not any(c in w for c in ['🤯', '⚠️', '🧠', '🚫', '❌', '💀', '🔥'])]
+        
+        if len(clean_words) > 4:
+            clean_words = clean_words[:4]
+        elif len(clean_words) < 2:
+            clean_words = clean_words + ["Secret", "Truth", "Exposed"][:4-len(clean_words)]
             
-            if len(words) > 4:
-                clean_title = ' '.join(words[:4])
-            elif len(words) < 4:
-                power_words = ["Dark", "Hidden", "Secret", "Truth", "Shocking"]
-                while len(words) < 4:
-                    words.append(power_words[len(words) % len(power_words)])
-                clean_title = ' '.join(words[:4])
-            
-            emojis = ['🤯', '⚠️', '🧠', '🚫', '❌', '💀', '🔥']
-            title = f"{clean_title} {random.choice(emojis)}"
-        else:
-            title = f"Dark Truth About {topic.title()} 🤯"
+        final_clean = " ".join(clean_words[:4])
+        emojis = ['🤯', '⚠️', '🧠', '🚫', '❌', '💀']
         
-        return title.strip()[:60]
+        return f"{final_clean} {random.choice(emojis)}"
 
     def generate_seo(self, topic: str, script: str) -> Dict:
-        """2026 SEO optimized for YouTube Shorts algorithm"""
-        tags = [
-            "psychology shorts",
-            "dark psychology",
-            "brain science",
-            "mind control",
-            "shocking facts",
-            "human behavior",
-            "neuroscience",
-            "psychology tricks",
-            "mental health",
-            "viral shorts",
-            topic.replace(" ", ""),
-            "2026 trending"
-        ]
+        """Dynamic generator syncing description structure directly with AI prompts"""
+        # Formulate keywords out of topic organically to prevent keyword stuffing penalties
+        kw_base = f"psychology, {topic}, brain, 2026, viral shorts, dark truth, neuroscience, human behavior"
         
-        description = (
-            f"🤯 {topic.upper()} — The shocking truth nobody talks about.\n\n"
-            f"Science reveals what really happens when {topic}. "
-            f"Your brain will never be the same after this.\n\n"
-            f"⏱️ 0:00 Hook\n"
-            f"⏱️ 0:03 The Dark Truth\n" 
-            f"⏱️ 0:15 Science Explained\n"
-            f"⏱️ 0:40 The Solution\n\n"
-            f"🔔 Subscribe for daily mind-blowing psychology facts!\n"
-            f"💬 Comment 'YES' if this shocked you!\n"
-            f"👇 Save this for later!\n\n"
-            f"#shorts #psychology #darkpsychology #mindcontrol #brainhacks "
-            f"#{topic.replace(' ','')} #viral #trending #2026 #fyp"
-        )
+        desc_prompt = pr.SEO_DESCRIPTION_GENERATOR.format(topic=topic, keywords=kw_base)
+        description = self._generate(desc_prompt, max_tokens=250)
         
+        tags_prompt = pr.TAGS_GENERATOR.format(topic=topic, keywords=kw_base)
+        tags_raw = self._generate(tags_prompt, max_tokens=150)
+        
+        # Cleanup response tags into clean python lists
+        tags = [t.strip().lower() for t in tags_raw.replace('\n', ',').split(',') if t.strip()]
+        if not tags or len(tags) < 5:
+            tags = ["dark psychology", "shorts facts", "2026 science mystery", topic.lower().replace(" ", "")]
+            
+        if not description or len(description.split()) < 50:
+            description = (
+                f"🤯 {topic.upper()} — This hidden psychology insight changes everything.\n\n"
+                f"Today we break down the shocking facts behind {topic} and its dark reality.\n\n"
+                f"⏱️ Timestamps:\n0:00 Hook\n0:06 Suspense\n0:11 The Dark Truth\n0:48 The Loop\n\n"
+                f"🔔 Subscribe to track hidden psychology parameters daily!\n"
+                f"#shorts #darkpsychology #neuroscience #mindhacks #{topic.replace(' ', '')}"
+            )
+
         return {
-            'description': description[:500],
-            'tags': tags[:SEO_CONFIG.TAGS_COUNT],
-            'keywords': f"psychology,{topic},brain,2026,viral,shorts,dark psychology"
+            'description': description.strip(),
+            'tags': tags[:14],  # Max 14 tags strict constraint
+            'keywords': kw_base
         }
 
     def generate_thumbnail_words(self, topic: str) -> List[str]:
-        """Generate 3 big words for thumbnail"""
-        words = topic.upper().split()[:2]
-        fillers = ["TRUTH", "HIDDEN", "SECRET", "DARK", "BANNED"]
+        """Reads rules directly from standard thumbnail structure layout"""
+        words = [w.replace(',', '').replace('.', '').upper() for w in topic.split() if len(w) <= 8][:2]
+        fillers = ["SHOCKING", "HIDDEN", "SECRET", "DARK", "FORBIDDEN"]
         while len(words) < 3:
             words.append(fillers[len(words) % len(fillers)])
         return words[:3]
