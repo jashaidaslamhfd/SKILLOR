@@ -3,6 +3,7 @@ name: Auto Post Videos
 on:
   schedule:
     - cron: '0 14 * * *'
+    - cron: '0 18 * * *'
     - cron: '0 22 * * *'
   workflow_dispatch:
 
@@ -56,14 +57,19 @@ jobs:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: python main.py
 
-      - name: Upload output as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-videos-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            output/*.mp4
-            output/*.jpg
-            output/*.png
-            output/audio/*.mp3
-          retention-days: 1
-          if-no-files-found: warn
+      # FIX: Artifact upload disabled — GitHub's free artifact storage quota
+      # was hit, causing this step to fail (shown as a red X) even though
+      # the actual video generation + uploads succeeded. Videos already go
+      # to YouTube/Facebook/Instagram directly, so a GitHub backup copy
+      # isn't required. Re-enable below if you want backups and have quota.
+      # - name: Upload output as artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: generated-videos-${{ github.run_id }}-${{ github.run_attempt }}
+      #     path: |
+      #       output/*.mp4
+      #       output/*.jpg
+      #       output/*.png
+      #       output/audio/*.mp3
+      #     retention-days: 1
+      #     if-no-files-found: warn
