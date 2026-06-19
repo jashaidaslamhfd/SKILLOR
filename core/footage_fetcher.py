@@ -1,9 +1,8 @@
-"""Footage Fetcher — Varied clips per video, Dark Psychology queries"""
+"""Footage Fetcher — Semantic Query Mapping + Cross-Run De-duplication"""
 
 import requests
 import os
 import random
-import hashlib
 from typing import List, Dict
 from config.settings import API_KEYS
 
@@ -15,8 +14,7 @@ class FootageFetcher:
         self.pexels_base = "https://api.pexels.com/videos"
         self.pixabay_base = "https://pixabay.com/api/videos"
 
-        # FIX 3: Dark psychology themed clip pools
-        # Multiple query variations taake har video mein different clips aayein
+        # Dark psychology themed clip pools — Expanded variant seeds
         self.dark_queries = {
             'hook': [
                 "dark shadow person walking alone night",
@@ -41,7 +39,6 @@ class FootageFetcher:
                 "person thinking alone deep thought",
                 "data visualization network connections",
                 "ancient manuscript secret symbols",
-                "scientist researcher laboratory dark",
             ],
             'ctr': [
                 "person shocked surprised revelation",
@@ -53,7 +50,7 @@ class FootageFetcher:
         }
 
     def _get_used_clips_log(self, output_dir: str) -> set:
-        """Track which clip URLs were used before — avoid repeats"""
+        """Track which clip IDs were used before across workflows"""
         log_path = os.path.join(output_dir, ".used_clips.txt")
         used = set()
         if os.path.exists(log_path):
@@ -61,15 +58,16 @@ class FootageFetcher:
                 used = set(line.strip() for line in f if line.strip())
         return used
 
-    def _save_used_clip(self, output_dir: str, url: str):
+    def _save_used_clip(self, output_dir: str, clip_id: str):
         log_path = os.path.join(output_dir, ".used_clips.txt")
-        # Keep only last 200 entries
         existing = []
         if os.path.exists(log_path):
             with open(log_path, 'r') as f:
                 existing = [l.strip() for l in f if l.strip()]
-        existing.append(url)
-        existing = existing[-200:]
+        if clip_id not in existing:
+            existing.append(clip_id)
+        # Keep only the last 300 entries to prevent tracking overflow bloating
+        existing = existing[-300:]
         with open(log_path, 'w') as f:
             f.write('\n'.join(existing))
 
@@ -77,8 +75,7 @@ class FootageFetcher:
         if not self.pexels_key:
             return []
         headers = {"Authorization": self.pexels_key}
-        # FIX 3: Random page offset — different results each run
-        page = random.randint(1, 3)
+        page = random.randint(1, 4)
         params = {
             "query": query,
             "per_page": per_page,
@@ -87,11 +84,14 @@ class FootageFetcher:
             "size": "large"
         }
         try:
-            response = requests.get(f"{self.pexels_base}/search", headers=headers, params=params, timeout=10)
+            response = requests.get(f"{self.pexels_base}/search", headers=headers, params=params, timeout=12)
+            if response.status_code != 200:
+                return []
             data = response.json()
             videos = []
             for video in data.get('videos', []):
                 best_file = None
+                # Filter out landscape formats or fetch HD definitions cleanly
                 for file in video.get('video_files', []):
                     if file.get('height', 0) >= 1280:
                         best_file = file
@@ -103,11 +103,11 @@ class FootageFetcher:
                         'url': best_file['link'],
                         'duration': video.get('duration', 15),
                         'source': 'pexels',
-                        'id': str(video.get('id', ''))
+                        'id': f"pexels_{video.get('id', '')}"
                     })
             return videos
         except Exception as e:
-            print(f"    Pexels error: {e}")
+            print(f"    ⚠️ Pexels retrieval bypass: {e}")
             return []
 
     def search_pixabay(self, query: str, per_page: int = 15) -> List[Dict]:
@@ -123,112 +123,137 @@ class FootageFetcher:
             "video_type": "film"
         }
         try:
-            response = requests.get(f"{self.pixabay_base}/", params=params, timeout=10)
+            response = requests.get(f"{self.pixabay_base}/", params=params, timeout=12)
+            if response.status_code != 200:
+                return []
             data = response.json()
             videos = []
             for hit in data.get('hits', []):
                 url = hit.get('videos', {}).get('large', {}).get('url', '')
+                if not url:
+                    url = hit.get('videos', {}).get('medium', {}).get('url', '')
                 if url:
                     videos.append({
                         'url': url,
                         'duration': hit.get('duration', 15),
                         'source': 'pixabay',
-                        'id': str(hit.get('id', ''))
+                        'id': f"pixabay_{hit.get('id', '')}"
                     })
             return videos
         except Exception as e:
-            print(f"    Pixabay error: {e}")
+            print(f"    ⚠️ Pixabay retrieval bypass: {e}")
             return []
 
     def fetch_footage_for_script(self, script_segments: List[Dict], topic: str) -> List[Dict]:
-        """
-        FIX 3: Each segment gets a DIFFERENT clip query + random page
-        so clips vary every video run.
-        """
+        """Maps out structural variations checking persistence logs to maintain variety"""
         clips = []
-        used_ids = set()  # Within this video, no duplicate clips
+        used_within_video = set()
+        
+        # Ensure context output directory mapping safely mirrors setup bounds
+        base_output_dir = "output"
+        cross_run_used = self._get_used_clips_log(base_output_dir)
+
+        # Inject topic keywords directly into search variations matrix safely
+        topic_keywords = [w.lower() for w in topic.split() if len(w) > 3]
 
         for i, segment in enumerate(script_segments):
             seg_type = segment.get('type', 'story')
-
-            # FIX 3: Pick a random query from the pool for this seg type
             query_pool = self.dark_queries.get(seg_type, self.dark_queries['story'])
-            # Use segment index to rotate through pool (not pure random — ensures variety)
-            query = query_pool[i % len(query_pool)]
+            
+            # Form dynamic semantic combinations based on raw trending contextual queries
+            base_query = query_pool[i % len(query_pool)]
+            if topic_keywords and random.random() > 0.4:
+                query = f"{random.choice(topic_keywords)} {base_query}"
+                if len(query) > 50: 
+                    query = base_query
+            else:
+                query = base_query
 
-            print(f"    🎬 Seg {i} ({seg_type}): searching '{query}'")
+            print(f"    🎬 Segment {i} ({seg_type}): Resolving engine query -> '{query}'")
 
-            # Try Pexels first, then Pixabay
             videos = self.search_pexels(query, per_page=15)
             if not videos:
                 videos = self.search_pixabay(query, per_page=15)
 
-            # FIX 3: Filter out clips already used in this video
-            fresh = [v for v in videos if v.get('id') not in used_ids]
+            # De-duplication filtration check (Current compilation run vs History records)
+            fresh = [v for v in videos if v['id'] not in used_within_video and v['id'] not in cross_run_used]
             if not fresh:
-                fresh = videos  # Fallback if all used
+                fresh = [v for v in videos if v['id'] not in used_within_video]
+            if not fresh:
+                fresh = videos  # Ultimate structural fallback
 
             if fresh:
-                # FIX 3: Shuffle and pick — different each time
                 random.shuffle(fresh)
-                video = fresh[0]
-                used_ids.add(video.get('id', ''))
+                selected_video = fresh[0]
+                
+                used_within_video.add(selected_video['id'])
+                self._save_used_clip(base_output_dir, selected_video['id'])
 
                 clips.append({
-                    'url': video['url'],
+                    'url': selected_video['url'],
                     'start_time': segment.get('start', 0),
                     'duration': segment.get('duration', 5),
                     'segment_type': seg_type,
-                    'source': video['source'],
-                    'id': video.get('id', '')
+                    'source': selected_video['source'],
+                    'id': selected_video['id']
                 })
-                print(f"    ✅ Found clip from {video['source']}")
+                print(f"      ✅ Selected Asset ID: {selected_video['id']} [{selected_video['source']}]")
             else:
                 clips.append({
                     'url': None,
                     'start_time': segment.get('start', 0),
                     'duration': segment.get('duration', 5),
                     'segment_type': seg_type,
-                    'source': 'generated'
+                    'source': 'fallback'
                 })
-                print(f"    ⚠️ No clip found, using color bg")
+                print(f"      ⚠️ Zero inventory found for query framework. Enforcing backend color fallback.")
 
         return clips
 
     def download_footage(self, clips: List[Dict], output_dir: str) -> List[str]:
+        """Downloads assets while preserving strict indexed structural indices for assembler alignment"""
         os.makedirs(output_dir, exist_ok=True)
 
-        # FIX 3: Clear old clips before downloading new ones
-        # Taake purane clips reuse na hon
-        for f in os.listdir(output_dir):
-            if f.startswith('clip_') and f.endswith('.mp4'):
-                try:
-                    os.remove(os.path.join(output_dir, f))
-                except:
-                    pass
+        # Clean deployment directory layout bounds
+        if os.path.exists(output_dir):
+            for f in os.listdir(output_dir):
+                if f.startswith('clip_') and f.endswith('.mp4'):
+                    try:
+                        os.remove(os.path.join(output_dir, f))
+                    except:
+                        pass
 
-        downloaded = []
+        downloaded_paths = []
+        
+        # FIX: Loop mapping tracks actual output indexes instead of raw compress array appends
         for i, clip in enumerate(clips):
             if not clip.get('url'):
-                print(f"  ⚠️ Clip {i}: no URL, using color bg")
+                print(f"    ⚠️ Asset Index {i}: Flagged as Null URL stream. Initializing dynamic generator canvas pipeline context.")
                 continue
 
-            filepath = os.path.join(output_dir, f"clip_{i}.mp4")
+            target_filename = f"clip_{i}.mp4"
+            filepath = os.path.join(output_dir, target_filename)
+            
             try:
-                print(f"  ⬇️ Clip {i} ({clip['source']})...")
-                response = requests.get(clip['url'], stream=True, timeout=30)
+                print(f"    📥 Fetching Stream Asset [{i}] -> Source: {clip['source']}...")
+                response = requests.get(clip['url'], stream=True, timeout=35)
                 response.raise_for_status()
+                
                 with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=65536):
-                        f.write(chunk)
+                    for chunk in response.iter_content(chunk_size=131072): # Balanced buffer chunks for pipeline
+                        if chunk:
+                            f.write(chunk)
 
-                if os.path.getsize(filepath) > 10000:
-                    downloaded.append(filepath)
-                    print(f"  ✅ Clip {i}: {os.path.getsize(filepath)//1024}KB")
+                if os.path.exists(filepath) and os.path.getsize(filepath) > 15000:
+                    downloaded_paths.append(filepath)
+                    print(f"      💎 Asset {i} successfully stored -> {os.path.getsize(filepath) // 1024} KB")
                 else:
-                    os.remove(filepath)
-                    print(f"  ⚠️ Clip {i}: too small")
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                    print(f"      ⚠️ Corrupt tracking payload signature on Asset {i}. Cleaned from local space boundaries.")
             except Exception as e:
-                print(f"  ❌ Clip {i}: {e}")
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                print(f"      ❌ Network processing timeout on tracking target asset {i}: {e}")
 
-        return downloaded
+        return downloaded_paths
