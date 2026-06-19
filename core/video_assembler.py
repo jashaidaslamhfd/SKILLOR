@@ -1,4 +1,4 @@
-"""Video Assembler — Fast Cuts + Aggressive Zoom + 9:16 Portrait Optimized"""
+"""Video Assembler — Fast Cuts, Safe Zoompan scaling, and 9:16 Center-Locked ASS Rendering"""
 
 import os
 import subprocess
@@ -19,13 +19,16 @@ class VideoAssembler:
         self.preset = VIDEO_CONFIG.PRESET  # slow
         self.bitrate = VIDEO_CONFIG.BITRATE
 
-        assert self.width < self.height, f"❌ Portrait check failed"
-        print(f"  📐 {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
+        assert self.width < self.height, f"❌ Portrait dimension validation check failed"
+        print(f"  📐 Canvas Bounds: {self.width}x{self.height} @ {self.fps}fps | Target CRF: {self.crf}")
 
     # ─── ASS Subtitles ────────────────────────────────────────────
     def _seconds_to_ass(self, s: float) -> str:
         h = int(s // 3600); m = int((s % 3600) // 60)
-        sc = int(s % 60); cs = int((s % 1) * 100)
+        sc = int(s % 60); cs = int(round((s % 1) * 100))
+        if cs >= 100:
+            sc += 1
+            cs -= 100
         return f"{h}:{m:02d}:{sc:02d}.{cs:02d}"
 
     def _create_ass(self, word_timings: List[Dict], ass_path: str, font_size: int = 90):
@@ -48,13 +51,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for idx, wt in enumerate(word_timings):
             word = str(wt.get('word', '')).strip()
             if word:
+                # Alternating high contrast structural styles
                 style = "White" if idx % 2 == 0 else "Red"
-                lines.append(f"Dialogue: 0,{self._seconds_to_ass(wt['start'])},{self._seconds_to_ass(wt['end'])},{style},,0,0,0,,{word.upper()}")
+                start_str = self._seconds_to_ass(wt['start'])
+                end_str = self._seconds_to_ass(wt['end'])
+                lines.append(f"Dialogue: 0,{start_str},{end_str},{style},,0,0,0,,{word.upper()}")
+        
         if not lines:
             lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,White,,0,0,0,, ")
+            
         with open(ass_path, 'w', encoding='utf-8') as f:
             f.write(header + "\n".join(lines) + "\n")
-        print(f"    📝 ASS Generated: {len(lines)} words | size:{font_size}px")
+        print(f"    📝 Subtitles Rendered: {len(lines)} active word nodes mapped.")
 
     # ─── Fast Cuts from Footage ───────────────────────────────────
     def _fast_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
@@ -71,11 +79,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         current = 0.0
         cut_idx = 0
 
-        # Adjust interval from structural system requirements
         interval_min = VIDEO_CONFIG.FAST_CUT_INTERVAL if hasattr(VIDEO_CONFIG, 'FAST_CUT_INTERVAL') else 0.8
         
         while current < total_dur:
-            cut_len = min(random.uniform(interval_min, interval_min + 0.6), total_dur - current)
+            cut_len = min(random.uniform(interval_min, interval_min + 0.5), total_dur - current)
             if cut_len < 0.3:
                 break
 
@@ -83,18 +90,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             max_start = max(0.0, src_dur - cut_len - 0.5)
             ss = random.uniform(0, max_start)
 
-            # High intensity tracking setups
             zoom_factor = VIDEO_CONFIG.ZOOM_INTENSITY if hasattr(VIDEO_CONFIG, 'ZOOM_INTENSITY') else 1.25
-            dirs_x = [f"iw/2-(iw/zoom/2)", "0", f"iw-(iw/zoom)"]
-            dirs_y = [f"ih/2-(ih/zoom/2)", "0", f"ih-(ih/zoom)"]
+            
+            # Safe directional focus logic mapping
+            dirs_x = ["(iw-ow)/2", "0", "iw-ow"]
+            dirs_y = ["(ih-oh)/2", "0", "ih-oh"]
             dx = random.choice(dirs_x)
             dy = random.choice(dirs_y)
 
-            # Unified single-pass stream processing mapping to ensure resolution safety bounds
+            # FIX: Single pass unified transformation filter chain preventing standard aspect crunching
+            # Ensures target frame sizing match constraints explicitly before calling internal zoom filters
             vf = (
-                f"scale={self.width*2}:{self.height*2}:force_original_aspect_ratio=increase,"
-                f"crop={self.width*2}:{self.height*2},"
-                f"zoompan=z='min(zoom+0.015,{zoom_factor})':d={int(cut_len*self.fps)}:x='{dx}':y='{dy}':s={self.width}x{self.height},"
+                f"scale=2*iw:-1,max_vfilters=1,"
+                f"crop={self.width}:{self.height},"
+                f"zoompan=z='min(zoom+0.006,{zoom_factor})':d={int(cut_len*self.fps)}:x='{dx}':y='{dy}':s={self.width}x{self.height},"
                 f"setsar=1"
             )
 
@@ -138,7 +147,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         zoom_factor = VIDEO_CONFIG.ZOOM_INTENSITY if hasattr(VIDEO_CONFIG, 'ZOOM_INTENSITY') else 1.25
         vf = (
             f"format=yuv420p,"
-            f"zoompan=z='min(zoom+0.008,{zoom_factor})':d={int(duration*self.fps)}:s={self.width}x{self.height},"
+            f"zoompan=z='min(zoom+0.003,{zoom_factor})':d={int(duration*self.fps)}:x='(iw-ow)/2':y='(ih-oh)/2':s={self.width}x{self.height},"
             f"setsar=1"
         )
         out = os.path.join(temp_dir, f"seg_color_{idx}.mp4")
@@ -157,9 +166,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                      output_path: str) -> str:
 
         total_audio = audio_data.get('total_duration', 0)
-        print(f"\n🎬 VideoAssembler Deployment | Target Duration: {total_audio:.1f}s")
+        print(f"\n🎬 Assembler Execution | Target Render Time: {total_audio:.2f}s")
 
-        # Temporal duration mapping alignments
         if total_audio > 0 and script_segments:
             non_pause_dur = sum(s.get('duration', 0) for s in script_segments if not s.get('is_pause'))
             pause_dur = sum(s.get('duration', 0) for s in script_segments if s.get('is_pause'))
@@ -207,15 +215,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise Exception("Processing Exception: Zero compilation assets produced.")
 
-        # Concat base segments setup
         concat_list = os.path.join(temp_dir, "concat.txt")
         with open(concat_list, 'w') as f:
             for sf in segment_files:
                 f.write(f"file '{sf}'\n")
 
-        video_raw = os.path.join(temp_dir, "video_raw.mp4")
         audio_path = audio_data.get("final_audio", "")
-
         if audio_path and not os.path.exists(audio_path):
             audio_dir = os.path.join("output", "audio")
             if os.path.exists(audio_dir):
@@ -225,21 +230,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         has_audio = audio_path and os.path.exists(audio_path)
 
-        # Single master evaluation logic pass with subtitles injected natively
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
+        
+        # Path escaping configurations for cross-platform safety
         safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
 
-        # Master Pipeline Engine Command
         master_cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list
         ]
         if has_audio:
             master_cmd += ["-i", audio_path]
 
-        # Combine audio mixing, fast-cuts streams alignment and subtitle overlays in a single filter pass
+        # Burning multi-layered elements natively inside a single composite thread pass
         master_cmd += [
-            "-vf", f"ass={safe_ass}",
+            "-vf", f"ass='{safe_ass}'",
             "-c:v", "libx264", "-crf", str(self.crf), "-preset", self.preset,
             "-r", str(self.fps),
         ]
@@ -249,12 +254,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
         master_cmd += ["-movflags", "+faststart", output_path]
 
-        print("🚀 Compiling engine: Merging assets and burning text layers...")
+        print("🚀 Compiling rendering pipes — processing audio matrix overrides & burn-in filters...")
         r = subprocess.run(master_cmd, capture_output=True, text=True)
         
         if r.returncode != 0 or not os.path.exists(output_path):
-            print(f"❌ Master execution failed. Falling back to simple merge parameters.")
-            # Critical fallback handling structure
+            print(f"⚠️ Master layer composition failed. Reverting to safe baseline processing pass.")
             fallback_cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list]
             if has_audio:
                 fallback_cmd += ["-i", audio_path, "-c:a", "aac", "-shortest"]
@@ -263,9 +267,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         if os.path.exists(output_path):
             size = os.path.getsize(output_path) / (1024 * 1024)
-            print(f"\n✅ SYSTEM SUCCESS: {output_path} | Size: {size:.2f} MB")
+            print(f"✅ COMPILATION SUCCESS: {output_path} | Size: {size:.2f} MB")
         else:
-            raise Exception("Fatal Pipeline Failure: Terminal artifact missing.")
+            raise Exception("Fatal Pipeline Failure: Targeted deployment video artifact is dead/missing.")
 
         shutil.rmtree(temp_dir, ignore_errors=True)
         return output_path
