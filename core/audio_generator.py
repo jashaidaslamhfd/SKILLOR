@@ -131,28 +131,47 @@ class AudioGenerator:
             current += dur
         return timings
 
-    async def _async_tts(self, text: str, path: str):
+    async def _async_tts(self, text: str, path: str, capture_boundaries: bool = False) -> list:
         import edge_tts
         comm = edge_tts.Communicate(
             text, voice=self.voice,
             rate=self.rate, volume=self.volume, pitch=self.pitch
         )
-        # FIX: hard 60s timeout — edge-tts has no built-in timeout and can
-        # hang indefinitely on GitHub Actions runners if Microsoft's TTS
-        # endpoint is slow/throttled, stalling the whole pipeline.
-        await asyncio.wait_for(comm.save(path), timeout=60)
+        boundaries = []
+        if capture_boundaries:
+            # FIX: edge-tts emits real WordBoundary events with exact
+            # offsets — using these instead of estimating from character
+            # length is what fixes captions drifting ahead of/behind the
+            # actual spoken audio ("captions faster than audio").
+            with open(path, "wb") as f:
+                async def _run():
+                    async for chunk in comm.stream():
+                        if chunk["type"] == "audio":
+                            f.write(chunk["data"])
+                        elif chunk["type"] == "WordBoundary":
+                            boundaries.append({
+                                "word": chunk["text"],
+                                "start": chunk["offset"] / 10_000_000,  # 100ns units -> seconds
+                                "end": (chunk["offset"] + chunk["duration"]) / 10_000_000,
+                            })
+                await asyncio.wait_for(_run(), timeout=60)
+        else:
+            await asyncio.wait_for(comm.save(path), timeout=60)
+        return boundaries
 
-    def _generate_speech(self, text: str, path: str) -> float:
+    def _generate_speech(self, text: str, path: str) -> tuple:
         # FIX: retry up to 3 times with timeout, instead of hanging forever
-        # on a single bad attempt.
+        # on a single bad attempt. Now also returns real word-boundary
+        # timestamps captured directly from edge-tts.
         last_error = None
+        boundaries = []
         for attempt in range(1, 4):
             try:
                 try:
-                    asyncio.run(self._async_tts(text, path))
+                    boundaries = asyncio.run(self._async_tts(text, path, capture_boundaries=True))
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
-                    loop.run_until_complete(self._async_tts(text, path))
+                    boundaries = loop.run_until_complete(self._async_tts(text, path, capture_boundaries=True))
                     loop.close()
                 if os.path.exists(path) and os.path.getsize(path) > 0:
                     break
@@ -166,7 +185,7 @@ class AudioGenerator:
             raise Exception(f"❌ TTS failed after 3 attempts: {last_error}")
 
         if not os.path.exists(path):
-            return 0.0
+            return 0.0, []
 
         # Upsample to 44.1kHz stereo 192k
         hq = path.replace('.mp3', '_hq.mp3')
@@ -178,7 +197,7 @@ class AudioGenerator:
         if os.path.exists(hq):
             os.replace(hq, path)
 
-        return self._get_audio_duration(path)
+        return self._get_audio_duration(path), boundaries
 
     def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
         os.makedirs(output_dir, exist_ok=True)
@@ -192,18 +211,24 @@ class AudioGenerator:
         print(f"    📝 Full speech: {len(full_text.split())} words")
 
         speech_path = os.path.join(output_dir, "speech_full.mp3")
-        speech_dur = self._generate_speech(full_text, speech_path)
-        print(f"    🎙️ Speech duration: {speech_dur:.1f}s")
+        # FIX: now captures real per-word timestamps from edge-tts
+        # (WordBoundary events) instead of estimating them afterward from
+        # character length. This is what fixes captions running ahead of
+        # or behind the actual spoken audio.
+        speech_dur, word_boundaries = self._generate_speech(full_text, speech_path)
+        print(f"    🎙️ Speech duration: {speech_dur:.1f}s | {len(word_boundaries)} real word timestamps")
 
-        # Words per second in actual generated audio
         words = full_text.split()
+        # Fallback wps only used if edge-tts didn't return boundaries for some reason
         wps = speech_dur / len(words) if words else 0.3
+        use_real_boundaries = len(word_boundaries) >= max(1, len(words) - 2)
 
         # Step 2: Slice speech + insert breath pauses
         audio_files = []
         all_timings = []
         current_time = 0.0
         word_offset = 0.0  # seconds into speech_full
+        boundary_idx = 0
 
         for i, seg in enumerate(script_segments):
 
@@ -221,13 +246,28 @@ class AudioGenerator:
                     continue
 
                 seg_word_count = len(seg_text.split())
-                seg_dur = seg_word_count * wps
+
+                if use_real_boundaries:
+                    # Use actual edge-tts timestamps for this segment's words
+                    seg_boundaries = word_boundaries[boundary_idx:boundary_idx + seg_word_count]
+                    boundary_idx += seg_word_count
+                    if seg_boundaries:
+                        seg_start = seg_boundaries[0]['start']
+                        seg_end = seg_boundaries[-1]['end']
+                        seg_dur = max(0.1, seg_end - seg_start)
+                    else:
+                        seg_dur = seg_word_count * wps
+                        seg_start = word_offset
+                else:
+                    seg_dur = seg_word_count * wps
+                    seg_start = word_offset
+
                 chunk_path = os.path.join(output_dir, f"chunk_{i}.mp3")
 
                 # Trim exact slice from full speech
                 subprocess.run([
                     'ffmpeg', '-y', '-i', speech_path,
-                    '-ss', str(word_offset),
+                    '-ss', str(seg_start),
                     '-t', str(seg_dur),
                     '-ar', str(self.sample_rate),
                     '-ac', str(self.channels),
@@ -239,8 +279,23 @@ class AudioGenerator:
                 if os.path.exists(chunk_path):
                     actual_dur = self._get_audio_duration(chunk_path)
                     audio_files.append(chunk_path)
-                    timings = self._generate_word_timings(chunk_path, seg_text, current_time)
-                    all_timings.extend(timings)
+
+                    if use_real_boundaries and seg_boundaries:
+                        # Re-anchor each word's timestamp to current_time
+                        # (position in the final assembled track, which
+                        # includes breath pauses inserted between segments)
+                        shift = current_time - seg_start
+                        for wb in seg_boundaries:
+                            all_timings.append({
+                                'word': wb['word'].strip('.,!?;:"()[]{}\'').strip(),
+                                'start': round(wb['start'] + shift, 3),
+                                'end': round(wb['end'] + shift, 3),
+                                'duration': round(wb['end'] - wb['start'], 3)
+                            })
+                    else:
+                        timings = self._generate_word_timings(chunk_path, seg_text, current_time)
+                        all_timings.extend(timings)
+
                     current_time += actual_dur
                     word_offset += seg_dur
 
@@ -280,4 +335,4 @@ class AudioGenerator:
             'segments': audio_files,
             'word_timings': all_timings,
             'total_duration': total_dur
-            }
+    }
