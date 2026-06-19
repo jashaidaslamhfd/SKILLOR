@@ -96,8 +96,11 @@ class YouTubeAutomationSystem:
         )
         
         # 5. Generate Thumbnail Concept for review
+        # FIX: generate_thumbnail() signature is (words, topic, output_path) — it needs
+        # the 3 thumbnail words too, not just topic + path.
         thumbnail_path = os.path.join(self.output_dir, "thumb_preview.jpg")
-        self.thumbnail_gen.generate_thumbnail(topic, thumbnail_path)
+        thumb_words = self.content_gen.generate_thumbnail_words(topic)
+        self.thumbnail_gen.generate_thumbnail(thumb_words, topic, thumbnail_path)
 
         # 6. Generate the actual viral title + SEO description/tags
         # FIX: these were written in ContentGenerator but never called from main.py,
