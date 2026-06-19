@@ -12,7 +12,7 @@ class AudioGenerator:
     def __init__(self):
         # Dark psychology voice - deep, mysterious, cinematic feel for USA/UK audience
         self.voice = "en-US-GuyNeural"   
-        self.rate = "-12% "               # Slower = more dramatic
+        self.rate = "-12%"               # FIX: Removed the trailing space '-12% ' -> '-12%'
         self.pitch = "-3Hz"              # Lower = darker feel
         self.volume = "+10%"
         self.sample_rate = 44100
@@ -34,11 +34,9 @@ class AudioGenerator:
 
     def _add_bg_music_and_fan(self, voice_path: str, mixed_path: str, duration: float):
         """Simulates background audio overlay pass safely via FFmpeg complex filters"""
-        # Fallback dummy file move if background tracks are missing
         if not os.path.exists(voice_path):
             return
         
-        # Simple volume normalization pass so it doesn't clip or distort
         cmd = [
             "ffmpeg", "-y", "-i", voice_path,
             "-filter_complex", "[0:a]volume=1.3[outa]",
@@ -49,7 +47,6 @@ class AudioGenerator:
 
     async def generate_audio_with_timings(self, script_text: str, output_dir: str) -> Dict:
         """
-        FIX: Fully exposes the missing 'generate_audio_with_timings' method map.
         Generates production audio and parses exact word timings for subtitle alignment.
         """
         os.makedirs(output_dir, exist_ok=True)
@@ -73,7 +70,6 @@ class AudioGenerator:
                 if chunk["type"] == "audio":
                     fp.write(chunk["data"])
                 elif chunk["type"] == "WordBoundary":
-                    # Parse millisecond offsets from microseconds
                     start_sec = chunk["offset"] / 10_000_000
                     duration_sec = chunk["duration"] / 10_000_000
                     end_sec = start_sec + duration_sec
