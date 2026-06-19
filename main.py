@@ -71,15 +71,22 @@ class YouTubeAutomationSystem:
         audio_data = await self.audio_gen.generate_audio_with_timings(script_text, self.output_dir)
         
         # 3. Fetch Clips / Footage
-        keywords = script_data.get('keywords', f"psychology,{topic}")
+        # FIX: FootageFetcher has no 'fetch_footage' method (that name never existed),
+        # and it isn't async either. The real methods are:
+        #   - fetch_footage_for_script(script_segments, topic) -> picks clip metadata per segment
+        #   - download_footage(clips, output_dir) -> actually downloads them to disk
+        # video_assembler later reads clips straight from disk at output/footage/clip_N.mp4,
+        # so we must download them, not just resolve URLs.
+        segments = script_data.get('segments') or [{'type': 'story', 'duration': audio_data['total_duration'], 'is_pause': False}]
+
         print(f"   🔍 Downloading semantic background clips...")
-        footage_clips = await self.footage_fetcher.fetch_footage(keywords, audio_data['total_duration'])
-        
+        footage_clips = self.footage_fetcher.fetch_footage_for_script(segments, topic)
+        footage_dir = os.path.join(self.output_dir, "footage")
+        self.footage_fetcher.download_footage(footage_clips, footage_dir)
+
         # 4. Assemble Final Video (with fixed precision subtitles & absolute path lookup)
         output_video_path = os.path.join(self.output_dir, f"render_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
-        
-        segments = script_data.get('segments') or [{'type': 'story', 'duration': audio_data['total_duration'], 'is_pause': False}]
-        
+
         video_path = self.video_assembler.create_video(
             script_segments=segments,
             audio_data=audio_data,
