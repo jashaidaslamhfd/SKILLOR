@@ -1,5 +1,5 @@
 """
-YouTube Automation System - Main Orchestrator (Testing Optimized)
+YouTube Automation System - Main Orchestrator (Testing & Bug Fix Optimized)
 """
 
 import asyncio
@@ -76,7 +76,8 @@ class YouTubeAutomationSystem:
         print("🚀 Starting Automation System in [TESTING MODE]...")
         print("⚠️ All uploads are bypassed. Output files will be stored in 'output/' directory.")
         
-        topics = self.topic_engine.get_trending_topics()
+        # FIX: Changed from get_trending_topics() to fetch_trending_topics()
+        topics = self.topic_engine.fetch_trending_topics()
         if not topics:
             print("❌ No trending topics discovered.")
             return
