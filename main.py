@@ -43,7 +43,8 @@ class YouTubeAutomationSystem:
         self.output_dir = "output"
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def _validate_duration(self, audio_data: Dict, script_data: Dict, max_attempts: int = 2) -> Dict:
+    async def _validate_duration(self, audio_data: Dict, script_data: Dict, max_attempts: int = 2) -> Dict:
+        """FIXED: async method — await generate_with_effects!"""
         duration = audio_data.get('total_duration', 0)
         word_count = audio_data.get('word_count', 0)
 
@@ -61,10 +62,10 @@ class YouTubeAutomationSystem:
                         seg['text'] += f" And researchers recently discovered this process is even more complex than previously thought, involving deep neural pathways that scientists are still mapping today."
                         seg['duration'] = round(len(seg['text'].split()) / (AUDIO_CONFIG.WORDS_PER_MINUTE / 60), 2)
                         break
-                
-                # Regenerate audio
+
+                # Regenerate audio — FIX: await lagaya!
                 audio_dir = os.path.join(self.output_dir, "audio")
-                audio_data = self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
+                audio_data = await self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
                 duration = audio_data.get('total_duration', 0)
 
             elif duration > 60:
@@ -75,8 +76,9 @@ class YouTubeAutomationSystem:
                     removed = script_data['segments'].pop(idx)
                     print(f"    📝 Removed segment: {removed.get('type', 'unknown')}")
 
+                # Regenerate audio — FIX: await lagaya!
                 audio_dir = os.path.join(self.output_dir, "audio")
-                audio_data = self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
+                audio_data = await self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
                 duration = audio_data.get('total_duration', 0)
 
             if 40 <= duration <= 55:
@@ -176,13 +178,11 @@ class YouTubeAutomationSystem:
         # Generate Audio
         print("🎙️ Generating voice...")
         audio_dir = os.path.join(self.output_dir, "audio")
-        loop = asyncio.get_event_loop()
-        audio_data = await loop.run_in_executor(
-            None, lambda: self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
-        )
+        # FIX: Removed loop.run_in_executor, direct await use karo!
+        audio_data = await self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
 
-        # Validate duration
-        audio_data = self._validate_duration(audio_data, script_data)
+        # Validate duration — FIX: await lagaya!
+        audio_data = await self._validate_duration(audio_data, script_data)
 
         actual_duration = audio_data['total_duration']
         print(f"    📊 Audio: {actual_duration:.1f}s | {len(audio_data['word_timings'])} word timings")
