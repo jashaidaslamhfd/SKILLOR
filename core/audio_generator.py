@@ -9,42 +9,41 @@ from typing import Dict, List
 
 class AudioGenerator:
     def __init__(self):
-        self.voice = "en-US-GuyNeural"   # Deep, intense, cinematic
-        # FIX: Dynamic rate — calculated based on script length
-        self.base_rate = -5  # Base: -5%
-        self.pitch = "-3Hz"              # Lower = darker feel
+        self.voice = "en-US-GuyNeural"
+        self.base_rate = -5
+        self.pitch = "-3Hz"
         self.volume = "+10%"
         self.sample_rate = 44100
         self.channels = 2
         self.audio_bitrate = "192k"
-        # FIX: Target WPM for 40-55s video
-        self.target_wpm = 130  # Words per minute target
-        self.target_duration = 47  # Target: 47 seconds (middle of 40-55 range)
+        self.target_wpm = 130
+        self.target_duration = 47
 
     def _calculate_tts_rate(self, word_count: int) -> str:
         """
         FIX: Dynamic TTS rate based on word count to hit 40-55s target.
-        130 WPM = ~2.17 words/sec → 100 words = 46s, 115 words = 53s
-        If words > 115, speed up. If words < 90, slow down.
+        Format: "+10%" or "-10%" — Edge-TTS requires + or - prefix!
         """
-        expected_duration = word_count / (self.target_wpm / 60)  # seconds at target WPM
+        expected_duration = word_count / (self.target_wpm / 60)
 
         if expected_duration > 55:
-            # Too long — need to speed up significantly
-            rate = -15  # -15% faster
+            rate = -15
         elif expected_duration > 50:
             rate = -10
         elif expected_duration > 45:
-            rate = -5  # Default
+            rate = -5
         elif expected_duration > 40:
-            rate = 0  # Normal speed
+            rate = 0
         elif expected_duration > 35:
-            rate = 5  # Slightly slower
+            rate = 5
         else:
-            rate = 10  # Slower for very short scripts
+            rate = 10
 
-        print(f"    🎙️ Words: {word_count} | Expected: {expected_duration:.1f}s | TTS rate: {rate}%")
-        return f"{rate}%"
+        # FIX: Must include + or - sign! "10%" is invalid, "+10%" is valid
+        prefix = "+" if rate >= 0 else ""
+        rate_str = f"{prefix}{rate}%"
+        print(f"    🎙️ Words: {word_count} | Expected: {expected_duration:.1f}s | TTS rate: {rate_str}")
+        return rate_str
 
     def _get_audio_duration(self, path: str) -> float:
         try:
@@ -60,11 +59,6 @@ class AudioGenerator:
         return 0.0
 
     def _make_breath_pause(self, duration: float, output_path: str):
-        """
-        Real breathing pause:
-        - Brown noise (fan/room ambience)
-        - Amplitude 0.018 = subtle room tone
-        """
         cmd = [
             'ffmpeg', '-y', '-f', 'lavfi',
             '-i', f'anoisesrc=r={self.sample_rate}:color=brown:amplitude=0.018:duration={duration}',
@@ -77,12 +71,6 @@ class AudioGenerator:
         subprocess.run(cmd, capture_output=True)
 
     def _add_bg_music_and_fan(self, speech_path: str, output_path: str, total_duration: float):
-        """
-        FIX: Mix speech with:
-        1. Continuous fan/room noise (brown noise at 0.018)
-        2. Dark ambient background (low-freq pink noise at 0.06)
-        """
-        # Fan noise layer
         fan_path = output_path.replace('.mp3', '_fan.mp3')
         subprocess.run([
             'ffmpeg', '-y', '-f', 'lavfi',
@@ -91,7 +79,6 @@ class AudioGenerator:
             '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', fan_path
         ], capture_output=True)
 
-        # Dark ambient music layer
         music_path = output_path.replace('.mp3', '_music.mp3')
         subprocess.run([
             'ffmpeg', '-y', '-f', 'lavfi',
@@ -101,7 +88,6 @@ class AudioGenerator:
             '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', music_path
         ], capture_output=True)
 
-        # Mix: Speech (100%) + Fan (18%) + Music (6%)
         if os.path.exists(fan_path) and os.path.exists(music_path):
             subprocess.run([
                 'ffmpeg', '-y',
@@ -181,7 +167,6 @@ class AudioGenerator:
         return boundaries
 
     def _generate_speech(self, text: str, path: str, rate: str) -> tuple:
-        """FIX: Accepts dynamic rate parameter"""
         last_error = None
         boundaries = []
         for attempt in range(1, 4):
@@ -206,7 +191,6 @@ class AudioGenerator:
         if not os.path.exists(path):
             return 0.0, []
 
-        # Upsample to 44.1kHz stereo 192k
         hq = path.replace('.mp3', '_hq.mp3')
         subprocess.run([
             'ffmpeg', '-y', '-i', path,
@@ -221,46 +205,33 @@ class AudioGenerator:
     def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
         os.makedirs(output_dir, exist_ok=True)
 
-        # ═══════════════════════════════════════════════════════════
-        # FIX: Calculate total words and dynamic TTS rate
-        # ═══════════════════════════════════════════════════════════
         speech_segs = [s for s in script_segments if not s.get('is_pause') and s.get('text', '').strip()]
         full_text = ' '.join(s['text'] for s in speech_segs)
         total_words = len(full_text.split())
 
-        # Calculate dynamic rate based on word count
         dynamic_rate = self._calculate_tts_rate(total_words)
-        print(f"    🎙️ Voice: {self.voice} | Rate: {dynamic_rate} | Pitch: {self.pitch}")
 
-        # FIX: Validate target duration
-        expected_duration = total_words / (self.target_wpm / 60)
-        if expected_duration < 35:
-            print(f"    ⚠️ WARNING: Script too short ({total_words} words = ~{expected_duration:.0f}s). Video will be <40s!")
-        elif expected_duration > 60:
-            print(f"    ⚠️ WARNING: Script too long ({total_words} words = ~{expected_duration:.0f}s). Video may exceed 55s!")
+        if total_words < 80:
+            print(f"    ⚠️ WARNING: Only {total_words} words — need 100+ for 40-55s video!")
+        elif total_words > 130:
+            print(f"    ⚠️ WARNING: {total_words} words — may exceed 55s!")
 
-        # Step 1: Generate ONE continuous speech with dynamic rate
         speech_path = os.path.join(output_dir, "speech_full.mp3")
         speech_dur, word_boundaries = self._generate_speech(full_text, speech_path, dynamic_rate)
         print(f"    🎙️ Speech duration: {speech_dur:.1f}s | {len(word_boundaries)} real word timestamps")
 
-        # FIX: If speech is too short, warn and suggest fix
-        if speech_dur < 35:
-            print(f"    ⚠️ Speech only {speech_dur:.1f}s — need more words or slower rate!")
-        elif speech_dur > 60:
-            print(f"    ⚠️ Speech {speech_dur:.1f}s — too long! Need faster rate or fewer words.")
+        if speech_dur < 30:
+            print(f"    ⚠️ Speech only {speech_dur:.1f}s — too short!")
 
         words = full_text.split()
         wps = speech_dur / len(words) if words else 0.3
 
-        # FIX: More lenient boundary matching
         boundary_diff = abs(len(word_boundaries) - len(words))
         use_real_boundaries = len(words) > 0 and boundary_diff <= max(3, int(len(words) * 0.08))
 
         if not use_real_boundaries:
             print(f"    ⚠️ Boundary mismatch ({len(word_boundaries)} vs {len(words)}) — using estimated timing")
 
-        # Step 2: Slice speech + insert breath pauses
         audio_files = []
         all_timings = []
         current_time = 0.0
@@ -269,7 +240,6 @@ class AudioGenerator:
         total_pause_time = 0.0
 
         for i, seg in enumerate(script_segments):
-
             if seg.get('is_pause'):
                 pause_dur = float(seg.get('duration', 0.5))
                 pause_path = os.path.join(output_dir, f"pause_{i}.mp3")
@@ -287,11 +257,9 @@ class AudioGenerator:
                 seg_word_count = len(seg_text.split())
 
                 if use_real_boundaries and word_boundaries:
-                    # FIX: Proportional slicing with better boundary handling
                     start_frac = word_offset_words / len(words) if words else 0
                     end_frac = (word_offset_words + seg_word_count) / len(words) if words else 0
 
-                    # Clamp to valid range
                     b_start_idx = min(int(round(start_frac * len(word_boundaries))), len(word_boundaries) - 1)
                     b_end_idx = min(int(round(end_frac * len(word_boundaries))), len(word_boundaries))
                     b_start_idx = max(0, b_start_idx)
@@ -313,7 +281,6 @@ class AudioGenerator:
 
                 chunk_path = os.path.join(output_dir, f"chunk_{i}.mp3")
 
-                # FIX: Clamp trim to speech duration
                 seg_start = max(0, min(seg_start, speech_dur - 0.1))
                 seg_dur = min(seg_dur, speech_dur - seg_start)
 
@@ -348,11 +315,9 @@ class AudioGenerator:
                     current_time += actual_dur
                     word_offset += seg_dur
 
-        # FIX: Validate pause time
         if total_pause_time > 2.5:
             print(f"    ⚠️ Total pause time {total_pause_time:.1f}s — too much dead air!")
 
-        # Step 3: Concatenate all chunks + pauses
         final_path = os.path.join(os.path.abspath(output_dir), "final_audio.mp3")
 
         if not audio_files:
@@ -373,7 +338,6 @@ class AudioGenerator:
 
         raw_dur = self._get_audio_duration(final_path)
 
-        # Mix in background music + fan noise
         mixed_path = os.path.join(os.path.abspath(output_dir), "final_audio_mixed.mp3")
         self._add_bg_music_and_fan(final_path, mixed_path, raw_dur)
         if os.path.exists(mixed_path) and os.path.getsize(mixed_path) > 1000:
@@ -381,11 +345,9 @@ class AudioGenerator:
 
         total_dur = self._get_audio_duration(final_path)
 
-        # FIX: Final duration validation
         duration_status = "✅ IN RANGE" if 40 <= total_dur <= 55 else f"⚠️ {total_dur:.1f}s OUT OF RANGE"
         print(f"    ✅ Final: {total_dur:.1f}s | {len(all_timings)} words | {duration_status}")
 
-        # FIX: If too short, warn with actionable fix
         if total_dur < 40:
             print(f"    🔧 FIX: Add {int(45 - total_dur)} more words to script OR use slower TTS rate")
         elif total_dur > 55:
@@ -399,4 +361,4 @@ class AudioGenerator:
             'speech_duration': speech_dur,
             'pause_duration': total_pause_time,
             'word_count': total_words,
-            }
+                }
