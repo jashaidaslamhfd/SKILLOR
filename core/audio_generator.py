@@ -5,27 +5,20 @@ import asyncio
 import subprocess
 from typing import Dict, List
 
-from config.settings import AUDIO_CONFIG
-
 
 class AudioGenerator:
     def __init__(self):
-        # FIX: this used to hardcode its own voice/rate/pitch values that
-        # silently OVERRODE AUDIO_CONFIG in settings.py — editing settings.py
-        # had zero effect on the actual TTS output. Now there's one source
-        # of truth. Also: rate/pitch here used to be far more extreme
-        # (-12%/-3Hz) than what settings.py intended (-4%/-1Hz) — aggressively
-        # shifting edge-tts's pitch parameter without formant correction is
-        # what makes a voice sound thin/robotic instead of deep, so we now
-        # use the gentler settings.py values, which keep the voice's natural
-        # body intact.
-        self.voice = AUDIO_CONFIG.VOICE
-        self.rate = AUDIO_CONFIG.RATE
-        self.pitch = AUDIO_CONFIG.PITCH
-        self.volume = AUDIO_CONFIG.VOLUME
-        self.sample_rate = AUDIO_CONFIG.SAMPLE_RATE
-        self.channels = AUDIO_CONFIG.CHANNELS
-        self.audio_bitrate = AUDIO_CONFIG.AUDIO_BITRATE
+        # FIX: -12% made the voice feel sluggish/dragging, especially next
+        # to fast-cut visuals — the mismatch in pacing is part of why audio
+        # and visuals felt disconnected. -5% keeps a slightly deliberate,
+        # dramatic cadence without sounding slow.
+        self.voice = "en-US-GuyNeural"   # Deep, intense, cinematic
+        self.rate = "-5%"
+        self.pitch = "-3Hz"              # Lower = darker feel
+        self.volume = "+10%"
+        self.sample_rate = 44100
+        self.channels = 2
+        self.audio_bitrate = "192k"
 
     def _get_audio_duration(self, path: str) -> float:
         try:
@@ -197,17 +190,10 @@ class AudioGenerator:
         if not os.path.exists(path):
             return 0.0, []
 
-        # Upsample to 44.1kHz stereo 192k + FIX: warmth EQ + loudness
-        # normalization. A raw edge-tts voice (especially after a pitch
-        # shift) tends to sound thin/tinny — it's missing low-mid body and
-        # has harsh upper-mid energy. A gentle bass boost around 110Hz adds
-        # back chest/body resonance, a small dip around 6-8kHz tames the
-        # harshness, and loudnorm gives consistent, full loudness without
-        # the clipping-induced thinness a flat "+10% volume" boost can cause.
+        # Upsample to 44.1kHz stereo 192k
         hq = path.replace('.mp3', '_hq.mp3')
         subprocess.run([
             'ffmpeg', '-y', '-i', path,
-            '-af', 'bass=g=4:f=110:w=0.6,treble=g=-2:f=7000:w=0.7,loudnorm=I=-16:TP=-1.5:LRA=11',
             '-ar', str(self.sample_rate), '-ac', str(self.channels),
             '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', hq
         ], capture_output=True, timeout=60)
@@ -238,15 +224,19 @@ class AudioGenerator:
         words = full_text.split()
         # Fallback wps only used if edge-tts didn't return boundaries for some reason
         wps = speech_dur / len(words) if words else 0.3
-        # FIX: this check was too loose (allowed off-by-2), which let
-        # mismatched boundary counts (e.g. from contractions like "don't"
-        # being split into 2 WordBoundary events by edge-tts) through.
-        # That misalignment caused per-segment slicing further down to
-        # grab the WRONG audio range — silently shrinking total video
-        # duration to ~31-35s instead of the target 40-55s. Now we require
-        # an EXACT count match, and fall back to the estimated-wps method
-        # (still better than wrong slicing) whenever counts disagree.
-        use_real_boundaries = len(word_boundaries) == len(words)
+        # FIX: requiring an EXACT count match was too strict — edge-tts
+        # commonly emits a slightly different WordBoundary count than
+        # str.split() (e.g. contractions like "don't" sometimes split
+        # into 2 boundary events, or punctuation attached differently).
+        # An exact-match requirement silently threw away GOOD real
+        # timestamps for the whole video over a 1-2 word discrepancy,
+        # falling back to the much less accurate character-length
+        # estimate — which is what caused both the caption/audio drift
+        # AND (via duration realignment downstream) the video shrinking
+        # to ~28s with black-frame gaps. Now we tolerate small mismatches
+        # and only fall back when the counts are meaningfully different.
+        boundary_diff = abs(len(word_boundaries) - len(words))
+        use_real_boundaries = len(words) > 0 and boundary_diff <= max(2, int(len(words) * 0.05))
         if not use_real_boundaries:
             print(f"    ⚠️ Word boundary count mismatch ({len(word_boundaries)} boundaries vs {len(words)} words) — using estimated timing instead")
 
@@ -255,7 +245,7 @@ class AudioGenerator:
         all_timings = []
         current_time = 0.0
         word_offset = 0.0  # seconds into speech_full
-        boundary_idx = 0
+        word_offset_words = 0  # word-count position into the full word stream
 
         for i, seg in enumerate(script_segments):
 
@@ -275,9 +265,19 @@ class AudioGenerator:
                 seg_word_count = len(seg_text.split())
 
                 if use_real_boundaries:
-                    # Use actual edge-tts timestamps for this segment's words
-                    seg_boundaries = word_boundaries[boundary_idx:boundary_idx + seg_word_count]
-                    boundary_idx += seg_word_count
+                    # FIX: slicing by a running boundary_idx accumulated
+                    # drift across segments whenever the total boundary
+                    # count didn't exactly match the word count (common
+                    # with edge-tts). Using each segment's proportional
+                    # position in the word stream instead keeps every
+                    # segment correctly anchored even if a few words
+                    # earlier in the script were boundary-mismatched.
+                    start_frac = word_offset_words / len(words) if words else 0
+                    end_frac = (word_offset_words + seg_word_count) / len(words) if words else 0
+                    b_start_idx = int(round(start_frac * len(word_boundaries)))
+                    b_end_idx = int(round(end_frac * len(word_boundaries)))
+                    seg_boundaries = word_boundaries[b_start_idx:b_end_idx]
+                    word_offset_words += seg_word_count
                     if seg_boundaries:
                         seg_start = seg_boundaries[0]['start']
                         seg_end = seg_boundaries[-1]['end']
@@ -362,4 +362,4 @@ class AudioGenerator:
             'segments': audio_files,
             'word_timings': all_timings,
             'total_duration': total_dur
-    }
+                }
