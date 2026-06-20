@@ -7,25 +7,79 @@ from pytrends.request import TrendReq
 
 class ViralTopicEngine:
     def __init__(self):
-        # FIX: retries/backoff_factor removed (incompatible with current urllib3)
         self.pytrends = TrendReq(hl='en-US', tz=360, timeout=(10, 25))
-        # UPDATED: shifted from pure "dark psychology" (finite, repeats fast)
-        # to Human/Brain/Body Mystery niche — same dark-curiosity feel but
-        # practically infinite topic supply for long-term sustainability.
+
+        # FIX: Expanded niche keywords — better Google Trends coverage
         self.niche_keywords = [
             "human body mystery", "brain mystery", "sleep science",
             "why do we dream", "strange body facts", "hidden science",
             "deja vu explained", "human behavior science", "weird body facts",
-            "psychology of fear", "why does the brain", "unexplained body reactions"
+            "psychology of fear", "why does the brain", "unexplained body reactions",
+            "what happens when you sleep", "why do we forget dreams",
+            "brain tricks psychology", "body reacting without thinking",
+            "why do we get goosebumps", "what causes intuition",
+            "why do we laugh", "brain processing speed", "human memory tricks",
+            "why do we cry", "what is consciousness", "brain vs mind",
+            "why do we hiccup", "sleep paralysis science", "lucid dreaming facts",
+            "why do we sneeze", "brain plasticity", "déjà vu psychology",
+            "why do we itch", "muscle memory brain", "adrenaline body reaction",
         ]
+
+        # FIX: Viral pattern library — current Shorts trends
+        self.viral_patterns = {
+            'shock_visual': [  # Triggers glitch/shake effect
+                "the moment your brain realizes",
+                "what your eyes are actually seeing",
+                "the split second your body reacts",
+                "when your brain finally connects",
+                "the instant everything changes",
+            ],
+            'curiosity_gap': [  # High CTR hooks
+                "scientists can't explain why",
+                "your body does this every night",
+                "nobody talks about this part",
+                "the part they always skip",
+                "what happens in the first 3 seconds",
+            ],
+            'contrarian': [  # Pattern interrupt
+                "everything you know about X is wrong",
+                "stop believing this myth",
+                "the real reason isn't what you think",
+                "doctors get this wrong every time",
+                "the truth they don't want you to know",
+            ],
+            'personal_stake': [  # Viewer engagement
+                "this is happening to you right now",
+                "your brain is doing this as you watch",
+                "you experienced this today",
+                "this is why you feel that way",
+                "your body is hiding this from you",
+            ],
+            'countdown': [  # List format — high retention
+                "3 signs your brain is",
+                "the one thing that proves",
+                "2 seconds before your body",
+                "the only reason you",
+                "5 things your mind does",
+            ]
+        }
+
+        # FIX: Topic suspense scoring — which topics create visual shock
+        self.suspense_scores = {
+            'sleep': 95, 'dream': 92, 'brain': 90, 'fear': 88,
+            'memory': 85, 'consciousness': 87, 'paralysis': 96,
+            'adrenaline': 89, 'intuition': 84, 'déjà vu': 91,
+            'lucid': 88, 'body': 82, 'mind': 80, 'psychology': 78,
+        }
 
     def fetch_trending_topics(self, timeframe: str = "now 1-d") -> List[Dict]:
         trending = []
         random.shuffle(self.niche_keywords)
 
-        for keyword in self.niche_keywords[:2]:
+        # FIX: Try more keywords for better coverage
+        for keyword in self.niche_keywords[:3]:
             try:
-                time.sleep(random.uniform(3, 5))
+                time.sleep(random.uniform(2, 4))
 
                 self.pytrends.build_payload([keyword], cat=14, timeframe=timeframe, geo='US')
                 related = self.pytrends.related_queries()
@@ -33,27 +87,82 @@ class ViralTopicEngine:
                 if related and keyword in related:
                     rising = related[keyword].get('rising')
                     if rising is not None and not rising.empty:
-                        for _, row in rising.head(3).iterrows():
+                        for _, row in rising.head(5).iterrows():  # FIX: More results
+                            query = str(row['query'])
+                            # FIX: Clean and score
+                            cleaned = self._clean_topic(query)
+                            suspense = self._calculate_suspense_score(cleaned)
+
                             trending.append({
-                                'query': str(row['query']),
+                                'query': cleaned,
                                 'keyword': keyword,
                                 'growth': float(row.get('value', 0)),
                                 'source': 'google_trends',
                                 'timestamp': datetime.now().isoformat(),
-                                'viral_score': min(100, int(row.get('value', 0)))
+                                'viral_score': min(100, int(row.get('value', 0))),
+                                'suspense_score': suspense,  # NEW
+                                'pattern': self._select_viral_pattern(cleaned, suspense),  # NEW
                             })
             except Exception as e:
                 print(f"Error fetching {keyword}: {e}")
                 if "429" in str(e):
-                    print("Rate limited, waiting 20s...")
-                    time.sleep(20)
+                    print("Rate limited, waiting 30s...")
+                    time.sleep(30)
                 continue
 
         return trending
 
+    def _clean_topic(self, query: str) -> str:
+        """FIX: Clean trending query into usable topic"""
+        # Remove numbers, extra words
+        import re
+        query = re.sub(r'^\d+\s+', '', query)  # Remove "10 " from "10 reasons..."
+        query = re.sub(r'\s+(reasons|ways|things|facts|signs|tricks|hacks)\s+', ' ', query)
+        query = query.strip()
+        # Capitalize first letter
+        return query[0].upper() + query[1:] if query else query
+
+    def _calculate_suspense_score(self, query: str) -> int:
+        """FIX: Calculate how 'shock-worthy' a topic is (0-100)"""
+        query_lower = query.lower()
+        score = 50  # Base
+
+        for keyword, value in self.suspense_scores.items():
+            if keyword in query_lower:
+                score = max(score, value)
+
+        # Bonus for visual/scary words
+        visual_words = ['see', 'watch', 'look', 'eyes', 'visual', 'dark', 'shadow']
+        scary_words = ['terrifying', 'scary', 'shocking', 'creepy', 'unsettling', 'bizarre']
+
+        for word in visual_words:
+            if word in query_lower:
+                score += 5
+        for word in scary_words:
+            if word in query_lower:
+                score += 8
+
+        return min(100, score)
+
+    def _select_viral_pattern(self, query: str, suspense_score: int) -> str:
+        """FIX: Select best viral pattern based on topic suspense score"""
+        if suspense_score > 90:
+            # High suspense = shock visual effect
+            return random.choice(self.viral_patterns['shock_visual'])
+        elif suspense_score > 80:
+            # Medium-high = curiosity gap
+            return random.choice(self.viral_patterns['curiosity_gap'])
+        elif 'myth' in query.lower() or 'wrong' in query.lower():
+            # Contrarian topics
+            return random.choice(self.viral_patterns['contrarian'])
+        elif 'you' in query.lower() or 'your' in query.lower():
+            # Personal stake
+            return random.choice(self.viral_patterns['personal_stake'])
+        else:
+            # Default: countdown/list format
+            return random.choice(self.viral_patterns['countdown'])
+
     def get_daily_topics(self, count: int = 1) -> List[Dict]:
-        # FIX: default count=1 so a single run produces exactly one video
-        # unless the caller explicitly asks for more.
         viral_topics = []
         try:
             daily = self.fetch_trending_topics("now 1-d")
@@ -66,17 +175,24 @@ class ViralTopicEngine:
             print(f"⚠️ Google Trends failed: {e}. Switching to fallback.")
             viral_topics = self._get_fallback_topics()
 
+        # FIX: Sort by combined viral + suspense score
+        viral_topics.sort(key=lambda x: (x.get('viral_score', 0) + x.get('suspense_score', 50)) / 2, reverse=True)
+
         unique = list({t['query']: t for t in viral_topics}.values())
-        random.shuffle(unique)  # avoid always picking the same fallback topic first
+        random.shuffle(unique)  # Randomize same-score items
         return unique[:count]
 
     def filter_dead_topics(self, topics: List[Dict]) -> List[Dict]:
-        return [t for t in topics if t.get('growth', 0) > 50 or t.get('viral_score', 0) > 50]
+        # FIX: Lower threshold to catch more topics, but require minimum suspense
+        return [
+            t for t in topics
+            if (t.get('growth', 0) > 30 or t.get('viral_score', 0) > 30)
+            and t.get('suspense_score', 0) > 60  # NEW: Minimum suspense requirement
+        ]
 
     def get_topic_angle(self, topic_data: Dict) -> str:
-        # UPDATED: angles now drive "Human Mystery + Suspense + Twist + Loop"
-        # storytelling instead of pure manipulation/dark-psych framing.
-        angles = [
+        """FIX: Generate angle with viral pattern integration"""
+        base_angles = [
             "why this happens and what it really means",
             "the hidden mystery behind",
             "what scientists only recently discovered about",
@@ -84,18 +200,86 @@ class ViralTopicEngine:
             "the unexplained reason behind",
             "what they don't teach you about",
         ]
-        return random.choice(angles)
+
+        # Use viral pattern if available
+        pattern = topic_data.get('pattern', '')
+        if pattern:
+            return f"{pattern} {topic_data['query']}"
+
+        return f"{random.choice(base_angles)} {topic_data['query']}"
+
+    def get_shock_angle(self, topic_data: Dict) -> str:
+        """NEW: Generate shock-specific angle for visual effect"""
+        shock_angles = [
+            f"the exact moment {topic_data['query']} happens to you",
+            f"what your brain sees during {topic_data['query']}",
+            f"the split second before {topic_data['query']} kicks in",
+            f"your body's reaction to {topic_data['query']} — caught on camera",
+            f"the visual proof that {topic_data['query']} is real",
+        ]
+        return random.choice(shock_angles)
+
+    def get_topic_metadata(self, topic_data: Dict) -> Dict:
+        """NEW: Complete topic metadata for content generator"""
+        return {
+            'topic': topic_data['query'],
+            'angle': self.get_topic_angle(topic_data),
+            'shock_angle': self.get_shock_angle(topic_data),
+            'suspense_score': topic_data.get('suspense_score', 70),
+            'viral_score': topic_data.get('viral_score', 50),
+            'pattern': topic_data.get('pattern', 'curiosity_gap'),
+            'growth': topic_data.get('growth', 0),
+            'source': topic_data.get('source', 'unknown'),
+        }
 
     def _get_fallback_topics(self) -> List[Dict]:
-        # UPDATED: fallback pool now matches the Human/Brain Mystery niche —
-        # practically infinite topic supply, won't repeat after 100-200 videos.
-        return [
-            {"query": "why do we dream", "keyword": "sleep science", "growth": 500, "source": "fallback", "viral_score": 95},
-            {"query": "why does deja vu happen", "keyword": "brain mystery", "growth": 480, "source": "fallback", "viral_score": 92},
-            {"query": "why do we yawn", "keyword": "human body mystery", "growth": 460, "source": "fallback", "viral_score": 88},
-            {"query": "why can't we remember being babies", "keyword": "brain mystery", "growth": 470, "source": "fallback", "viral_score": 90},
-            {"query": "why do fevers happen", "keyword": "human body mystery", "growth": 450, "source": "fallback", "viral_score": 85},
-            {"query": "why do we blush", "keyword": "human body mystery", "growth": 440, "source": "fallback", "viral_score": 84},
-            {"query": "why do sleep jerks happen", "keyword": "sleep science", "growth": 455, "source": "fallback", "viral_score": 86},
-            {"query": "brain hacks for memory", "keyword": "brain science", "growth": 450, "source": "fallback", "viral_score": 85},
-             ]
+        # FIX: 30+ topics — 200+ videos tak no repeat
+        fallbacks = [
+            # Sleep/Dream (High suspense)
+            {"query": "Why do we dream", "keyword": "sleep science", "growth": 500, "source": "fallback", "viral_score": 95, "suspense_score": 92},
+            {"query": "Sleep paralysis demons", "keyword": "sleep science", "growth": 520, "source": "fallback", "viral_score": 98, "suspense_score": 96},
+            {"query": "Lucid dreaming secrets", "keyword": "sleep science", "growth": 480, "source": "fallback", "viral_score": 90, "suspense_score": 88},
+            {"query": "Why do sleep jerks happen", "keyword": "sleep science", "growth": 455, "source": "fallback", "viral_score": 86, "suspense_score": 85},
+            {"query": "What happens during REM sleep", "keyword": "sleep science", "growth": 470, "source": "fallback", "viral_score": 88, "suspense_score": 87},
+
+            # Brain Mystery (High suspense)
+            {"query": "Why does deja vu happen", "keyword": "brain mystery", "growth": 480, "source": "fallback", "viral_score": 92, "suspense_score": 91},
+            {"query": "Why can't we remember being babies", "keyword": "brain mystery", "growth": 470, "source": "fallback", "viral_score": 90, "suspense_score": 89},
+            {"query": "What is consciousness really", "keyword": "brain mystery", "growth": 490, "source": "fallback", "viral_score": 94, "suspense_score": 93},
+            {"query": "Brain tricks your eyes play", "keyword": "brain mystery", "growth": 460, "source": "fallback", "viral_score": 87, "suspense_score": 86},
+            {"query": "Why do we forget dreams instantly", "keyword": "brain mystery", "growth": 475, "source": "fallback", "viral_score": 89, "suspense_score": 88},
+
+            # Body Reactions (Visual shock potential)
+            {"query": "Why do we get goosebumps", "keyword": "human body mystery", "growth": 440, "source": "fallback", "viral_score": 84, "suspense_score": 82},
+            {"query": "Why do we blush uncontrollably", "keyword": "human body mystery", "growth": 430, "source": "fallback", "viral_score": 83, "suspense_score": 81},
+            {"query": "Adrenaline rush visual effects", "keyword": "human body mystery", "growth": 450, "source": "fallback", "viral_score": 85, "suspense_score": 89},
+            {"query": "Why do we hiccup nonstop", "keyword": "human body mystery", "growth": 420, "source": "fallback", "viral_score": 80, "suspense_score": 78},
+            {"query": "Muscle memory explained visually", "keyword": "human body mystery", "growth": 440, "source": "fallback", "viral_score": 84, "suspense_score": 83},
+
+            # Psychology/Fear (High engagement)
+            {"query": "Psychology of fear response", "keyword": "psychology", "growth": 460, "source": "fallback", "viral_score": 86, "suspense_score": 88},
+            {"query": "Why do we laugh at pain", "keyword": "psychology", "growth": 445, "source": "fallback", "viral_score": 85, "suspense_score": 84},
+            {"query": "What intuition really is", "keyword": "psychology", "growth": 455, "source": "fallback", "viral_score": 87, "suspense_score": 85},
+            {"query": "Why do we cry when happy", "keyword": "psychology", "growth": 435, "source": "fallback", "viral_score": 83, "suspense_score": 81},
+            {"query": "Brain processing speed vs computer", "keyword": "brain science", "growth": 470, "source": "fallback", "viral_score": 88, "suspense_score": 86},
+
+            # Hidden/Weird (Curiosity gap)
+            {"query": "Hidden body functions you never notice", "keyword": "human body mystery", "growth": 480, "source": "fallback", "viral_score": 90, "suspense_score": 87},
+            {"query": "Weird facts about human eyes", "keyword": "human body mystery", "growth": 465, "source": "fallback", "viral_score": 87, "suspense_score": 85},
+            {"query": "Why do we sneeze with eyes open", "keyword": "human body mystery", "growth": 440, "source": "fallback", "viral_score": 84, "suspense_score": 82},
+            {"query": "What happens when you hold sneeze", "keyword": "human body mystery", "growth": 450, "source": "fallback", "viral_score": 85, "suspense_score": 88},
+            {"query": "Brain plasticity visual proof", "keyword": "brain science", "growth": 460, "source": "fallback", "viral_score": 86, "suspense_score": 84},
+
+            # Déjà Vu / Memory (High intrigue)
+            {"query": "Déjà vu parallel universe theory", "keyword": "brain mystery", "growth": 500, "source": "fallback", "viral_score": 95, "suspense_score": 94},
+            {"query": "Why do we forget names instantly", "keyword": "brain mystery", "growth": 445, "source": "fallback", "viral_score": 85, "suspense_score": 83},
+            {"query": "Memory palace brain technique", "keyword": "brain science", "growth": 455, "source": "fallback", "viral_score": 87, "suspense_score": 85},
+            {"query": "Why do we itch for no reason", "keyword": "human body mystery", "growth": 430, "source": "fallback", "viral_score": 82, "suspense_score": 80},
+            {"query": "What causes brain freeze visually", "keyword": "human body mystery", "growth": 440, "source": "fallback", "viral_score": 84, "suspense_score": 86},
+        ]
+
+        # Add computed fields
+        for topic in fallbacks:
+            topic['pattern'] = self._select_viral_pattern(topic['query'], topic['suspense_score'])
+
+        return fallbacks
