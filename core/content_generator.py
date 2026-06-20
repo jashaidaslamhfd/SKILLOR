@@ -10,7 +10,7 @@ try:
 except ImportError:
     Groq = None
 
-from config.settings import API_KEYS, NICHE_CONFIG
+from config.settings import API_KEYS, NICHE_CONFIG, AUDIO_CONFIG
 
 
 class ContentGenerator:
@@ -73,6 +73,23 @@ class ContentGenerator:
 
         ALL sections must be about the SAME topic: {topic}
         """
+        # FIX: a single hardcoded example in the prompt caused the model to
+        # near-copy that exact phrasing ("Have you ever wondered why X...
+        # because science just revealed something terrifying.") on almost
+        # every video. Viewers pattern-recognize an identical-sounding hook
+        # within the first second and swipe away — this is very likely the
+        # main driver of the 65% swipe-away rate. Rotating through several
+        # structurally different hook styles forces real variety.
+        import random
+        hook_styles = [
+            ('curiosity question', f'A direct "why does X happen" question about "{topic}" — no "have you ever wondered" phrasing.'),
+            ('bold claim', f'A bold, surprising factual claim about "{topic}" stated as a statement, not a question.'),
+            ('second-person callout', f'Start with "You" and describe something the viewer does without realizing related to "{topic}".'),
+            ('countdown/list tease', f'Tease a specific number of signs/reasons/facts about "{topic}" (e.g. "3 signs...", "the one reason...").'),
+            ('contrarian', f'Open by saying what people THINK about "{topic}" is wrong, then tease the real explanation.'),
+        ]
+        style_name, style_instruction = random.choice(hook_styles)
+
         prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
 
 Every section must be about "{topic}" only. Do NOT drift to other topics.
@@ -80,8 +97,8 @@ Every section must be about "{topic}" only. Do NOT drift to other topics.
 Write these 4 sections:
 
 HOOK: (20-22 words)
-A shocking curiosity question about "{topic}". 
-Example format: "Have you ever wondered why [topic thing happens]... because science just revealed something terrifying."
+Style: {style_name}. {style_instruction}
+Do NOT use the phrase "have you ever wondered" — vary your opening words.
 End with "..."
 
 SUSPENSE: (11-13 words)
@@ -109,10 +126,17 @@ RULES:
         story    = self._extract("STORY", raw)
         ctr      = self._extract("CTR", raw)
 
-        # Topic-specific fallbacks
+        # Topic-specific fallbacks — FIX: rotate fallback hook phrasing too,
+        # so even a Groq/parsing failure doesn't always produce the exact
+        # same generic hook sentence.
         topic_lower = topic.lower()
         if not hook:
-            hook = f"Have you ever wondered why {topic_lower} happens to you... because scientists just discovered something that will completely change how you think about it."
+            hook = random.choice([
+                f"Scientists just discovered something about {topic_lower} that changes everything you thought you knew...",
+                f"Your brain does something with {topic_lower} that almost nobody talks about...",
+                f"Most people get {topic_lower} completely wrong, and the real reason will surprise you...",
+                f"Here's the one thing about {topic_lower} that experts rarely explain...",
+            ])
         if not suspense:
             suspense = f"And the terrifying truth about {topic_lower}... nobody is telling you."
         if not story:
@@ -127,7 +151,12 @@ RULES:
         ctr      = self._clean(ctr)
 
         # Build segments
-        wps = 130 / 60.0
+        # FIX: was hardcoded to 130 wpm, but AUDIO_CONFIG.WORDS_PER_MINUTE
+        # (used by the actual TTS voice) is 120 — the mismatch meant these
+        # estimated segment durations didn't match real speech length.
+        # (video_assembler.py now re-aligns durations to real word_timings
+        # anyway, but keeping this consistent avoids confusing estimates.)
+        wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
         segments = []
         t = 0.0
 
@@ -155,7 +184,11 @@ RULES:
             parts = story.split('...', 1)
             seg('story', parts[0].strip() + '...')
             seg('pause', '0.4', is_pause=True)
-            seg('story', parts[1].strip())
+            # FIX: if the model included a second "..." later in the story,
+            # strip it so it doesn't read as an extra unintended pause point
+            # that the caption/video timing isn't actually accounting for.
+            second_half = parts[1].replace('...', ',').strip()
+            seg('story', second_half)
         else:
             sw = story.split()
             mid = len(sw) // 2
