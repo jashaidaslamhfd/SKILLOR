@@ -16,7 +16,13 @@ from config.settings import API_KEYS, NICHE_CONFIG, AUDIO_CONFIG
 class ContentGenerator:
     def __init__(self):
         self.api_key = API_KEYS.GROQ_API_KEY
-        self.model = "llama-3.3-70b-versatile"
+        # FIX: llama-3.3-70b-versatile was deprecated by Groq on June 17, 2026.
+        # Every Groq call was silently failing (400/decommissioned error),
+        # which made generate_script()/generate_title()/generate_thumbnail_words()
+        # ALWAYS fall through to their fixed fallback templates — this was the
+        # root cause of every video getting the same title and the same hook.
+        # openai/gpt-oss-120b is Groq's official migration target for this model.
+        self.model = "openai/gpt-oss-120b"
         self.client = None
         self.base_url = "https://api.groq.com/openai/v1"
         self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -55,7 +61,13 @@ class ContentGenerator:
                       "temperature": 0.85, "max_tokens": max_tokens},
                 timeout=30)
             data = r.json()
-            return data['choices'][0]['message']['content'].strip() if 'choices' in data else ""
+            if 'choices' not in data:
+                # FIX: surface the actual Groq error (e.g. model deprecated,
+                # bad API key) instead of silently returning "" and letting
+                # every caller quietly fall back to templated text.
+                print(f"⚠️ Groq API returned no choices: {data.get('error', data)}")
+                return ""
+            return data['choices'][0]['message']['content'].strip()
         except Exception as e:
             print(f"HTTP error: {e}")
             return ""
