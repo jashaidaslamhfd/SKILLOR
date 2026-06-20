@@ -221,7 +221,17 @@ class AudioGenerator:
         words = full_text.split()
         # Fallback wps only used if edge-tts didn't return boundaries for some reason
         wps = speech_dur / len(words) if words else 0.3
-        use_real_boundaries = len(word_boundaries) >= max(1, len(words) - 2)
+        # FIX: this check was too loose (allowed off-by-2), which let
+        # mismatched boundary counts (e.g. from contractions like "don't"
+        # being split into 2 WordBoundary events by edge-tts) through.
+        # That misalignment caused per-segment slicing further down to
+        # grab the WRONG audio range — silently shrinking total video
+        # duration to ~31-35s instead of the target 40-55s. Now we require
+        # an EXACT count match, and fall back to the estimated-wps method
+        # (still better than wrong slicing) whenever counts disagree.
+        use_real_boundaries = len(word_boundaries) == len(words)
+        if not use_real_boundaries:
+            print(f"    ⚠️ Word boundary count mismatch ({len(word_boundaries)} boundaries vs {len(words)} words) — using estimated timing instead")
 
         # Step 2: Slice speech + insert breath pauses
         audio_files = []
