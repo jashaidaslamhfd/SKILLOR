@@ -1,4 +1,4 @@
-"""Footage Fetcher — Semantic Query Mapping + Cross-Run De-duplication"""
+"""Footage Fetcher — Topic-relevant clips per segment, Human/Brain Mystery niche"""
 
 import requests
 import os
@@ -14,69 +14,64 @@ class FootageFetcher:
         self.pexels_base = "https://api.pexels.com/videos"
         self.pixabay_base = "https://pixabay.com/api/videos"
 
-        # Dark psychology themed clip pools — Expanded variant seeds
-        self.dark_queries = {
-            'hook': [
-                "dark shadow person walking alone night",
-                "mysterious eye close up dramatic",
-                "brain scan glowing neural activity",
-                "silhouette man dark room thinking",
-                "hypnotic spiral motion abstract dark",
-                "crowd manipulation psychology",
-            ],
-            'suspense': [
-                "shadow figure suspense thriller",
-                "clock ticking countdown dark",
-                "storm dark clouds dramatic sky",
-                "locked door secret hallway",
-                "dark forest fog mystery",
-                "surveillance camera watching people",
-            ],
-            'story': [
-                "human brain neurons firing close up",
-                "psychology experiment lab",
-                "crowd people mind control influence",
-                "person thinking alone deep thought",
-                "data visualization network connections",
-                "ancient manuscript secret symbols",
-            ],
-            'ctr': [
-                "person shocked surprised revelation",
-                "light bulb idea moment dramatic",
-                "unlock door reveal secret",
-                "dramatic close up human eye",
-                "explosion of knowledge concept",
-            ]
+        # FIX: previously these generic queries never included the actual
+        # video topic at all — "fetch_footage_for_script" received a
+        # `topic` argument but silently ignored it, so a "dreams"/"sleep"
+        # video could get totally unrelated footage (e.g. a Holi color
+        # festival crowd) just because the segment type was "story". These
+        # are now used only as a STYLE/mood modifier appended to the real
+        # topic-based query, never as the query on their own.
+        self.mood_modifiers = {
+            'hook': ["cinematic dramatic", "close up mysterious", "dark moody atmosphere"],
+            'suspense': ["suspenseful tense", "dramatic shadow", "eerie atmosphere"],
+            'story': ["scientific close up", "macro detail", "documentary style"],
+            'ctr': ["dramatic reveal", "close up emotional", "bright realization"],
         }
 
-    def _get_used_clips_log(self, output_dir: str) -> set:
-        """Track which clip IDs were used before across workflows.
+        # Only used if the topic itself yields zero usable results from
+        # either provider — generic but at least on-niche (human body/brain
+        # mystery), never random crowd/lifestyle stock footage.
+        self.fallback_queries = [
+            "human brain neurons glowing",
+            "person sleeping bedroom night",
+            "brain scan medical close up",
+            "person thinking deep thought",
+            "abstract neural network dark",
+        ]
 
-        FIX: this used to live under output/, which a fresh `actions/checkout`
-        wipes clean at the start of EVERY GitHub Actions run — so this log
-        never actually persisted in production and dedup was a no-op across
-        runs (only worked within a single video). It now lives under state/,
-        which the workflow commits back to the repo after each run.
+    def _topic_to_query(self, topic: str, seg_type: str, seg_idx: int) -> str:
         """
-        log_path = os.path.join("state", "used_clips.txt")
-        os.makedirs("state", exist_ok=True)
+        FIX: build the actual search query FROM the topic, with a small
+        mood modifier for variety per segment — instead of ignoring the
+        topic and pulling from a fixed unrelated-query pool.
+        """
+        # Strip filler words that hurt stock-footage search relevance
+        stopwords = {'why', 'do', 'we', 'does', 'the', 'a', 'an', 'is', 'are', 'happens', 'happen'}
+        words = [w for w in topic.lower().split() if w not in stopwords]
+        core_topic = ' '.join(words) if words else topic
+
+        modifiers = self.mood_modifiers.get(seg_type, self.mood_modifiers['story'])
+        modifier = modifiers[seg_idx % len(modifiers)]
+
+        return f"{core_topic} {modifier}".strip()
+
+    def _get_used_clips_log(self, output_dir: str) -> set:
+        """Track which clip URLs were used before — avoid repeats"""
+        log_path = os.path.join(output_dir, ".used_clips.txt")
         used = set()
         if os.path.exists(log_path):
             with open(log_path, 'r') as f:
                 used = set(line.strip() for line in f if line.strip())
         return used
 
-    def _save_used_clip(self, output_dir: str, clip_id: str):
-        log_path = os.path.join("state", "used_clips.txt")
-        os.makedirs("state", exist_ok=True)
+    def _save_used_clip(self, output_dir: str, url: str):
+        log_path = os.path.join(output_dir, ".used_clips.txt")
         existing = []
         if os.path.exists(log_path):
             with open(log_path, 'r') as f:
                 existing = [l.strip() for l in f if l.strip()]
-        if clip_id not in existing:
-            existing.append(clip_id)
-        # Keep only the last 300 entries to prevent tracking overflow bloating
-        existing = existing[-300:]
+        existing.append(url)
+        existing = existing[-200:]
         with open(log_path, 'w') as f:
             f.write('\n'.join(existing))
 
@@ -84,7 +79,7 @@ class FootageFetcher:
         if not self.pexels_key:
             return []
         headers = {"Authorization": self.pexels_key}
-        page = random.randint(1, 4)
+        page = random.randint(1, 3)
         params = {
             "query": query,
             "per_page": per_page,
@@ -93,14 +88,11 @@ class FootageFetcher:
             "size": "large"
         }
         try:
-            response = requests.get(f"{self.pexels_base}/search", headers=headers, params=params, timeout=12)
-            if response.status_code != 200:
-                return []
+            response = requests.get(f"{self.pexels_base}/search", headers=headers, params=params, timeout=10)
             data = response.json()
             videos = []
             for video in data.get('videos', []):
                 best_file = None
-                # Filter out landscape formats or fetch HD definitions cleanly
                 for file in video.get('video_files', []):
                     if file.get('height', 0) >= 1280:
                         best_file = file
@@ -112,11 +104,11 @@ class FootageFetcher:
                         'url': best_file['link'],
                         'duration': video.get('duration', 15),
                         'source': 'pexels',
-                        'id': f"pexels_{video.get('id', '')}"
+                        'id': str(video.get('id', ''))
                     })
             return videos
         except Exception as e:
-            print(f"    ⚠️ Pexels retrieval bypass: {e}")
+            print(f"    Pexels error: {e}")
             return []
 
     def search_pixabay(self, query: str, per_page: int = 15) -> List[Dict]:
@@ -132,150 +124,114 @@ class FootageFetcher:
             "video_type": "film"
         }
         try:
-            response = requests.get(f"{self.pixabay_base}/", params=params, timeout=12)
-            if response.status_code != 200:
-                return []
+            response = requests.get(f"{self.pixabay_base}/", params=params, timeout=10)
             data = response.json()
             videos = []
             for hit in data.get('hits', []):
                 url = hit.get('videos', {}).get('large', {}).get('url', '')
-                if not url:
-                    url = hit.get('videos', {}).get('medium', {}).get('url', '')
                 if url:
                     videos.append({
                         'url': url,
                         'duration': hit.get('duration', 15),
                         'source': 'pixabay',
-                        'id': f"pixabay_{hit.get('id', '')}"
+                        'id': str(hit.get('id', ''))
                     })
             return videos
         except Exception as e:
-            print(f"    ⚠️ Pixabay retrieval bypass: {e}")
+            print(f"    Pixabay error: {e}")
             return []
 
     def fetch_footage_for_script(self, script_segments: List[Dict], topic: str) -> List[Dict]:
-        """Maps out structural variations checking persistence logs to maintain variety.
-
-        FIX: video_assembler.py walks script_segments and only advances its
-        footage_idx counter for NON-pause segments (pauses get a black/color
-        frame, no clip file). This function used to fetch+save a clip for
-        EVERY segment including pauses, indexed 0..N-1 over the FULL segment
-        list. That made clip_2.mp4 (say) belong to a pause segment while
-        video_assembler's footage_idx==2 pointed at e.g. the 3rd spoken
-        segment — every clip after the first pause was shifted by one,
-        so the footage on screen stopped matching what the narrator was
-        saying. Skipping pause segments here keeps both sides in sync.
+        """
+        FIX: every query is now built FROM the actual topic so footage
+        is relevant to what's being narrated, instead of a fixed pool of
+        generic queries that ignored `topic` entirely.
         """
         clips = []
-        used_within_video = set()
-        
-        # Ensure context output directory mapping safely mirrors setup bounds
-        base_output_dir = "output"
-        cross_run_used = self._get_used_clips_log(base_output_dir)
+        used_ids = set()  # Within this video, no duplicate clips
 
-        # Inject topic keywords directly into search variations matrix safely
-        topic_keywords = [w.lower() for w in topic.split() if len(w) > 3]
-
-        spoken_segments = [s for s in script_segments if not s.get('is_pause')]
-
-        for i, segment in enumerate(spoken_segments):
+        for i, segment in enumerate(script_segments):
             seg_type = segment.get('type', 'story')
-            query_pool = self.dark_queries.get(seg_type, self.dark_queries['story'])
-            
-            # Form dynamic semantic combinations based on raw trending contextual queries
-            base_query = query_pool[i % len(query_pool)]
-            if topic_keywords and random.random() > 0.4:
-                query = f"{random.choice(topic_keywords)} {base_query}"
-                if len(query) > 50: 
-                    query = base_query
-            else:
-                query = base_query
+            query = self._topic_to_query(topic, seg_type, i)
 
-            print(f"    🎬 Segment {i} ({seg_type}): Resolving engine query -> '{query}'")
+            print(f"    🎬 Seg {i} ({seg_type}): searching '{query}'")
 
             videos = self.search_pexels(query, per_page=15)
             if not videos:
                 videos = self.search_pixabay(query, per_page=15)
 
-            # De-duplication filtration check (Current compilation run vs History records)
-            fresh = [v for v in videos if v['id'] not in used_within_video and v['id'] not in cross_run_used]
+            # FIX: if the topic-specific query returns nothing, fall back
+            # to a generic but still ON-NICHE query (brain/sleep/thinking)
+            # instead of leaving the segment with no footage at all.
+            if not videos:
+                fallback_q = self.fallback_queries[i % len(self.fallback_queries)]
+                print(f"    ⚠️ No results for topic query, trying fallback: '{fallback_q}'")
+                videos = self.search_pexels(fallback_q, per_page=15)
+                if not videos:
+                    videos = self.search_pixabay(fallback_q, per_page=15)
+
+            fresh = [v for v in videos if v.get('id') not in used_ids]
             if not fresh:
-                fresh = [v for v in videos if v['id'] not in used_within_video]
-            if not fresh:
-                fresh = videos  # Ultimate structural fallback
+                fresh = videos
 
             if fresh:
                 random.shuffle(fresh)
-                selected_video = fresh[0]
-                
-                used_within_video.add(selected_video['id'])
-                self._save_used_clip(base_output_dir, selected_video['id'])
+                video = fresh[0]
+                used_ids.add(video.get('id', ''))
 
                 clips.append({
-                    'url': selected_video['url'],
+                    'url': video['url'],
                     'start_time': segment.get('start', 0),
                     'duration': segment.get('duration', 5),
                     'segment_type': seg_type,
-                    'source': selected_video['source'],
-                    'id': selected_video['id']
+                    'source': video['source'],
+                    'id': video.get('id', '')
                 })
-                print(f"      ✅ Selected Asset ID: {selected_video['id']} [{selected_video['source']}]")
+                print(f"    ✅ Found clip from {video['source']}")
             else:
                 clips.append({
                     'url': None,
                     'start_time': segment.get('start', 0),
                     'duration': segment.get('duration', 5),
                     'segment_type': seg_type,
-                    'source': 'fallback'
+                    'source': 'generated'
                 })
-                print(f"      ⚠️ Zero inventory found for query framework. Enforcing backend color fallback.")
+                print(f"    ⚠️ No clip found, using color bg")
 
         return clips
 
     def download_footage(self, clips: List[Dict], output_dir: str) -> List[str]:
-        """Downloads assets while preserving strict indexed structural indices for assembler alignment"""
         os.makedirs(output_dir, exist_ok=True)
 
-        # Clean deployment directory layout bounds
-        if os.path.exists(output_dir):
-            for f in os.listdir(output_dir):
-                if f.startswith('clip_') and f.endswith('.mp4'):
-                    try:
-                        os.remove(os.path.join(output_dir, f))
-                    except:
-                        pass
+        for f in os.listdir(output_dir):
+            if f.startswith('clip_') and f.endswith('.mp4'):
+                try:
+                    os.remove(os.path.join(output_dir, f))
+                except:
+                    pass
 
-        downloaded_paths = []
-        
-        # FIX: Loop mapping tracks actual output indexes instead of raw compress array appends
+        downloaded = []
         for i, clip in enumerate(clips):
             if not clip.get('url'):
-                print(f"    ⚠️ Asset Index {i}: Flagged as Null URL stream. Initializing dynamic generator canvas pipeline context.")
+                print(f"  ⚠️ Clip {i}: no URL, using color bg")
                 continue
 
-            target_filename = f"clip_{i}.mp4"
-            filepath = os.path.join(output_dir, target_filename)
-            
+            filepath = os.path.join(output_dir, f"clip_{i}.mp4")
             try:
-                print(f"    📥 Fetching Stream Asset [{i}] -> Source: {clip['source']}...")
-                response = requests.get(clip['url'], stream=True, timeout=35)
+                print(f"  ⬇️ Clip {i} ({clip['source']})...")
+                response = requests.get(clip['url'], stream=True, timeout=30)
                 response.raise_for_status()
-                
                 with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=131072): # Balanced buffer chunks for pipeline
-                        if chunk:
-                            f.write(chunk)
+                    for chunk in response.iter_content(chunk_size=65536):
+                        f.write(chunk)
 
-                if os.path.exists(filepath) and os.path.getsize(filepath) > 15000:
-                    downloaded_paths.append(filepath)
-                    print(f"      💎 Asset {i} successfully stored -> {os.path.getsize(filepath) // 1024} KB")
+                if os.path.getsize(filepath) > 10000:
+                    downloaded.append(filepath)
+                    print(f"  ✅ Clip {i}: {os.path.getsize(filepath)//1024}KB")
                 else:
-                    if os.path.exists(filepath):
-                        os.remove(filepath)
-                    print(f"      ⚠️ Corrupt tracking payload signature on Asset {i}. Cleaned from local space boundaries.")
-            except Exception as e:
-                if os.path.exists(filepath):
                     os.remove(filepath)
-                print(f"      ❌ Network processing timeout on tracking target asset {i}: {e}")
+                    print(f"  ⚠️ Clip {i}: too small")
+            except Exception as e:
+                print(f"  ❌ Clip {i}: {e}")
 
-        return downloaded_paths
+        return downloaded
