@@ -7,6 +7,11 @@ on:
     - cron: '0 22 * * *'
   workflow_dispatch:
 
+# FIX: needed so the "Persist dedup state" step below is allowed to push a
+# commit back to this repo using the default GITHUB_TOKEN.
+permissions:
+  contents: write
+
 jobs:
   create-and-post:
     runs-on: ubuntu-latest
@@ -56,6 +61,26 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: python main.py
+
+      # FIX: state/used_topics.txt and state/used_clips.txt used to live
+      # under output/, which a fresh `actions/checkout` wipes at the start
+      # of every run — so "don't repeat this topic/clip" never actually
+      # worked across runs, only within a single video. This step commits
+      # the small state/ text files back to the repo after every run so the
+      # dedup history actually survives. It never touches the generated
+      # video/audio/thumbnail files in output/ (see .gitignore).
+      - name: Persist dedup state
+        if: always()
+        run: |
+          git config user.name "skillor-bot"
+          git config user.email "skillor-bot@users.noreply.github.com"
+          git add state/ || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update dedup state [skip ci]"
+            git push
+          else
+            echo "No state changes to commit."
+          fi
 
       # FIX: Artifact upload disabled — GitHub's free artifact storage quota
       # was hit, causing this step to fail (shown as a red X) even though
