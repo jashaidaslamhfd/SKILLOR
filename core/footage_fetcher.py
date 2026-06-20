@@ -345,8 +345,8 @@ class FootageFetcher:
                 relevance = self._score_clip_relevance(v.get('description', ''), seg_text)
                 scored.append((relevance, v))
 
-            # Sort by relevance, take top 3
-            scored.sort(reverse=True)
+            # ─── FIX: Sort by relevance score only (not dict) ─────────────────
+            scored.sort(key=lambda x: x[0], reverse=True)
             top_candidates = [v for _, v in scored[:3]]
 
             if not top_candidates:
