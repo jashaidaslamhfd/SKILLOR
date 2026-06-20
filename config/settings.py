@@ -5,66 +5,63 @@ from datetime import time
 
 @dataclass
 class VideoConfig:
-    DURATION_MIN = 45          # FIX: 40 -> 45 (Aapki target range 45-55 ke mutabiq)
-    DURATION_MAX = 55          # Target 45-55 seconds
+    DURATION_MIN = 40
+    DURATION_MAX = 55
     RESOLUTION = (1080, 1920)
     FPS = 30
     BITRATE = "8000k"
     CRF = 18
     PRESET = "slow"
-    
-    # Timestamps ratio distribution for 45-55s duration range
     HOOK_DURATION = 6.0
-    SUSPENSE_DURATION = 5.0    # FIX: 4.0 -> 5.0 (Tension hold badhane ke liye)
-    STORY_DURATION = 37.0      # FIX: 32.0 -> 37.0 (Video lambi karne ke liye duration yahan badhayi)
-    CTR_DURATION = 4.0         # FIX: 3.0 -> 4.0 (End loop clear rakhne ke liye)
-    
-    FAST_CUT_INTERVAL = 0.8    # 0.8s is perfect for retention loops
-    ZOOM_INTENSITY = 1.25      
+    SUSPENSE_DURATION = 4.0
+    STORY_DURATION = 32.0
+    CTR_DURATION = 3.0
+    FAST_CUT_INTERVAL = 0.8    # FIX: 1.5 → 0.8 (TikTok/Reels speed for USA/UK viral)
+    ZOOM_INTENSITY = 1.25      # FIX: 1.15 → 1.25 (more aggressive zoom = attention)
     SHAKE_INTENSITY = 3
 
 @dataclass
 class AudioConfig:
-    # Dark psychology voice - Deep, mysterious, cinematic feel for USA/UK audience
-    VOICE: str = "en-US-AndrewMultilingualNeural"          
-    RATE: str = "-10%"                       # FIX: -12% bohot slow aur robotic tha, -4% par smooth aur natural lagta hai
-    PITCH: str = "-2Hz"                     # FIX: -3Hz deepness ko distort kar rha tha, -1Hz perfect heavy masculine voice deta hai
-    VOLUME: str = "+8%"
-    SAMPLE_RATE: int = 48000
+    # Dark psychology voice - deep, mysterious, cinematic feel for USA/UK audience
+    VOICE: str = "en-US-GuyNeural"          # FIX: Christopher → Guy (deeper, more intense)
+    RATE: str = "-12%"                       # FIX: -3% → -12% (slower = more dramatic)
+    PITCH: str = "-3Hz"                      # FIX: +0Hz → -3Hz (deeper voice = dark feel)
+    VOLUME: str = "+10%"
+    SAMPLE_RATE: int = 44100
     CHANNELS: int = 2
     AUDIO_BITRATE: str = "192k"
-    BG_MUSIC_VOLUME: float = 0.05           # Subtle background score
-    FAN_NOISE_VOLUME: float = 0.02      # Room/ambient tone to mask silence breaks
+    BG_MUSIC_VOLUME: float = 0.06           # FIX: 0.08 → 0.06 (subtle, not distracting)
+    FAN_NOISE_VOLUME: float = 0.018         # FIX: NEW - continuous fan/room tone
     SFX_VOLUME: float = 0.25
-    WORDS_PER_MINUTE: int = 145             # FIX: 120 -> 155 (Normal conversational speed takay robotic trailing sound na aaye)
+    # FIX: 120 wpm assumed a much slower voice than what -5% rate actually
+    # produces (~145-155 wpm for en-US-GuyNeural). That gap was the root
+    # cause of segment-duration estimates running long, which cascaded into
+    # video duration shrinking to ~28s and caused black-frame gaps when the
+    # fallback (non-real-boundary) timing path was used.
+    WORDS_PER_MINUTE: int = 148
 
 @dataclass
 class CaptionConfig:
     """CapCut-style — USA/UK Shorts standard — Red/White alternating words"""
-    FONT_SIZE: int = 95            
+    FONT_SIZE: int = 95            # FIX: 90 → 95 (slightly bigger = more readable on mobile)
     FONT_NAME: str = "Arial"
     BOLD: int = 1
-    PRIMARY_COLOR: str = "&H00FFFFFF"    # White
-    SECONDARY_COLOR: str = "&H000000FF"  # Red (BGR format)
+    PRIMARY_COLOR: str = "&H00FFFFFF"    # White (even-indexed words)
+    SECONDARY_COLOR: str = "&H000000FF"  # FIX: NEW - Red (odd-indexed words, BGR format)
     OUTLINE_COLOR: str = "&H00000000"    # Black outline
-    OUTLINE_WIDTH: int = 6               
+    OUTLINE_WIDTH: int = 6               # FIX: 5 → 6 (thicker outline = more readable)
     SHADOW: int = 2
-    ALIGNMENT: int = 5                   # Screen center middle placement
-    MARGIN_V: int = 0                    # True center alignment
-    HIGHLIGHT_COLOR: str = "&H000000FF"  
-    # FIX: caption_generator.py reads these two fields but they were never
-    # defined here, so the moment anyone instantiated CaptionGenerator() it
-    # crashed with AttributeError. (video_assembler.py builds its ASS
-    # subtitles directly and doesn't hit this, which is why it went unnoticed.)
-    MAX_WORDS_PER_LINE: int = 2          # Short lines = faster-reading captions
-    ALTERNATE_COLORS: bool = True        # Even lines red, odd lines white
+    # FIX: ALIGNMENT 5 = middle-center (screen center, not top)
+    ALIGNMENT: int = 5                   # FIX: 8 (top) → 5 (middle = screen center)
+    MARGIN_V: int = 0                    # FIX: 300 → 0 (true center)
+    HIGHLIGHT_COLOR: str = "&H000000FF"  # Red for emphasis
 
 @dataclass
 class SEOConfig:
-    TITLE_MAX_LENGTH = 40          
-    DESCRIPTION_LENGTH = 125       
-    TAGS_COUNT = 12                
-    CATEGORY_ID = "27"             # Education (Best category for engagement algorithms in Psychology)
+    TITLE_MAX_LENGTH = 40          # FIX: 60 → 40 (Shorts: short titles win)
+    DESCRIPTION_LENGTH = 125       # FIX: 300 → 125 (100-150 words target)
+    TAGS_COUNT = 12                # FIX: 15 → 12 (10-14 range, quality over quantity)
+    CATEGORY_ID = "27"             # FIX: "28" (Science) → "27" (Education) — better for dark psych
     MADE_FOR_KIDS = False
     LICENSE = "youtube"
     PRIVACY_STATUS = "public"
@@ -89,34 +86,40 @@ class ThumbnailConfig:
 class PlatformConfig:
     TARGET_AUDIENCE = "US,UK,CA,AU"
     TIMEZONE = "America/New_York"
-    DAILY_SHORTS_COUNT = 3  
+    DAILY_SHORTS_COUNT = 3  # FIX: was missing, caused AttributeError — "3 Shorts/day" target
     YOUTUBE_POST_TIMES = [time(9, 0), time(17, 0)]
     FACEBOOK_POST_TIMES = [time(10, 0), time(18, 0)]
     INSTAGRAM_POST_TIMES = [time(11, 0), time(19, 0)]
 
 @dataclass
 class NicheConfig:
+    # USA/UK viral dark psychology + mind-body science topics
     TOPICS = [
+        # Sleep & Brain
         "why your body jerks when falling asleep",
         "what happens to your brain when you die",
         "sleep paralysis science explained",
         "why deja vu happens to your brain",
         "how your brain creates false memories",
+        # Dark Psychology
         "dark psychology manipulation tactics",
         "how governments use psychology to control you",
         "social media addiction brain science",
         "why you cant stop doomscrolling",
         "how corporations exploit your psychology",
+        # Body Mysteries
         "how blood is actually made in your body",
         "why humans are afraid of the dark",
         "what your body does the moment you die",
         "why some people never feel fear",
         "the science of gut feeling intuition",
+        # Mind Control
         "subliminal messaging in advertising",
         "how cult leaders control peoples minds",
         "the psychology of mass hysteria",
         "why people believe conspiracy theories",
         "how your environment controls your thoughts",
+        # Shocking Science
         "banned psychological experiments",
         "the stanford prison experiment truth",
         "milgram obedience experiment dark truth",
@@ -138,13 +141,13 @@ class APIKeys:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
     YOUTUBE_CLIENT_SECRETS = os.getenv("YOUTUBE_CLIENT_SECRETS")
-    REFRESH_TOKEN = os.getenv("REFRESH_TOKEN")              
-    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")        
-    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")  
+    REFRESH_TOKEN = os.getenv("REFRESH_TOKEN")              # FIX: was missing, caused AttributeError
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")        # FIX: was missing, caused AttributeError
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")  # FIX: was missing, caused AttributeError
     FACEBOOK_ACCESS_TOKEN = os.getenv("FACEBOOK_ACCESS_TOKEN")
-    FACEBOOK_PAGE_ID = os.getenv("FACEBOOK_PAGE_ID")  
+    FACEBOOK_PAGE_ID = os.getenv("FACEBOOK_PAGE_ID")  # FIX: was missing, caused AttributeError
     INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
-    INSTAGRAM_USER_ID = os.getenv("INSTAGRAM_USER_ID")  
+    INSTAGRAM_USER_ID = os.getenv("INSTAGRAM_USER_ID")  # FIX: was missing, caused AttributeError
     CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
     CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
     CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
