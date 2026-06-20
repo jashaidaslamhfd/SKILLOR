@@ -362,4 +362,4 @@ class AudioGenerator:
             'speech_duration': speech_dur,
             'pause_duration': total_pause_time,
             'word_count': total_words,
-            }
+                }
