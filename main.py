@@ -8,6 +8,7 @@ import os
 import traceback
 import time
 from datetime import datetime
+from typing import Dict, List
 
 from config.settings import (
     VIDEO_CONFIG, PLATFORM_CONFIG, API_KEYS,
