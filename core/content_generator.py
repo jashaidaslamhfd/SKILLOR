@@ -2,8 +2,9 @@
 
 import os
 import json
-from typing import Dict, List
+import random
 import re
+from typing import Dict, List
 
 try:
     from groq import Groq
@@ -58,7 +59,10 @@ class ContentGenerator:
             print(f"HTTP error: {e}")
             return ""
 
-    def generate_script(self, topic: str, angle: str) -> Dict:
+    # ═══════════════════════════════════════════════════════════
+    # FIXED: Added shock_angle, pattern, suspense_score parameters
+    # ═══════════════════════════════════════════════════════════
+    def generate_script(self, topic: str, angle: str, shock_angle: str = "", pattern: str = "curiosity_gap", suspense_score: int = 70) -> Dict:
         """
         Video structure:
         HOOK     6-8s   ~18-22 words  — curiosity question about THIS topic
@@ -73,7 +77,6 @@ class ContentGenerator:
 
         ALL sections must be about the SAME topic: {topic}
         """
-        import random
         hook_styles = [
             ('curiosity question', f'A direct "why does X happen" question about "{topic}" — no "have you ever wondered" phrasing.'),
             ('bold claim', f'A bold, surprising factual claim about "{topic}" stated as a statement, not a question.'),
@@ -91,9 +94,22 @@ class ContentGenerator:
         ]
         ctr_style, ctr_instruction = random.choice(ctr_styles)
 
+        # FIX: Use pattern from topic_engine if provided
+        if pattern and pattern != "curiosity_gap":
+            # Override hook style based on viral pattern
+            pattern_hooks = {
+                'shock_visual': ('bold claim', f'A shocking visual statement about "{topic}" that makes eyes widen.'),
+                'curiosity_gap': ('curiosity question', f'A direct "why does X happen" question about "{topic}".'),
+                'contrarian': ('contrarian', f'Open by saying what people THINK about "{topic}" is wrong.'),
+                'personal_stake': ('second-person callout', f'Start with "You" and describe something happening to viewer related to "{topic}".'),
+                'countdown': ('countdown/list tease', f'Tease a specific number of signs about "{topic}".'),
+            }
+            if pattern in pattern_hooks:
+                style_name, style_instruction = pattern_hooks[pattern]
+
         # FIX: Increased word count target to 100-120 words for 40-55s video
-        # 120 wpm = 2 words/sec → 100 words = 50s, 120 words = 60s
-        # Target: 100-115 words = 42-48s (perfect range)
+        wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
+
         prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
 
 Every section must be about "{topic}" only. Do NOT drift to other topics.
@@ -101,6 +117,9 @@ Every section must be about "{topic}" only. Do NOT drift to other topics.
 STYLE: Netflix mystery-documentary tone — dark curiosity and suspense about
 the human body/brain/mind, NOT manipulation tactics or dark psychology
 advice. Treat the topic like a mystery being unraveled, not a how-to.
+
+VIRAL PATTERN: {pattern}
+SUSPENSE LEVEL: {suspense_score}/100
 
 Write these 5 sections:
 
@@ -140,12 +159,13 @@ RULES:
 - NO hashtags NO emojis
 - Total 100-115 words across all 5 sections
 - FIX: word counts calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm voice speed
-  so the finished video lands in the 40-55s target range."""
+  so the finished video lands in the 40-55s target range — going over
+  these counts pushes the video past 55s."""
 
         raw = self._generate(prompt, max_tokens=500)
 
         hook     = self._extract("HOOK", raw)
-        shock    = self._extract("SHOCK", raw)  # NEW
+        shock    = self._extract("SHOCK", raw)
         suspense = self._extract("SUSPENSE", raw)
         story    = self._extract("STORY", raw)
         ctr      = self._extract("CTR", raw)
@@ -160,14 +180,17 @@ RULES:
                 f"Here's the one thing about {topic_lower} that experts rarely explain...",
             ])
         
-        # NEW: SHOCK fallback
+        # FIX: Use shock_angle from topic_engine if provided
         if not shock:
-            shock = random.choice([
-                f"And what happens next with {topic_lower}... will terrify you.",
-                f"But {topic_lower} has a dark side nobody mentions...",
-                f"And the worst part about {topic_lower}... is still coming.",
-                f"Wait until you see what {topic_lower} actually does...",
-            ])
+            if shock_angle:
+                shock = shock_angle
+            else:
+                shock = random.choice([
+                    f"And what happens next with {topic_lower}... will terrify you.",
+                    f"But {topic_lower} has a dark side nobody mentions...",
+                    f"And the worst part about {topic_lower}... is still coming.",
+                    f"Wait until you see what {topic_lower} actually does...",
+                ])
         
         if not suspense:
             suspense = f"And the terrifying truth about {topic_lower}... nobody is telling you."
@@ -186,13 +209,12 @@ RULES:
             ])
 
         hook     = self._clean(hook)
-        shock    = self._clean(shock)  # NEW
+        shock    = self._clean(shock)
         suspense = self._clean(suspense)
         story    = self._clean(story)
         ctr      = self._clean(ctr)
 
         # Build segments with SHOCK type for visual effects
-        wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
         segments = []
         t = 0.0
 
@@ -284,7 +306,6 @@ Return ONLY the title, nothing else, no quote marks."""
         has_words = bool(title) and len(re.findall(r'[A-Za-z]{2,}', title)) >= 2
 
         if not has_words or len(title) > 80:
-            import random
             title = random.choice([
                 f"The Dark Truth About {topic.title()}",
                 f"Why {topic.title()} Happens To You",
@@ -334,7 +355,6 @@ Return ONLY the phrase, nothing else."""
                 ["THIS", "CHANGES", "EVERYTHING"],
                 ["WAIT", "FOR", "IT"],
             ]
-            import random
             words = random.choice(fallback_phrases)
 
         return words[:4]
