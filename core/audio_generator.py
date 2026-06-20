@@ -131,7 +131,7 @@ class AudioGenerator:
         timings = []
         current = time_offset
         for word, weight in zip(words, weights):
-            clean = word.strip('.,!?;:\"()[]{}"\'')
+            clean = word.strip('.,!?;:\"()[]{}")\'')
             dur = weight * scale
             timings.append({
                 'word': clean,
@@ -166,19 +166,18 @@ class AudioGenerator:
             await asyncio.wait_for(comm.save(path), timeout=60)
         return boundaries
 
-    def _generate_speech(self, text: str, path: str, rate: str) -> tuple:
+    async def _generate_speech(self, text: str, path: str, rate: str) -> tuple:
+        """FIXED: Async method — no asyncio.run() conflict!"""
         last_error = None
         boundaries = []
         for attempt in range(1, 4):
             try:
-                try:
-                    boundaries = asyncio.run(self._async_tts(text, path, rate, capture_boundaries=True))
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    boundaries = loop.run_until_complete(self._async_tts(text, path, rate, capture_boundaries=True))
-                    loop.close()
+                # FIX: await use karo, asyncio.run() nahi!
+                boundaries = await self._async_tts(text, path, rate, capture_boundaries=True)
+
                 if os.path.exists(path) and os.path.getsize(path) > 0:
                     break
+
             except (asyncio.TimeoutError, Exception) as e:
                 last_error = e
                 print(f"    ⚠️ TTS attempt {attempt}/3 failed: {e}")
@@ -202,7 +201,8 @@ class AudioGenerator:
 
         return self._get_audio_duration(path), boundaries
 
-    def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
+    async def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
+        """FIXED: Async method — await _generate_speech!"""
         os.makedirs(output_dir, exist_ok=True)
 
         speech_segs = [s for s in script_segments if not s.get('is_pause') and s.get('text', '').strip()]
@@ -217,7 +217,8 @@ class AudioGenerator:
             print(f"    ⚠️ WARNING: {total_words} words — may exceed 55s!")
 
         speech_path = os.path.join(output_dir, "speech_full.mp3")
-        speech_dur, word_boundaries = self._generate_speech(full_text, speech_path, dynamic_rate)
+        # FIX: await lagaya _generate_speech pe
+        speech_dur, word_boundaries = await self._generate_speech(full_text, speech_path, dynamic_rate)
         print(f"    🎙️ Speech duration: {speech_dur:.1f}s | {len(word_boundaries)} real word timestamps")
 
         if speech_dur < 30:
@@ -303,7 +304,7 @@ class AudioGenerator:
                         shift = current_time - seg_start
                         for wb in seg_boundaries:
                             all_timings.append({
-                                'word': wb['word'].strip('.,!?;:"()[]{}\'').strip(),
+                                'word': wb['word'].strip('.,!?;:\"()[]{}")\'').strip(),
                                 'start': round(wb['start'] + shift, 3),
                                 'end': round(wb['end'] + shift, 3),
                                 'duration': round(wb['end'] - wb['start'], 3)
