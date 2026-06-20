@@ -209,7 +209,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 seg_words = word_timings[wt_idx:wt_idx + seg_word_count]
                 wt_idx += seg_word_count
                 if seg_words:
-                    s['duration'] = round(max(0.2, seg_words[-1]['end'] - seg_words[0]['start']), 3)
+                    new_dur = round(max(0.2, seg_words[-1]['end'] - seg_words[0]['start']), 3)
+                    # FIX: sanity-check the realigned duration against the
+                    # original estimate. If word_timings slicing drifted
+                    # (e.g. due to a word-count mismatch upstream), it could
+                    # produce a wildly-too-short duration, which silently
+                    # collapsed total video length to ~31-35s instead of
+                    # the target 40-55s. Only trust the realigned value if
+                    # it's reasonably close to what was originally expected
+                    # for this segment's word count.
+                    original_dur = s.get('duration', new_dur)
+                    if original_dur > 0 and new_dur < original_dur * 0.5:
+                        print(f"  ⚠️ Segment duration realignment looked wrong ({new_dur}s vs expected ~{original_dur}s) — keeping original estimate")
+                    else:
+                        s['duration'] = new_dur
             print(f"  🔧 Segment durations re-aligned to real word timestamps")
         elif total_audio > 0 and script_segments:
             # Fallback: old ratio-based estimate, only used if word_timings is empty
