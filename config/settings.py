@@ -52,6 +52,12 @@ class CaptionConfig:
     ALIGNMENT: int = 5                   # Screen center middle placement
     MARGIN_V: int = 0                    # True center alignment
     HIGHLIGHT_COLOR: str = "&H000000FF"  
+    # FIX: caption_generator.py reads these two fields but they were never
+    # defined here, so the moment anyone instantiated CaptionGenerator() it
+    # crashed with AttributeError. (video_assembler.py builds its ASS
+    # subtitles directly and doesn't hit this, which is why it went unnoticed.)
+    MAX_WORDS_PER_LINE: int = 2          # Short lines = faster-reading captions
+    ALTERNATE_COLORS: bool = True        # Even lines red, odd lines white
 
 @dataclass
 class SEOConfig:
