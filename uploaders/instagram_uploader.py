@@ -16,7 +16,7 @@ class InstagramUploader:
 
     def upload_reel(
         self,
-        video_path: str,
+        video_url: str,
         thumbnail_path: str,
         caption: str,
         hashtags: List[str],
@@ -28,16 +28,23 @@ class InstagramUploader:
         if not self.access_token:
             print("⚠️ INSTAGRAM_ACCESS_TOKEN not set — skipping Instagram upload")
             return {"error": "INSTAGRAM_ACCESS_TOKEN not set in environment"}
+        if not video_url or not video_url.startswith("http"):
+            # FIX: this used to silently accept a local file path here,
+            # which Instagram's servers can never reach — the upload would
+            # fail with an opaque Graph API error. main.py now uploads to
+            # Cloudinary first and only calls this with a real public URL;
+            # this check catches any future regression early and clearly.
+            print(f"⚠️ Instagram needs a public video URL, got: {video_url!r}")
+            return {"error": "video_url must be a public http(s) URL, not a local file path"}
 
         # Instagram Graph API requires a publicly accessible video URL.
-        # video_path must be a Cloudinary/CDN URL in production, not a local path.
         url = f"{self.base_url}/{self.ig_user_id}/media"
         optimized_caption = self.optimize_caption(caption, hashtags)
 
         data = {
             "access_token": self.access_token,
             "media_type": "REELS",
-            "video_url": video_path,  # must be a public URL
+            "video_url": video_url,
             "caption": optimized_caption,
             "share_to_feed": "true",
         }
