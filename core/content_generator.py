@@ -37,8 +37,6 @@ class ContentGenerator:
         ]
         if self.client:
             try:
-                # FIX: timeout added — Groq SDK call had none, could hang
-                # indefinitely on slow/throttled responses.
                 r = self.client.chat.completions.create(
                     model=self.model, messages=msgs,
                     temperature=0.85, max_tokens=max_tokens, top_p=0.9,
@@ -63,23 +61,18 @@ class ContentGenerator:
     def generate_script(self, topic: str, angle: str) -> Dict:
         """
         Video structure:
-        HOOK     6-8s  ~20 words  — curiosity question about THIS topic
-        PAUSE    0.6s  — breath
-        SUSPENSE 4s    ~12 words  — shocking twist about THIS topic
-        PAUSE    0.4s  — breath
-        STORY    30s   ~65 words  — science/truth about THIS topic, one mid-story breath
-        PAUSE    0.4s  — breath
-        CTR      5s    ~15 words  — follow/subscribe CTA
+        HOOK     6-8s   ~18-22 words  — curiosity question about THIS topic
+        PAUSE    0.5s   — breath
+        SHOCK    3-4s   ~8-10 words   — visual shock moment (NEW: for suspense effects)
+        PAUSE    0.3s   — breath
+        SUSPENSE 4-5s   ~10-12 words  — shocking twist about THIS topic
+        PAUSE    0.4s   — breath
+        STORY    25-30s ~55-65 words  — science/truth about THIS topic, one mid-story breath
+        PAUSE    0.4s   — breath
+        CTR      4-5s   ~10-12 words  — follow/subscribe CTA
 
         ALL sections must be about the SAME topic: {topic}
         """
-        # FIX: a single hardcoded example in the prompt caused the model to
-        # near-copy that exact phrasing ("Have you ever wondered why X...
-        # because science just revealed something terrifying.") on almost
-        # every video. Viewers pattern-recognize an identical-sounding hook
-        # within the first second and swipe away — this is very likely the
-        # main driver of the 65% swipe-away rate. Rotating through several
-        # structurally different hook styles forces real variety.
         import random
         hook_styles = [
             ('curiosity question', f'A direct "why does X happen" question about "{topic}" — no "have you ever wondered" phrasing.'),
@@ -98,6 +91,9 @@ class ContentGenerator:
         ]
         ctr_style, ctr_instruction = random.choice(ctr_styles)
 
+        # FIX: Increased word count target to 100-120 words for 40-55s video
+        # 120 wpm = 2 words/sec → 100 words = 50s, 120 words = 60s
+        # Target: 100-115 words = 42-48s (perfect range)
         prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
 
 Every section must be about "{topic}" only. Do NOT drift to other topics.
@@ -106,18 +102,23 @@ STYLE: Netflix mystery-documentary tone — dark curiosity and suspense about
 the human body/brain/mind, NOT manipulation tactics or dark psychology
 advice. Treat the topic like a mystery being unraveled, not a how-to.
 
-Write these 4 sections:
+Write these 5 sections:
 
-HOOK: (16-18 words)
+HOOK: (18-22 words)
 Style: {style_name}. {style_instruction}
 Do NOT use the phrase "have you ever wondered" — vary your opening words.
 End with "..."
 
-SUSPENSE: (9-11 words)
+SHOCK: (8-10 words)
+NEW: A one-sentence visual shock moment about "{topic}" — something that
+makes the viewer's eyes widen. This triggers the glitch/shake visual effect.
+End with "..."
+
+SUSPENSE: (10-12 words)
 A one-sentence shocking twist directly about "{topic}".
 End with "..."
 
-STORY: (48-54 words)
+STORY: (55-65 words)
 Explain the real science behind "{topic}", but structure it as:
 1) what's actually happening in the body/brain (use vivid, almost
    unsettling imagery — e.g. "your body is literally..." rather than dry
@@ -137,21 +138,19 @@ RULES:
 - Second person "you/your"  
 - USA/UK English only
 - NO hashtags NO emojis
-- Total 85-95 words across all 4 sections
+- Total 100-115 words across all 5 sections
 - FIX: word counts calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm voice speed
-  so the finished video lands in the 40-55s target range — going over
-  these counts pushes the video past 55s."""
+  so the finished video lands in the 40-55s target range."""
 
-        raw = self._generate(prompt, max_tokens=450)
+        raw = self._generate(prompt, max_tokens=500)
 
         hook     = self._extract("HOOK", raw)
+        shock    = self._extract("SHOCK", raw)  # NEW
         suspense = self._extract("SUSPENSE", raw)
         story    = self._extract("STORY", raw)
         ctr      = self._extract("CTR", raw)
 
-        # Topic-specific fallbacks — FIX: rotate fallback hook phrasing too,
-        # so even a Groq/parsing failure doesn't always produce the exact
-        # same generic hook sentence.
+        # Topic-specific fallbacks with variety
         topic_lower = topic.lower()
         if not hook:
             hook = random.choice([
@@ -160,18 +159,26 @@ RULES:
                 f"Most people get {topic_lower} completely wrong, and the real reason will surprise you...",
                 f"Here's the one thing about {topic_lower} that experts rarely explain...",
             ])
+        
+        # NEW: SHOCK fallback
+        if not shock:
+            shock = random.choice([
+                f"And what happens next with {topic_lower}... will terrify you.",
+                f"But {topic_lower} has a dark side nobody mentions...",
+                f"And the worst part about {topic_lower}... is still coming.",
+                f"Wait until you see what {topic_lower} actually does...",
+            ])
+        
         if not suspense:
             suspense = f"And the terrifying truth about {topic_lower}... nobody is telling you."
+        
         if not story:
-            # FIX: shortened to match the new ~48-54 word story target —
-            # the old fallback was 66 words, which alone would push videos
-            # past the 55s ceiling whenever Groq parsing failed.
             story = (f"The science behind {topic_lower} is more shocking than you realize, "
                     f"and your brain is actually protecting you in the most bizarre way possible "
                     f"but this same mechanism... can be exploited by the wrong people, "
                     f"and once you understand this you will never look at {topic_lower} the same way again.")
+        
         if not ctr:
-            # FIX: shortened to match the new ~10-12 word CTR target
             ctr = random.choice([
                 "Follow now because tomorrow we reveal exactly how to use this.",
                 "Like and follow if this just changed how you see things.",
@@ -179,16 +186,12 @@ RULES:
             ])
 
         hook     = self._clean(hook)
+        shock    = self._clean(shock)  # NEW
         suspense = self._clean(suspense)
         story    = self._clean(story)
         ctr      = self._clean(ctr)
 
-        # Build segments
-        # FIX: was hardcoded to 130 wpm, but AUDIO_CONFIG.WORDS_PER_MINUTE
-        # (used by the actual TTS voice) is 120 — the mismatch meant these
-        # estimated segment durations didn't match real speech length.
-        # (video_assembler.py now re-aligns durations to real word_timings
-        # anyway, but keeping this consistent avoids confusing estimates.)
+        # Build segments with SHOCK type for visual effects
         wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
         segments = []
         t = 0.0
@@ -208,18 +211,17 @@ RULES:
             t += dur
 
         seg('hook', hook)
-        seg('pause', '0.6', is_pause=True)
+        seg('pause', '0.5', is_pause=True)
+        seg('shock', shock)  # NEW: triggers glitch/shake visual effect
+        seg('pause', '0.3', is_pause=True)
         seg('suspense', suspense)
         seg('pause', '0.4', is_pause=True)
 
-        # Story — split at "..." if present, otherwise split at midpoint
+        # Story — split at "..." if present
         if '...' in story:
             parts = story.split('...', 1)
             seg('story', parts[0].strip() + '...')
             seg('pause', '0.4', is_pause=True)
-            # FIX: if the model included a second "..." later in the story,
-            # strip it so it doesn't read as an extra unintended pause point
-            # that the caption/video timing isn't actually accounting for.
             second_half = parts[1].replace('...', ',').strip()
             seg('story', second_half)
         else:
@@ -233,33 +235,36 @@ RULES:
         seg('ctr', ctr)
 
         full = ' '.join(s['text'] for s in segments if not s.get('is_pause'))
-        print(f"    📊 Topic: '{topic}' | {len(full.split())} words | ~{round(t,1)}s")
+        word_count = len(full.split())
+        print(f"    📊 Topic: '{topic}' | {word_count} words | ~{round(t,1)}s")
+
+        # FIX: Warn if word count is too low (will cause short video)
+        if word_count < 90:
+            print(f"    ⚠️ WARNING: Only {word_count} words — video will be <40s!")
+        elif word_count > 130:
+            print(f"    ⚠️ WARNING: {word_count} words — video may exceed 55s!")
 
         return {
             'full_script': full,
             'segments': segments,
-            'word_count': len(full.split()),
+            'word_count': word_count,
             'duration': round(t, 2),
-            'hook': hook, 'suspense': suspense,
+            'hook': hook, 'shock': shock, 'suspense': suspense,
             'story': story, 'ctr': ctr
         }
 
     def _extract(self, label: str, text: str) -> str:
         if not text:
             return ""
-        pattern = rf'{label}:\s*(.+?)(?=\n\s*(?:HOOK|SUSPENSE|STORY|CTR):|$)'
+        pattern = rf'{label}:\s*(.+?)(?=\n\s*(?:HOOK|SHOCK|SUSPENSE|STORY|CTR):|$)'
         m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
         return m.group(1).strip() if m else ""
 
     def _clean(self, text: str) -> str:
         text = re.sub(r'#\w+', '', text)
-        # Keep ellipsis, remove other non-ASCII
         text = re.sub(r'[^\x00-\x7F]', '', text)
         text = re.sub(r'\s+', ' ', text)
         text = text.strip()
-        # FIX: Groq sometimes wraps generated lines in quote marks copied
-        # from prompt examples — strip any leading/trailing quotes so they
-        # don't end up spoken aloud or burned into captions/title text.
         text = text.strip('"').strip("'").strip()
         return text
 
@@ -273,17 +278,9 @@ Example format (without quotes): Dark Mind Secrets 🧠
 Return ONLY the title, nothing else, no quote marks."""
         title = self._generate(prompt, max_tokens=60)
 
-        # FIX: Groq was literally copying the quotes from the example
-        # format ("Dark Mind Secrets 🧠") into its output, producing titles
-        # like '"Dark Psychology 🧠"' with literal quote marks shown on
-        # YouTube. Strip any leading/trailing quote characters.
         if title:
             title = title.strip().strip('"').strip("'").strip()
 
-        # FIX: validate the title actually contains real words, not just
-        # emoji/symbols. Without this check, an emoji-only response (e.g.
-        # "🤐🤯") slipped straight to YouTube as the video title — this is
-        # what was causing titles with no searchable text at all.
         has_words = bool(title) and len(re.findall(r'[A-Za-z]{2,}', title)) >= 2
 
         if not has_words or len(title) > 80:
@@ -314,11 +311,6 @@ Return ONLY the title, nothing else, no quote marks."""
         }
 
     def generate_thumbnail_words(self, topic: str) -> List[str]:
-        # FIX: previously this just split the raw topic string into pieces
-        # (e.g. "your right" -> "YOUR", "RIGHT"), which produced broken,
-        # incomplete-looking phrases on the thumbnail ("YOUR" / "RIGHT" /
-        # "DIDN'T INCLUDE"). Now we ask the model for a short, complete,
-        # standalone hook phrase instead of fragmenting the topic.
         prompt = f"""Write ONE short, complete, punchy thumbnail phrase (2-4 words)
 that teases this topic: "{topic}"
 Rules:
@@ -335,7 +327,6 @@ Return ONLY the phrase, nothing else."""
         else:
             words = []
 
-        # Validate: 2-4 real words, no leftover fragments
         if not (2 <= len(words) <= 4) or any(len(w) < 2 for w in words):
             fallback_phrases = [
                 ["HIDDEN", "TRUTH"],
