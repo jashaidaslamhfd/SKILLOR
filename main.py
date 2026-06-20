@@ -17,6 +17,7 @@ from core.thumbnail_generator import ThumbnailGenerator
 from uploaders.youtube_uploader import YouTubeUploader
 from uploaders.facebook_uploader import FacebookUploader
 from uploaders.instagram_uploader import InstagramUploader
+from core.cloud_uploader import CloudUploader
 
 class YouTubeAutomationSystem:
     def __init__(self):
@@ -29,6 +30,7 @@ class YouTubeAutomationSystem:
         self.youtube_uploader = YouTubeUploader()
         self.fb_uploader = FacebookUploader()
         self.ig_uploader = InstagramUploader()
+        self.cloud_uploader = CloudUploader()
         self.output_dir = "output"
         os.makedirs(self.output_dir, exist_ok=True)
         
@@ -200,14 +202,31 @@ class YouTubeAutomationSystem:
         if ig_ready:
             print("📸 Uploading to Instagram...")
             try:
-                ig_result = self.ig_uploader.upload_reel(
-                    video_data['video_path'],
-                    thumbnail_path,
-                    video_data['description'],
-                    video_data['tags']
-                )
-                results['instagram'] = ig_result
-                print(f"  ✅ Instagram: {ig_result.get('url', 'N/A')}")
+                # FIX: Instagram's Graph API needs a publicly reachable
+                # video_url — it cannot read a local file path. Cloudinary
+                # was configured (keys + dependency already present) but
+                # never actually called anywhere, so this upload always
+                # failed in production. Get a public URL first.
+                if not self.cloud_uploader.is_configured():
+                    print("  ⚠️ Skipping Instagram — CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET not set "
+                          "(Instagram requires a public video URL, not a local file)")
+                    results['instagram'] = {'status': 'skipped', 'reason': 'Cloudinary credentials not set'}
+                else:
+                    public_url = self.cloud_uploader.upload_video(
+                        video_data['video_path'],
+                        public_id=f"short_{os.path.splitext(os.path.basename(video_data['video_path']))[0]}",
+                    )
+                    if not public_url:
+                        results['instagram'] = {'error': 'Cloudinary upload failed — no public URL available'}
+                    else:
+                        ig_result = self.ig_uploader.upload_reel(
+                            public_url,
+                            thumbnail_path,
+                            video_data['description'],
+                            video_data['tags']
+                        )
+                        results['instagram'] = ig_result
+                        print(f"  ✅ Instagram: {ig_result.get('url', 'N/A')}")
             except Exception as e:
                 print(f"  ❌ Instagram failed: {e}")
                 results['instagram'] = {'error': str(e)}
