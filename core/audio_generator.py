@@ -5,17 +5,27 @@ import asyncio
 import subprocess
 from typing import Dict, List
 
+from config.settings import AUDIO_CONFIG
+
 
 class AudioGenerator:
     def __init__(self):
-        # FIX: Dark psychology voice for USA/UK audience
-        self.voice = "en-US-GuyNeural"   # Deep, intense, cinematic
-        self.rate = "-12%"                # Slower = more dramatic
-        self.pitch = "-3Hz"              # Lower = darker feel
-        self.volume = "+10%"
-        self.sample_rate = 44100
-        self.channels = 2
-        self.audio_bitrate = "192k"
+        # FIX: this used to hardcode its own voice/rate/pitch values that
+        # silently OVERRODE AUDIO_CONFIG in settings.py — editing settings.py
+        # had zero effect on the actual TTS output. Now there's one source
+        # of truth. Also: rate/pitch here used to be far more extreme
+        # (-12%/-3Hz) than what settings.py intended (-4%/-1Hz) — aggressively
+        # shifting edge-tts's pitch parameter without formant correction is
+        # what makes a voice sound thin/robotic instead of deep, so we now
+        # use the gentler settings.py values, which keep the voice's natural
+        # body intact.
+        self.voice = AUDIO_CONFIG.VOICE
+        self.rate = AUDIO_CONFIG.RATE
+        self.pitch = AUDIO_CONFIG.PITCH
+        self.volume = AUDIO_CONFIG.VOLUME
+        self.sample_rate = AUDIO_CONFIG.SAMPLE_RATE
+        self.channels = AUDIO_CONFIG.CHANNELS
+        self.audio_bitrate = AUDIO_CONFIG.AUDIO_BITRATE
 
     def _get_audio_duration(self, path: str) -> float:
         try:
@@ -187,10 +197,17 @@ class AudioGenerator:
         if not os.path.exists(path):
             return 0.0, []
 
-        # Upsample to 44.1kHz stereo 192k
+        # Upsample to 44.1kHz stereo 192k + FIX: warmth EQ + loudness
+        # normalization. A raw edge-tts voice (especially after a pitch
+        # shift) tends to sound thin/tinny — it's missing low-mid body and
+        # has harsh upper-mid energy. A gentle bass boost around 110Hz adds
+        # back chest/body resonance, a small dip around 6-8kHz tames the
+        # harshness, and loudnorm gives consistent, full loudness without
+        # the clipping-induced thinness a flat "+10% volume" boost can cause.
         hq = path.replace('.mp3', '_hq.mp3')
         subprocess.run([
             'ffmpeg', '-y', '-i', path,
+            '-af', 'bass=g=4:f=110:w=0.6,treble=g=-2:f=7000:w=0.7,loudnorm=I=-16:TP=-1.5:LRA=11',
             '-ar', str(self.sample_rate), '-ac', str(self.channels),
             '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', hq
         ], capture_output=True, timeout=60)
