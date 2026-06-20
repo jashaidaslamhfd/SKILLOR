@@ -16,13 +16,7 @@ from config.settings import API_KEYS, NICHE_CONFIG, AUDIO_CONFIG
 class ContentGenerator:
     def __init__(self):
         self.api_key = API_KEYS.GROQ_API_KEY
-        # FIX: llama-3.3-70b-versatile was deprecated by Groq on June 17, 2026.
-        # Every Groq call was silently failing (400/decommissioned error),
-        # which made generate_script()/generate_title()/generate_thumbnail_words()
-        # ALWAYS fall through to their fixed fallback templates — this was the
-        # root cause of every video getting the same title and the same hook.
-        # openai/gpt-oss-120b is Groq's official migration target for this model.
-        self.model = "openai/gpt-oss-120b"
+        self.model = "llama-3.3-70b-versatile"
         self.client = None
         self.base_url = "https://api.groq.com/openai/v1"
         self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -61,13 +55,7 @@ class ContentGenerator:
                       "temperature": 0.85, "max_tokens": max_tokens},
                 timeout=30)
             data = r.json()
-            if 'choices' not in data:
-                # FIX: surface the actual Groq error (e.g. model deprecated,
-                # bad API key) instead of silently returning "" and letting
-                # every caller quietly fall back to templated text.
-                print(f"⚠️ Groq API returned no choices: {data.get('error', data)}")
-                return ""
-            return data['choices'][0]['message']['content'].strip()
+            return data['choices'][0]['message']['content'].strip() if 'choices' in data else ""
         except Exception as e:
             print(f"HTTP error: {e}")
             return ""
@@ -102,34 +90,57 @@ class ContentGenerator:
         ]
         style_name, style_instruction = random.choice(hook_styles)
 
+        ctr_styles = [
+            ('urgent follow', 'Tell them to follow now because tomorrow reveals more.'),
+            ('curiosity continuation', 'Tease that part 2 explains the rest — follow so they don\'t miss it.'),
+            ('direct ask', 'Plainly ask them to follow/like if this surprised them.'),
+            ('community framing', 'Invite them to join others who follow for this content.'),
+        ]
+        ctr_style, ctr_instruction = random.choice(ctr_styles)
+
         prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
 
 Every section must be about "{topic}" only. Do NOT drift to other topics.
 
+STYLE: Netflix mystery-documentary tone — dark curiosity and suspense about
+the human body/brain/mind, NOT manipulation tactics or dark psychology
+advice. Treat the topic like a mystery being unraveled, not a how-to.
+
 Write these 4 sections:
 
-HOOK: (20-22 words)
+HOOK: (16-18 words)
 Style: {style_name}. {style_instruction}
 Do NOT use the phrase "have you ever wondered" — vary your opening words.
 End with "..."
 
-SUSPENSE: (11-13 words)
+SUSPENSE: (9-11 words)
 A one-sentence shocking twist directly about "{topic}".
 End with "..."
 
-STORY: (63-68 words)
-Explain the real science/psychology behind "{topic}".
-Use "and", "but", "because", "which means" to connect sentences — NO full stops mid-story except ONE "..." naturally placed where narrator breathes.
-Loop back to hook theme at the end.
+STORY: (48-54 words)
+Explain the real science behind "{topic}", but structure it as:
+1) what's actually happening in the body/brain (use vivid, almost
+   unsettling imagery — e.g. "your body is literally..." rather than dry
+   textbook phrasing)
+2) an UNEXPECTED TWIST — a surprising reason/discovery the viewer wouldn't
+   guess, that recontextualizes what they just heard
+Use "and", "but", "because", "which means" to connect sentences — NO full
+stops mid-story except ONE "..." naturally placed where narrator breathes.
+End by looping back to the hook's exact theme/question so the story closes
+like a loop — the viewer should feel like rewatching connects the ending
+back to the beginning.
 
-CTR: (14-16 words)
-Urgent follow/subscribe CTA. Example: "Follow this account right now because tomorrow we reveal the solution to this."
+CTR: (10-12 words)
+Style: {ctr_style}. {ctr_instruction}
 
 RULES:
 - Second person "you/your"  
 - USA/UK English only
 - NO hashtags NO emojis
-- Total 110-120 words across all 4 sections"""
+- Total 85-95 words across all 4 sections
+- FIX: word counts calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm voice speed
+  so the finished video lands in the 40-55s target range — going over
+  these counts pushes the video past 55s."""
 
         raw = self._generate(prompt, max_tokens=450)
 
@@ -152,10 +163,20 @@ RULES:
         if not suspense:
             suspense = f"And the terrifying truth about {topic_lower}... nobody is telling you."
         if not story:
-            story = (f"The science behind {topic_lower} is more shocking than you realize and researchers have spent decades trying to understand exactly why it happens and what they found is that your brain is actually protecting you in the most bizarre way possible "
-                    f"but this same mechanism... can be exploited by the wrong people and once you understand this you will never look at {topic_lower} the same way again.")
+            # FIX: shortened to match the new ~48-54 word story target —
+            # the old fallback was 66 words, which alone would push videos
+            # past the 55s ceiling whenever Groq parsing failed.
+            story = (f"The science behind {topic_lower} is more shocking than you realize, "
+                    f"and your brain is actually protecting you in the most bizarre way possible "
+                    f"but this same mechanism... can be exploited by the wrong people, "
+                    f"and once you understand this you will never look at {topic_lower} the same way again.")
         if not ctr:
-            ctr = "Follow this account right now because tomorrow we reveal exactly how to use this to your advantage."
+            # FIX: shortened to match the new ~10-12 word CTR target
+            ctr = random.choice([
+                "Follow now because tomorrow we reveal exactly how to use this.",
+                "Like and follow if this just changed how you see things.",
+                "Follow for more — part two explains the rest tomorrow.",
+            ])
 
         hook     = self._clean(hook)
         suspense = self._clean(suspense)
@@ -235,16 +256,29 @@ RULES:
         # Keep ellipsis, remove other non-ASCII
         text = re.sub(r'[^\x00-\x7F]', '', text)
         text = re.sub(r'\s+', ' ', text)
-        return text.strip()
+        text = text.strip()
+        # FIX: Groq sometimes wraps generated lines in quote marks copied
+        # from prompt examples — strip any leading/trailing quotes so they
+        # don't end up spoken aloud or burned into captions/title text.
+        text = text.strip('"').strip("'").strip()
+        return text
 
     def generate_title(self, topic: str) -> str:
         import re
-        prompt = f"""Write ONE viral YouTube Shorts title about: "{topic}"
+        prompt = f"""Write ONE viral YouTube Shorts title about: {topic}
 Rules: 2-4 real English words + 1 emoji at the end. Under 40 chars total.
 The words must be readable text that explains the topic — NOT just emojis or symbols.
-Example format: "Dark Mind Secrets 🧠"
-Return ONLY the title, nothing else."""
+Do NOT wrap the title in quote marks.
+Example format (without quotes): Dark Mind Secrets 🧠
+Return ONLY the title, nothing else, no quote marks."""
         title = self._generate(prompt, max_tokens=60)
+
+        # FIX: Groq was literally copying the quotes from the example
+        # format ("Dark Mind Secrets 🧠") into its output, producing titles
+        # like '"Dark Psychology 🧠"' with literal quote marks shown on
+        # YouTube. Strip any leading/trailing quote characters.
+        if title:
+            title = title.strip().strip('"').strip("'").strip()
 
         # FIX: validate the title actually contains real words, not just
         # emoji/symbols. Without this check, an emoji-only response (e.g.
