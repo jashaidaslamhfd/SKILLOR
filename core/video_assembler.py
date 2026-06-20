@@ -58,88 +58,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f.write(header + "\n".join(lines) + "\n")
         print(f"    📝 ASS: {len(lines)} words | size:{font_size}px")
 
-    # ─── Crossfade helper (smooth transitions instead of jump cuts) ──
-    def _xfade_concat(self, cuts: List[str], cut_lens: List[float], out_path: str,
-                       seg_idx: int, transition: float = 0.35) -> bool:
-        """Dissolve consecutive cuts into each other with xfade instead of a
-        hard concat cut. Hard cuts every ~1s, each at a different random
-        zoom/crop, is what produced the 'photos flipping' look the viewer
-        sees instead of real moving footage. A short crossfade between each
-        cut reads as a smooth camera/scene transition instead."""
-        n = len(cuts)
-        if n == 0:
-            return False
-        if n == 1:
-            shutil.copy(cuts[0], out_path)
-            return True
-
-        inputs = []
-        for c in cuts:
-            inputs += ['-i', c]
-
-        filter_parts = []
-        prev_label = '0:v'
-        running_offset = cut_lens[0]
-        for i in range(1, n):
-            t = max(0.08, min(transition, cut_lens[i - 1] * 0.4, cut_lens[i] * 0.4))
-            offset = max(0.0, running_offset - t)
-            out_label = f"s{seg_idx}x{i}"
-            filter_parts.append(
-                f"[{prev_label}][{i}:v]xfade=transition=fade:duration={t:.3f}:offset={offset:.3f}[{out_label}]"
-            )
-            prev_label = out_label
-            running_offset += cut_lens[i] - t
-
-        cmd = ["ffmpeg", "-y"] + inputs + [
-            "-filter_complex", ";".join(filter_parts),
-            "-map", f"[{prev_label}]",
-            "-c:v", "libx264", "-crf", str(self.crf), "-preset", "fast",
-            "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
-            out_path
-        ]
-        r = subprocess.run(cmd, capture_output=True)
-        return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
-
-    def _normalize_duration(self, video_path: str, target_dur: float, temp_dir: str, seg_idx: int) -> str:
-        """Crossfading consumes a bit of runtime at each transition (two cuts
-        overlap), which leaves the segment slightly shorter than total_dur.
-        Pad with a held last frame (or trim) so every segment lands exactly
-        on its target length and stays in sync with the narration."""
-        try:
-            probe = subprocess.run([
-                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1', video_path
-            ], capture_output=True, text=True)
-            actual = float(probe.stdout.strip())
-        except Exception:
-            return video_path
-
-        diff = target_dur - actual
-        if abs(diff) < 0.05:
-            return video_path
-
-        fixed_path = os.path.join(temp_dir, f"norm_{seg_idx}.mp4")
-        if diff > 0:
-            cmd = ["ffmpeg", "-y", "-i", video_path,
-                   "-vf", f"tpad=stop_mode=clone:stop_duration={diff:.3f}",
-                   "-c:v", "libx264", "-crf", str(self.crf), "-preset", "fast",
-                   "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an", fixed_path]
-        else:
-            cmd = ["ffmpeg", "-y", "-i", video_path, "-t", str(target_dur),
-                   "-c:v", "libx264", "-crf", str(self.crf), "-preset", "fast",
-                   "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an", fixed_path]
-        r = subprocess.run(cmd, capture_output=True)
-        return fixed_path if (r.returncode == 0 and os.path.exists(fixed_path)) else video_path
-
     # ─── Fast Cuts from Footage ───────────────────────────────────
     def _fast_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
         """
-        Smooth retention-style cuts:
-        - Every ~1.8-3.0s clip changes (was 0.8-1.5s — too fast, read as
-          photos flipping instead of footage playing)
+        TikTok/Reels style fast cuts:
+        - Every 1.5–2.5s clip changes
         - Each cut: random start point from source footage
-        - Each cut: gentle zoom (1.06-1.18x) + random direction
-        - Crossfade dissolve between cuts instead of a hard jump cut
+        - Each cut: random zoom (1.05–1.30x) + random direction
         - Portrait scale enforced after every zoom
         """
         # Get source clip duration
@@ -153,16 +78,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             src_dur = 30.0
 
         cuts = []
-        cut_lens = []
         current = 0.0
         cut_idx = 0
 
-        # FIX: cuts were 0.8-1.5s with a hard concat between them — visually
-        # indistinguishable from a slideshow flipping through photos. 1.8-3.0s
-        # cuts give each shot enough time to read as footage, not a flash card.
         while current < total_dur:
-            cut_len = min(random.uniform(1.8, 3.0), total_dur - current)
-            if cut_len < 0.5:
+            cut_len = min(random.uniform(0.8, 1.5), total_dur - current)  # FIX: faster cuts (was 1.5-2.5)
+            if cut_len < 0.4:
                 break
 
             cut_path = os.path.join(temp_dir, f"fastcut_{seg_idx}_{cut_idx}.mp4")
@@ -171,15 +92,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             max_start = max(0.0, src_dur - cut_len - 0.5)
             ss = random.uniform(0, max_start)
 
-            # FIX: gentle zoom (was 1.15-1.35 — too aggressive, made every cut
-            # feel like a sudden snap-zoom rather than a smooth push-in)
-            z = random.uniform(1.06, 1.18)
+            # Random zoom + direction — each cut looks different
+            z = random.uniform(1.15, 1.35)  # FIX: stronger zoom (was 1.05-1.30)
             dirs_x = [f"iw/2-(iw/zoom/2)", "0", f"iw-(iw/zoom)"]
             dirs_y = [f"ih/2-(ih/zoom/2)", "0", f"ih-(ih/zoom)"]
             dx = random.choice(dirs_x)
             dy = random.choice(dirs_y)
 
-            # zoompan needs d = total number of output frames for this cut, and a
+            # FIX: d=1 made zoompan jump one frame at a time (stop-motion /
+            # "photo click" look instead of smooth video motion). zoompan
+            # needs d = total number of output frames for this cut, and a
             # per-frame zoom increment small enough to reach `z` exactly
             # over that many frames — that's what makes the zoom glide
             # continuously instead of snapping.
@@ -187,10 +109,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             zoom_step = (z - 1.0) / total_frames
 
             vf = (
-                # Step 0: normalize source fps to match output fps BEFORE
-                # zoompan — zoompan's frame stepping is driven by the *input*
-                # frame rate, so this has to happen first or the zoom still
-                # steps on the source's original cadence.
+                # Step 0: FIX — normalize source fps to match output fps
+                # BEFORE zoompan. zoompan's frame stepping is driven by the
+                # *input* frame rate; if a Pexels/Pixabay clip is 24/25/60fps
+                # and we only set output fps afterward, zoompan still steps
+                # on the original cadence, which is what produced the
+                # jumpy "photo click" motion even after the d= fix.
                 f"fps={self.fps},"
                 # Step 1: Scale footage to portrait
                 f"scale={self.width}:{self.height}:force_original_aspect_ratio=increase,"
@@ -211,7 +135,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             r = subprocess.run(cmd, capture_output=True)
             if r.returncode == 0 and os.path.exists(cut_path) and os.path.getsize(cut_path) > 1000:
                 cuts.append(cut_path)
-                cut_lens.append(cut_len)
 
             current += cut_len
             cut_idx += 1
@@ -219,35 +142,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not cuts:
             return None
 
+        # Concat cuts into one segment
         out_path = os.path.join(temp_dir, f"seg_footage_{seg_idx}.mp4")
+        cut_list = os.path.join(temp_dir, f"cuts_{seg_idx}.txt")
+        with open(cut_list, 'w') as f:
+            for c in cuts:
+                f.write(f"file '{c}'\n")
 
-        # FIX: try smooth crossfade-dissolve first (this is what actually
-        # kills the "photo click" feel). Fall back to the old hard concat
-        # only if xfade fails for some reason, so a video still gets made.
-        if self._xfade_concat(cuts, cut_lens, out_path, seg_idx):
-            print(f"    ✅ Seg {seg_idx}: {len(cuts)} cuts | crossfade-smoothed footage")
-        else:
-            cut_list = os.path.join(temp_dir, f"cuts_{seg_idx}.txt")
-            with open(cut_list, 'w') as f:
-                for c in cuts:
-                    f.write(f"file '{c}'\n")
-            subprocess.run([
-                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", cut_list,
-                "-t", str(total_dur), "-c:v", "libx264", "-crf", str(self.crf),
-                "-preset", "fast", "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
-                out_path
-            ], capture_output=True)
-            print(f"    ⚠️ Seg {seg_idx}: crossfade failed, used hard concat fallback")
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", cut_list,
+            "-t", str(total_dur), "-c:v", "libx264", "-crf", str(self.crf),
+            "-preset", "fast", "-r", str(self.fps), "-pix_fmt", "yuv420p", "-an",
+            out_path
+        ], capture_output=True)
 
-        if not os.path.exists(out_path):
-            return None
-
-        out_path = self._normalize_duration(out_path, total_dur, temp_dir, seg_idx)
-        return out_path
+        if os.path.exists(out_path):
+            print(f"    ✅ Seg {seg_idx}: {len(cuts)} fast cuts | footage")
+            return out_path
+        return None
 
     def _color_bg_segment(self, seg_type: str, duration: float, temp_dir: str, idx: int) -> str:
         """Dark color bg with pulsing zoom — for when no footage"""
-        colors = {"hook": "0x050510", "suspense": "0x100005", "story": "0x050010", "ctr": "0x100500", "pause": "0x000000"}
+        # FIX: pure black (0x000000) read as a harsh flash between clips.
+        # A very dark near-black tone keeps the "breath" feel without
+        # looking like a broken/dropped frame.
+        colors = {"hook": "0x050510", "suspense": "0x100005", "story": "0x050010", "ctr": "0x100500", "pause": "0x0a0a0c"}
         color = colors.get(seg_type, "0x050510")
 
         z = random.uniform(1.08, 1.25)
@@ -331,12 +250,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         for i, seg in enumerate(script_segments):
             duration = seg.get('duration', 2.0)
+            # FIX: a near-zero duration (from a boundary/timing edge case)
+            # could produce a near-empty/corrupt clip that read as a black
+            # frame flash on playback. Floor every segment at 0.3s.
+            duration = max(0.3, duration)
             seg_type = seg.get('type', 'story')
             is_pause = seg.get('is_pause', False)
 
             if is_pause:
-                # Black frame for pause duration
-                black = self._color_bg_segment('pause', duration, temp_dir, i)
+                # FIX: pauses were a HARD CUT to solid black for 0.4-0.6s,
+                # which read as a visible "flash"/jump between clips rather
+                # than a natural breath. Capping pause duration shorter and
+                # using a near-black (not pure-black) tone with a subtle
+                # zoom keeps continuity instead of a jarring blackout.
+                pause_dur = min(duration, 0.35)
+                black = self._color_bg_segment('pause', pause_dur, temp_dir, i)
                 if black:
                     segment_files.append(black)
                 continue
