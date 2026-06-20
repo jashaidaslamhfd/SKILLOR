@@ -26,17 +26,17 @@ class VideoConfig:
 @dataclass
 class AudioConfig:
     # Dark psychology voice - Deep, mysterious, cinematic feel for USA/UK audience
-    VOICE: str = "en-US-GuyNeural"          
-    RATE: str = "-4%"                       # FIX: -12% bohot slow aur robotic tha, -4% par smooth aur natural lagta hai
-    PITCH: str = "-1Hz"                     # FIX: -3Hz deepness ko distort kar rha tha, -1Hz perfect heavy masculine voice deta hai
-    VOLUME: str = "+10%"
-    SAMPLE_RATE: int = 44100
+    VOICE: str = "en-US-AndrewMultilingualNeural"          
+    RATE: str = "-10%"                       # FIX: -12% bohot slow aur robotic tha, -4% par smooth aur natural lagta hai
+    PITCH: str = "-2Hz"                     # FIX: -3Hz deepness ko distort kar rha tha, -1Hz perfect heavy masculine voice deta hai
+    VOLUME: str = "+8%"
+    SAMPLE_RATE: int = 48000
     CHANNELS: int = 2
     AUDIO_BITRATE: str = "192k"
     BG_MUSIC_VOLUME: float = 0.05           # Subtle background score
-    FAN_NOISE_VOLUME: float = 0.015         # Room/ambient tone to mask silence breaks
+    FAN_NOISE_VOLUME: float = 0.02      # Room/ambient tone to mask silence breaks
     SFX_VOLUME: float = 0.25
-    WORDS_PER_MINUTE: int = 155             # FIX: 120 -> 155 (Normal conversational speed takay robotic trailing sound na aaye)
+    WORDS_PER_MINUTE: int = 145             # FIX: 120 -> 155 (Normal conversational speed takay robotic trailing sound na aaye)
 
 @dataclass
 class CaptionConfig:
