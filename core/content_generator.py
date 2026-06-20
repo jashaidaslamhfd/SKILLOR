@@ -59,24 +59,7 @@ class ContentGenerator:
             print(f"HTTP error: {e}")
             return ""
 
-    # ═══════════════════════════════════════════════════════════
-    # FIXED: Added shock_angle, pattern, suspense_score parameters
-    # ═══════════════════════════════════════════════════════════
     def generate_script(self, topic: str, angle: str, shock_angle: str = "", pattern: str = "curiosity_gap", suspense_score: int = 70) -> Dict:
-        """
-        Video structure:
-        HOOK     6-8s   ~18-22 words  — curiosity question about THIS topic
-        PAUSE    0.5s   — breath
-        SHOCK    3-4s   ~8-10 words   — visual shock moment (NEW: for suspense effects)
-        PAUSE    0.3s   — breath
-        SUSPENSE 4-5s   ~10-12 words  — shocking twist about THIS topic
-        PAUSE    0.4s   — breath
-        STORY    25-30s ~55-65 words  — science/truth about THIS topic, one mid-story breath
-        PAUSE    0.4s   — breath
-        CTR      4-5s   ~10-12 words  — follow/subscribe CTA
-
-        ALL sections must be about the SAME topic: {topic}
-        """
         hook_styles = [
             ('curiosity question', f'A direct "why does X happen" question about "{topic}" — no "have you ever wondered" phrasing.'),
             ('bold claim', f'A bold, surprising factual claim about "{topic}" stated as a statement, not a question.'),
@@ -94,9 +77,7 @@ class ContentGenerator:
         ]
         ctr_style, ctr_instruction = random.choice(ctr_styles)
 
-        # FIX: Use pattern from topic_engine if provided
         if pattern and pattern != "curiosity_gap":
-            # Override hook style based on viral pattern
             pattern_hooks = {
                 'shock_visual': ('bold claim', f'A shocking visual statement about "{topic}" that makes eyes widen.'),
                 'curiosity_gap': ('curiosity question', f'A direct "why does X happen" question about "{topic}".'),
@@ -107,9 +88,9 @@ class ContentGenerator:
             if pattern in pattern_hooks:
                 style_name, style_instruction = pattern_hooks[pattern]
 
-        # FIX: Increased word count target to 100-120 words for 40-55s video
         wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
 
+        # FIX: Much stricter prompt — forces 100-115 words
         prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
 
 Every section must be about "{topic}" only. Do NOT drift to other topics.
@@ -121,46 +102,48 @@ advice. Treat the topic like a mystery being unraveled, not a how-to.
 VIRAL PATTERN: {pattern}
 SUSPENSE LEVEL: {suspense_score}/100
 
-Write these 5 sections:
+Write these 5 sections with EXACT word counts:
 
-HOOK: (18-22 words)
+### HOOK: (18-22 words)
 Style: {style_name}. {style_instruction}
-Do NOT use the phrase "have you ever wondered" — vary your opening words.
+Do NOT use "have you ever wondered" — vary opening words.
 End with "..."
 
-SHOCK: (8-10 words)
-NEW: A one-sentence visual shock moment about "{topic}" — something that
-makes the viewer's eyes widen. This triggers the glitch/shake visual effect.
+### SHOCK: (8-10 words)
+One visual shock moment about "{topic}" — makes eyes widen.
+Triggers glitch/shake effect in video.
 End with "..."
 
-SUSPENSE: (10-12 words)
-A one-sentence shocking twist directly about "{topic}".
+### SUSPENSE: (10-12 words)
+Shocking twist directly about "{topic}".
 End with "..."
 
-STORY: (55-65 words)
-Explain the real science behind "{topic}", but structure it as:
-1) what's actually happening in the body/brain (use vivid, almost
-   unsettling imagery — e.g. "your body is literally..." rather than dry
-   textbook phrasing)
-2) an UNEXPECTED TWIST — a surprising reason/discovery the viewer wouldn't
-   guess, that recontextualizes what they just heard
-Use "and", "but", "because", "which means" to connect sentences — NO full
-stops mid-story except ONE "..." naturally placed where narrator breathes.
-End by looping back to the hook's exact theme/question so the story closes
-like a loop — the viewer should feel like rewatching connects the ending
-back to the beginning.
+### STORY: (55-65 words)
+Explain real science behind "{topic}":
+1) What's happening in body/brain — vivid, unsettling imagery
+   (e.g. "your body is literally..." not dry textbook)
+2) UNEXPECTED TWIST — surprising discovery that recontextualizes everything
+Use "and", "but", "because", "which means" to connect — NO full stops mid-story
+except ONE "..." for narrator breath.
+End by looping back to hook's exact theme.
 
-CTR: (10-12 words)
+### CTR: (10-12 words)
 Style: {ctr_style}. {ctr_instruction}
 
-RULES:
-- Second person "you/your"  
+CRITICAL RULES — FOLLOW EXACTLY:
+- Second person "you/your"
 - USA/UK English only
-- NO hashtags NO emojis
-- Total 100-115 words across all 5 sections
-- FIX: word counts calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm voice speed
-  so the finished video lands in the 40-55s target range — going over
-  these counts pushes the video past 55s."""
+- NO hashtags, NO emojis
+- TOTAL WORD COUNT: EXACTLY 100-115 words (count every word!)
+- HOOK: 18-22 words
+- SHOCK: 8-10 words
+- SUSPENSE: 10-12 words
+- STORY: 55-65 words
+- CTR: 10-12 words
+- If under 100 words: EXPAND story with more vivid, unsettling details
+- If over 115 words: TRIM story section
+- Use "..." for pause markers (TTS breath timing)
+- Word count calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm = 40-55s video"""
 
         raw = self._generate(prompt, max_tokens=500)
 
@@ -170,7 +153,6 @@ RULES:
         story    = self._extract("STORY", raw)
         ctr      = self._extract("CTR", raw)
 
-        # Topic-specific fallbacks with variety
         topic_lower = topic.lower()
         if not hook:
             hook = random.choice([
@@ -180,7 +162,6 @@ RULES:
                 f"Here's the one thing about {topic_lower} that experts rarely explain...",
             ])
         
-        # FIX: Use shock_angle from topic_engine if provided
         if not shock:
             if shock_angle:
                 shock = shock_angle
@@ -214,7 +195,6 @@ RULES:
         story    = self._clean(story)
         ctr      = self._clean(ctr)
 
-        # Build segments with SHOCK type for visual effects
         segments = []
         t = 0.0
 
@@ -234,12 +214,11 @@ RULES:
 
         seg('hook', hook)
         seg('pause', '0.5', is_pause=True)
-        seg('shock', shock)  # NEW: triggers glitch/shake visual effect
+        seg('shock', shock)
         seg('pause', '0.3', is_pause=True)
         seg('suspense', suspense)
         seg('pause', '0.4', is_pause=True)
 
-        # Story — split at "..." if present
         if '...' in story:
             parts = story.split('...', 1)
             seg('story', parts[0].strip() + '...')
@@ -260,9 +239,40 @@ RULES:
         word_count = len(full.split())
         print(f"    📊 Topic: '{topic}' | {word_count} words | ~{round(t,1)}s")
 
-        # FIX: Warn if word count is too low (will cause short video)
+        # FIX: Strong warning if too short
         if word_count < 90:
-            print(f"    ⚠️ WARNING: Only {word_count} words — video will be <40s!")
+            print(f"    ❌ CRITICAL: Only {word_count} words! Regenerating with expansion...")
+            # Auto-expand story with more details
+            expansion = f" And researchers discovered that this process involves your subconscious mind creating vivid neural pathways that feel completely real, which explains why {topic_lower} affects your memory so deeply."
+            story += expansion
+            # Rebuild segments
+            segments = []
+            t = 0.0
+            seg('hook', hook)
+            seg('pause', '0.5', is_pause=True)
+            seg('shock', shock)
+            seg('pause', '0.3', is_pause=True)
+            seg('suspense', suspense)
+            seg('pause', '0.4', is_pause=True)
+            if '...' in story:
+                parts = story.split('...', 1)
+                seg('story', parts[0].strip() + '...')
+                seg('pause', '0.4', is_pause=True)
+                second_half = parts[1].replace('...', ',').strip()
+                seg('story', second_half)
+            else:
+                sw = story.split()
+                mid = len(sw) // 2
+                seg('story', ' '.join(sw[:mid]))
+                seg('pause', '0.35', is_pause=True)
+                seg('story', ' '.join(sw[mid:]))
+            seg('pause', '0.4', is_pause=True)
+            seg('ctr', ctr)
+            
+            full = ' '.join(s['text'] for s in segments if not s.get('is_pause'))
+            word_count = len(full.split())
+            print(f"    📊 Expanded: {word_count} words | ~{round(t,1)}s")
+
         elif word_count > 130:
             print(f"    ⚠️ WARNING: {word_count} words — video may exceed 55s!")
 
