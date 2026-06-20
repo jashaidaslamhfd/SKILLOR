@@ -50,8 +50,16 @@ class FootageFetcher:
         }
 
     def _get_used_clips_log(self, output_dir: str) -> set:
-        """Track which clip IDs were used before across workflows"""
-        log_path = os.path.join(output_dir, ".used_clips.txt")
+        """Track which clip IDs were used before across workflows.
+
+        FIX: this used to live under output/, which a fresh `actions/checkout`
+        wipes clean at the start of EVERY GitHub Actions run — so this log
+        never actually persisted in production and dedup was a no-op across
+        runs (only worked within a single video). It now lives under state/,
+        which the workflow commits back to the repo after each run.
+        """
+        log_path = os.path.join("state", "used_clips.txt")
+        os.makedirs("state", exist_ok=True)
         used = set()
         if os.path.exists(log_path):
             with open(log_path, 'r') as f:
@@ -59,7 +67,8 @@ class FootageFetcher:
         return used
 
     def _save_used_clip(self, output_dir: str, clip_id: str):
-        log_path = os.path.join(output_dir, ".used_clips.txt")
+        log_path = os.path.join("state", "used_clips.txt")
+        os.makedirs("state", exist_ok=True)
         existing = []
         if os.path.exists(log_path):
             with open(log_path, 'r') as f:
@@ -145,7 +154,18 @@ class FootageFetcher:
             return []
 
     def fetch_footage_for_script(self, script_segments: List[Dict], topic: str) -> List[Dict]:
-        """Maps out structural variations checking persistence logs to maintain variety"""
+        """Maps out structural variations checking persistence logs to maintain variety.
+
+        FIX: video_assembler.py walks script_segments and only advances its
+        footage_idx counter for NON-pause segments (pauses get a black/color
+        frame, no clip file). This function used to fetch+save a clip for
+        EVERY segment including pauses, indexed 0..N-1 over the FULL segment
+        list. That made clip_2.mp4 (say) belong to a pause segment while
+        video_assembler's footage_idx==2 pointed at e.g. the 3rd spoken
+        segment — every clip after the first pause was shifted by one,
+        so the footage on screen stopped matching what the narrator was
+        saying. Skipping pause segments here keeps both sides in sync.
+        """
         clips = []
         used_within_video = set()
         
@@ -156,7 +176,9 @@ class FootageFetcher:
         # Inject topic keywords directly into search variations matrix safely
         topic_keywords = [w.lower() for w in topic.split() if len(w) > 3]
 
-        for i, segment in enumerate(script_segments):
+        spoken_segments = [s for s in script_segments if not s.get('is_pause')]
+
+        for i, segment in enumerate(spoken_segments):
             seg_type = segment.get('type', 'story')
             query_pool = self.dark_queries.get(seg_type, self.dark_queries['story'])
             
