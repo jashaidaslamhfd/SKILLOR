@@ -17,7 +17,10 @@ class VideoAssembler:
         self.height = 1920
         self.fps = 30
         self.crf = getattr(VIDEO_CONFIG, 'CRF', 23)
-        self.preset = getattr(VIDEO_CONFIG, 'PRESET', 'medium')
+        # FIX: 'medium' preset was making each segment's multiple encode
+        # passes very slow (4-5 full re-encodes per video). 'veryfast'
+        # cuts total render time drastically with only minor quality loss.
+        self.preset = getattr(VIDEO_CONFIG, 'PRESET', 'veryfast')
         self.bitrate = getattr(VIDEO_CONFIG, 'BITRATE', '8000k')
 
         assert self.width < self.height, f"❌ Portrait check failed"
@@ -153,18 +156,28 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for c in cuts:
                 f.write(f"file '{os.path.abspath(c)}'\n")
 
-        # FIX: Re-encode with consistent keyframes for smooth playback
-        subprocess.run([
+        # FIX: All cuts were already encoded with identical fps/GOP/pix_fmt,
+        # so re-encoding them again here was a wasted full pass. Stream-copy
+        # instead — much faster, same result.
+        r = subprocess.run([
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", cut_list,
             "-t", str(total_dur),
-            "-c:v", "libx264", "-crf", str(self.crf),
-            "-preset", "fast", "-r", str(self.fps),
-            "-g", str(self.fps), "-keyint_min", str(self.fps),
-            "-sc_threshold", "0",
-            "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
+            "-c", "copy",
             "-an", out_path
         ], capture_output=True, text=True)
+        if r.returncode != 0:
+            # Fallback to re-encode if stream copy fails (e.g. param mismatch)
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", cut_list,
+                "-t", str(total_dur),
+                "-c:v", "libx264", "-crf", str(self.crf),
+                "-preset", "veryfast", "-r", str(self.fps),
+                "-g", str(self.fps), "-keyint_min", str(self.fps),
+                "-sc_threshold", "0",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                "-an", out_path
+            ], capture_output=True, text=True)
 
         if os.path.exists(out_path):
             return out_path
