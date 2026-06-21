@@ -11,7 +11,7 @@ from typing import Dict, List
 
 from config.settings import (
     VIDEO_CONFIG, PLATFORM_CONFIG, API_KEYS,
-    AUDIO_CONFIG
+    AUDIO_CONFIG, SEO_CONFIG
 )
 from config.prompts import VIRAL_SCRIPT_GENERATOR
 from core.topic_engine import ViralTopicEngine
@@ -289,6 +289,27 @@ class YouTubeAutomationSystem:
             print(f"❌ Video file missing: {video_data['video_path']}")
             return {'error': 'Video file missing'}
 
+        # FIX: Quality gate — don't push a broken/out-of-range video live
+        # just because the file exists. Catches cases like the assembler
+        # producing an 80s+ video, a corrupt/near-empty file, etc.
+        duration = video_data.get('duration', 0)
+        file_size_mb = os.path.getsize(video_data['video_path']) / (1024 * 1024)
+        dur_min = getattr(VIDEO_CONFIG, 'DURATION_MIN', 40)
+        dur_max = getattr(VIDEO_CONFIG, 'DURATION_MAX', 55)
+        # Allow some slack beyond the target range before hard-blocking —
+        # a few seconds over/under is fine, but wildly off means something
+        # broke upstream (script/audio/assembly) and shouldn't go public.
+        hard_min = dur_min - 10
+        hard_max = dur_max + 25
+
+        if duration <= 0 or not (hard_min <= duration <= hard_max) or file_size_mb < 1:
+            print(f"  ❌ QUALITY GATE FAILED — duration {duration:.1f}s "
+                  f"(expected {dur_min}-{dur_max}s, hard limit {hard_min}-{hard_max}s) "
+                  f"| size {file_size_mb:.1f}MB")
+            print(f"  ⏭️  Skipping ALL uploads — video kept locally for review: {video_data['video_path']}")
+            return {'error': f'Quality gate failed: duration={duration:.1f}s size={file_size_mb:.1f}MB',
+                    'status': 'blocked_quality_gate'}
+
         thumbnail_path = video_data.get('thumbnail_path')
         if thumbnail_path and not os.path.exists(thumbnail_path):
             print(f"⚠️ Thumbnail missing, uploading without it")
@@ -309,7 +330,8 @@ class YouTubeAutomationSystem:
                     thumbnail_path,
                     video_data['title'],
                     video_data['description'],
-                    video_data['tags']
+                    video_data['tags'],
+                    privacy_status=getattr(SEO_CONFIG, 'PRIVACY_STATUS', 'public')
                 )
                 results['youtube'] = yt_result
                 print(f"  ✅ YouTube: {yt_result.get('url', 'N/A')}")
