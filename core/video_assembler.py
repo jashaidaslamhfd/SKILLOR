@@ -445,4 +445,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         r = subprocess.run(concat_cmd, capture_output=True, text=True)
         if r.returncode != 0:
-       
+            print(f"  âŒ Concat error: {r.stderr[:500]}")
+
+        if caption_ass_path and os.path.exists(caption_ass_path):
+            ass_path = caption_ass_path
+        else:
+            ass_path = os.path.join(temp_dir, "subs.ass")
+            self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE, max_duration=target_duration)
+        safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
+
+        # FIX: this final render pass now always has a complete, explicit
+        # `-t target_duration` â€” this is what previously got cut off /
+        # malformed and let the rendered video run away to 2x length.
+        r = subprocess.run([
+            "ffmpeg", "-y", "-i", video_raw,
+            "-vf", f"ass={safe_ass},format=yuv420p",
+            "-c:v", "libx264", "-crf", str(self.crf), "-preset", self.preset,
+            "-r", str(self.fps),
+            "-g", str(self.fps), "-keyint_min", str(self.fps),
+            "-sc_threshold", "0",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
+            "-t", str(target_duration),
+            output_path
+        ], capture_output=True, text=True)
+
+        if r.returncode != 0:
+            print(f"  âŒ Final render error: {r.stderr[:500]}")
+            raise Exception(f"Video render failed: {r.stderr[:300]}")
+
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+
+        return output_path
