@@ -48,8 +48,25 @@ Style: Red,{c.FONT_NAME},{font_size},{c.SECONDARY_COLOR},&H00FFFFFF,{c.OUTLINE_C
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+        # FIX: Word timings (especially estimated/fallback ones) can overlap
+        # each other. When two Dialogue lines are visible at the same instant,
+        # libass auto-stacks them on top of each other instead of overwriting
+        # — this is the "extra text/time floating above the caption" glitch.
+        # We clamp each word's end time so it never overruns the next word's
+        # start, guaranteeing only one caption is ever on screen at once.
+        sorted_timings = sorted(word_timings, key=lambda w: w.get('start', 0))
+        clean_timings = []
+        for idx, wt in enumerate(sorted_timings):
+            start = wt.get('start', 0)
+            end = wt.get('end', start + 0.3)
+            if idx + 1 < len(sorted_timings):
+                next_start = sorted_timings[idx + 1].get('start', end)
+                if end > next_start:
+                    end = max(start + 0.05, next_start - 0.01)
+            clean_timings.append({**wt, 'start': start, 'end': end})
+
         lines = []
-        for idx, wt in enumerate(word_timings):
+        for idx, wt in enumerate(clean_timings):
             word = str(wt.get('word', '')).strip()
             if word:
                 style = "White" if idx % 2 == 0 else "Red"
