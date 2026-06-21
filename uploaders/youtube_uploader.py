@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import random
 from typing import List, Dict
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -11,11 +12,15 @@ from config.settings import SEO_CONFIG
 
 class YouTubeUploader:
     def __init__(self):
-        # FIX: Broader scopes — thumbnail upload + video details read ke liye
+        # FIX: invalid_scope errors happen when you request MORE scopes
+        # during token refresh than were originally granted when the
+        # REFRESH_TOKEN was created. A refresh token is locked to the
+        # scopes consented to at authorization time — adding extra scopes
+        # later (even broader ones) makes Google reject the refresh
+        # entirely. 'youtube.upload' alone covers both video upload and
+        # thumbnail upload, so we only request that.
         self.scopes = [
             'https://www.googleapis.com/auth/youtube.upload',
-            'https://www.googleapis.com/auth/youtube',
-            'https://www.googleapis.com/auth/youtube.readonly'
         ]
         self.api_service_name = 'youtube'
         self.api_version = 'v3'
