@@ -21,7 +21,7 @@ class AudioGenerator:
 
     def _calculate_tts_rate(self, word_count: int) -> str:
         """
-        FIX: Dynamic TTS rate based on word count to hit 40-55s target.
+        Dynamic TTS rate based on word count to hit 40-55s target.
         Format: "+10%" or "-10%" — Edge-TTS requires + or - prefix!
         """
         expected_duration = word_count / (self.target_wpm / 60)
@@ -39,7 +39,6 @@ class AudioGenerator:
         else:
             rate = 10
 
-        # FIX: Must include + or - sign! "10%" is invalid, "+10%" is valid
         prefix = "+" if rate >= 0 else ""
         rate_str = f"{prefix}{rate}%"
         print(f"    🎙️ Words: {word_count} | Expected: {expected_duration:.1f}s | TTS rate: {rate_str}")
@@ -167,12 +166,11 @@ class AudioGenerator:
         return boundaries
 
     async def _generate_speech(self, text: str, path: str, rate: str) -> tuple:
-        """FIXED: Async method — no asyncio.run() conflict!"""
+        """Async method — no asyncio.run() conflict!"""
         last_error = None
         boundaries = []
         for attempt in range(1, 4):
             try:
-                # FIX: await use karo, asyncio.run() nahi!
                 boundaries = await self._async_tts(text, path, rate, capture_boundaries=True)
 
                 if os.path.exists(path) and os.path.getsize(path) > 0:
@@ -203,11 +201,8 @@ class AudioGenerator:
 
     def _sanitize_for_tts(self, text: str) -> str:
         """
-        FIX: Edge-TTS reads symbols literally out loud — '#' becomes
-        "hashtag", '/' becomes "slash", etc. Even though content_generator
-        already strips hashtags from LLM output, this is a last line of
-        defense applied right before TTS so nothing leaks through
-        (fallback text paths, manual edits, future content sources).
+        Edge-TTS reads symbols literally out loud — '#' becomes "hashtag",
+        '/' becomes "slash", etc. Last line of defense right before TTS.
         """
         import re
         if not text:
@@ -220,10 +215,34 @@ class AudioGenerator:
         return text
 
     async def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
-        """FIXED: Async method — await _generate_speech!"""
+        """Async method — await _generate_speech!
+
+        FIX (duration doubling root cause): the previous version advanced
+        `current_time` by `actual_dur` (the real duration of each cut MP3
+        chunk, measured AFTER ffmpeg's `-ss`/`-t` cut, which always rounds
+        to the nearest encoder frame/keyframe boundary) while computing
+        caption timestamp shifts from `seg_start` (the boundary-estimated,
+        un-rounded start time). Each segment's rounding error — a few
+        hundredths to low tenths of a second — was carried forward and
+        ACCUMULATED into every subsequent segment's `shift`, AND into
+        `current_time` itself, which is also what segment durations get
+        re-derived from downstream in the video assembler. Across 8-12
+        segments this drift compounded into many extra seconds, and in
+        pathological cases (e.g. a near-empty/very short cut snapping to a
+        much longer keyframe boundary) a single segment could balloon —
+        explaining videos rendering at ~2x the intended length.
+
+        FIX: we now track a single authoritative timeline cursor
+        (`timeline_cursor`) that only ever advances by the EXACT duration we
+        asked ffmpeg to cut (`seg_dur`, clamped to stay inside the real
+        speech length) — never by the post-hoc measured file duration. Word
+        boundary timestamps are shifted onto this same cursor, so captions,
+        segment durations, and total duration all stay internally
+        consistent and can never drift apart or compound errors.
+        """
         os.makedirs(output_dir, exist_ok=True)
 
-        # FIX: Sanitize every segment's text before it ever reaches TTS
+        # Sanitize every segment's text before it ever reaches TTS
         for s in script_segments:
             if not s.get('is_pause') and s.get('text'):
                 s['text'] = self._sanitize_for_tts(s['text'])
@@ -240,7 +259,6 @@ class AudioGenerator:
             print(f"    ⚠️ WARNING: {total_words} words — may exceed 55s!")
 
         speech_path = os.path.join(output_dir, "speech_full.mp3")
-        # FIX: await lagaya _generate_speech pe
         speech_dur, word_boundaries = await self._generate_speech(full_text, speech_path, dynamic_rate)
         print(f"    🎙️ Speech duration: {speech_dur:.1f}s | {len(word_boundaries)} real word timestamps")
 
@@ -258,8 +276,9 @@ class AudioGenerator:
 
         audio_files = []
         all_timings = []
-        current_time = 0.0
-        word_offset = 0.0
+        # FIX: single authoritative cursor for the OUTPUT timeline (what the
+        # final concatenated audio file's clock will actually read).
+        timeline_cursor = 0.0
         word_offset_words = 0
         total_pause_time = 0.0
 
@@ -269,9 +288,10 @@ class AudioGenerator:
                 pause_path = os.path.join(output_dir, f"pause_{i}.mp3")
                 self._make_breath_pause(pause_dur, pause_path)
                 if os.path.exists(pause_path):
+                    actual_pause_dur = self._get_audio_duration(pause_path) or pause_dur
                     audio_files.append(pause_path)
-                    current_time += pause_dur
-                    total_pause_time += pause_dur
+                    timeline_cursor += actual_pause_dur
+                    total_pause_time += actual_pause_dur
                     print(f"      ⏸️  Breath pause {i}: {pause_dur}s")
             else:
                 seg_text = seg.get('text', '').strip()
@@ -298,15 +318,17 @@ class AudioGenerator:
                         seg_dur = max(0.1, seg_end - seg_start)
                     else:
                         seg_dur = seg_word_count * wps
-                        seg_start = word_offset
+                        seg_start = timeline_cursor
                 else:
+                    seg_boundaries = []
                     seg_dur = seg_word_count * wps
-                    seg_start = word_offset
+                    seg_start = timeline_cursor
 
                 chunk_path = os.path.join(output_dir, f"chunk_{i}.mp3")
 
+                # Clamp the SOURCE cut window to stay inside real speech audio.
                 seg_start = max(0, min(seg_start, speech_dur - 0.1))
-                seg_dur = min(seg_dur, speech_dur - seg_start)
+                seg_dur = max(0.1, min(seg_dur, speech_dur - seg_start))
 
                 subprocess.run([
                     'ffmpeg', '-y', '-i', speech_path,
@@ -320,11 +342,15 @@ class AudioGenerator:
                 ], capture_output=True)
 
                 if os.path.exists(chunk_path):
-                    actual_dur = self._get_audio_duration(chunk_path)
                     audio_files.append(chunk_path)
 
+                    # FIX: shift word boundaries onto timeline_cursor (the
+                    # OUTPUT timeline), using the exact requested seg_dur as
+                    # the advance amount — not the post-cut measured file
+                    # duration. This is what keeps captions, segment
+                    # durations, and total duration from drifting apart.
                     if use_real_boundaries and seg_boundaries:
-                        shift = current_time - seg_start
+                        shift = timeline_cursor - seg_start
                         for wb in seg_boundaries:
                             all_timings.append({
                                 'word': wb['word'].strip('.,!?;:\"()[]{}")\'').strip(),
@@ -333,11 +359,14 @@ class AudioGenerator:
                                 'duration': round(wb['end'] - wb['start'], 3)
                             })
                     else:
-                        timings = self._generate_word_timings(chunk_path, seg_text, current_time)
+                        timings = self._generate_word_timings(chunk_path, seg_text, timeline_cursor)
                         all_timings.extend(timings)
 
-                    current_time += actual_dur
-                    word_offset += seg_dur
+                    # FIX: advance by the exact requested cut length, the
+                    # same number used to compute `shift` above — keeps the
+                    # whole pipeline self-consistent instead of compounding
+                    # ffmpeg's frame-rounding error every segment.
+                    timeline_cursor += seg_dur
 
         if total_pause_time > 2.5:
             print(f"    ⚠️ Total pause time {total_pause_time:.1f}s — too much dead air!")
@@ -362,12 +391,30 @@ class AudioGenerator:
 
         raw_dur = self._get_audio_duration(final_path)
 
+        # FIX: if the actual concatenated file disagrees meaningfully with
+        # our computed timeline_cursor (e.g. due to mp3 frame padding on
+        # concat), trust the REAL measured file for total_duration, but log
+        # the drift so it's visible instead of silently propagating.
+        if raw_dur > 0 and abs(raw_dur - timeline_cursor) > 1.0:
+            print(f"    ⚠️ Timeline drift: computed {timeline_cursor:.2f}s vs actual file {raw_dur:.2f}s")
+
         mixed_path = os.path.join(os.path.abspath(output_dir), "final_audio_mixed.mp3")
         self._add_bg_music_and_fan(final_path, mixed_path, raw_dur)
         if os.path.exists(mixed_path) and os.path.getsize(mixed_path) > 1000:
             final_path = mixed_path
 
         total_dur = self._get_audio_duration(final_path)
+
+        # FIX: hard-clamp any word timing that ended up beyond the real
+        # final audio duration (defensive — should not normally trigger
+        # now, but prevents any caption from ever pointing past the end
+        # of the actual audio/video timeline).
+        all_timings = [
+            t for t in all_timings if t['start'] < total_dur
+        ]
+        for t in all_timings:
+            if t['end'] > total_dur:
+                t['end'] = total_dur
 
         duration_status = "✅ IN RANGE" if 40 <= total_dur <= 55 else f"⚠️ {total_dur:.1f}s OUT OF RANGE"
         print(f"    ✅ Final: {total_dur:.1f}s | {len(all_timings)} words | {duration_status}")
