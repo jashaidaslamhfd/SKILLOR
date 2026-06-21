@@ -397,7 +397,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # FIX: Final render with captions - smooth encoding
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
-        safe_ass = ass_path.replace('\', '/').replace(':', '\:')
+        safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
 
         # FIX: Single-pass render with all optimizations
         r = subprocess.run([
