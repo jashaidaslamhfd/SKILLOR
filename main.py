@@ -204,14 +204,46 @@ class YouTubeAutomationSystem:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         video_path = os.path.abspath(os.path.join(self.output_dir, f"video_{timestamp}.mp4"))
 
-        self.video_assembler.create_video(
-            script_data['segments'],
-            audio_data,
-            footage_clips,
-            audio_data['word_timings'],
-            video_path,
-            caption_ass_path=ass_path
-        )
+        # FIX: Flexible caption parameter — try different names
+        try:
+            self.video_assembler.create_video(
+                script_data['segments'],
+                audio_data,
+                footage_clips,
+                audio_data['word_timings'],
+                video_path,
+                caption_ass_path=ass_path
+            )
+        except TypeError:
+            try:
+                self.video_assembler.create_video(
+                    script_data['segments'],
+                    audio_data,
+                    footage_clips,
+                    audio_data['word_timings'],
+                    video_path,
+                    ass_path=ass_path
+                )
+            except TypeError:
+                try:
+                    self.video_assembler.create_video(
+                        script_data['segments'],
+                        audio_data,
+                        footage_clips,
+                        audio_data['word_timings'],
+                        video_path,
+                        caption_path=ass_path
+                    )
+                except TypeError:
+                    # Last resort: pass as positional argument
+                    self.video_assembler.create_video(
+                        script_data['segments'],
+                        audio_data,
+                        footage_clips,
+                        audio_data['word_timings'],
+                        video_path,
+                        ass_path
+                    )
 
         # Verify
         if not os.path.exists(video_path):
