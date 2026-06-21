@@ -394,9 +394,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if r.returncode != 0:
             print(f"  ❌ Concat error: {r.stderr[:500]}")
 
-        # FIX: Final render with captions - smooth encoding
-        ass_path = os.path.join(temp_dir, "subs.ass")
-        self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
+        # FIX: Use the karaoke ASS passed from main.py if available; only
+        # fall back to generating our own when caller didn't supply one.
+        if caption_ass_path and os.path.exists(caption_ass_path):
+            ass_path = caption_ass_path
+        else:
+            ass_path = os.path.join(temp_dir, "subs.ass")
+            self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
         safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
 
         # FIX: Single-pass render with all optimizations
