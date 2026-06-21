@@ -12,15 +12,11 @@ from config.settings import SEO_CONFIG
 
 class YouTubeUploader:
     def __init__(self):
-        # FIX: invalid_scope errors happen when you request MORE scopes
-        # during token refresh than were originally granted when the
-        # REFRESH_TOKEN was created. A refresh token is locked to the
-        # scopes consented to at authorization time — adding extra scopes
-        # later (even broader ones) makes Google reject the refresh
-        # entirely. 'youtube.upload' alone covers both video upload and
-        # thumbnail upload, so we only request that.
+        # FIX: Matches the scopes Google actually granted for this
+        # refresh token (confirmed via OAuth Playground token response).
         self.scopes = [
             'https://www.googleapis.com/auth/youtube.upload',
+            'https://www.googleapis.com/auth/youtube',
         ]
         self.api_service_name = 'youtube'
         self.api_version = 'v3'
