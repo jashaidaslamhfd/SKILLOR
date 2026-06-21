@@ -44,7 +44,7 @@ class YouTubeAutomationSystem:
         os.makedirs(self.output_dir, exist_ok=True)
 
     async def _validate_duration(self, audio_data: Dict, script_data: Dict, max_attempts: int = 2) -> Dict:
-        """FIXED: async method — await generate_with_effects!"""
+        """Async method — await generate_with_effects!"""
         duration = audio_data.get('total_duration', 0)
         word_count = audio_data.get('word_count', 0)
 
@@ -56,14 +56,12 @@ class YouTubeAutomationSystem:
         for attempt in range(max_attempts):
             if duration < 35:
                 print(f"    🔧 Fix attempt {attempt+1}: Adding words to script...")
-                # Add expansion to story
                 for seg in script_data['segments']:
                     if seg.get('type') == 'story':
                         seg['text'] += f" And researchers recently discovered this process is even more complex than previously thought, involving deep neural pathways that scientists are still mapping today."
                         seg['duration'] = round(len(seg['text'].split()) / (AUDIO_CONFIG.WORDS_PER_MINUTE / 60), 2)
                         break
 
-                # Regenerate audio — FIX: await lagaya!
                 audio_dir = os.path.join(self.output_dir, "audio")
                 audio_data = await self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
                 duration = audio_data.get('total_duration', 0)
@@ -76,7 +74,6 @@ class YouTubeAutomationSystem:
                     removed = script_data['segments'].pop(idx)
                     print(f"    📝 Removed segment: {removed.get('type', 'unknown')}")
 
-                # Regenerate audio — FIX: await lagaya!
                 audio_dir = os.path.join(self.output_dir, "audio")
                 audio_data = await self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
                 duration = audio_data.get('total_duration', 0)
@@ -89,6 +86,15 @@ class YouTubeAutomationSystem:
         return audio_data
 
     def _enrich_segments(self, script_data: Dict, topic_metadata: Dict) -> Dict:
+        """
+        FIX: shock-segment injection happens BEFORE audio/word_timings exist
+        (always did, in call order — audio is generated after this). We now
+        also re-derive word_count here so downstream consumers that read
+        script_data['word_count'] right after enrichment see the
+        post-insertion word count, not the stale pre-insertion one. This
+        keeps the segment list and any word-count-derived estimate in sync
+        before audio_gen ever slices word_boundaries against it.
+        """
         segments = script_data.get('segments', [])
         suspense_score = topic_metadata.get('suspense_score', 70)
 
@@ -119,6 +125,11 @@ class YouTubeAutomationSystem:
                     seg['text'] = f"{current_text}... wait for it."
 
         script_data['segments'] = segments
+        # FIX: recompute word_count from the (possibly shock-augmented)
+        # segments now, so it reflects what will actually be sent to TTS.
+        script_data['word_count'] = sum(
+            len(s.get('text', '').split()) for s in segments if not s.get('is_pause')
+        )
         return script_data
 
     def _recalculate_segment_timings(self, segments: List[Dict]):
@@ -164,7 +175,9 @@ class YouTubeAutomationSystem:
         script_data.setdefault('word_count', len(script_data['full_script'].split()))
         script_data.setdefault('duration', 0)
 
-        # Enrich segments
+        # Enrich segments (shock injection happens BEFORE audio generation,
+        # so word_timings produced by audio_gen always match this final
+        # segment list — see _enrich_segments docstring)
         script_data = self._enrich_segments(script_data, topic_metadata)
 
         # Generate title, SEO, thumbnail words
@@ -178,10 +191,9 @@ class YouTubeAutomationSystem:
         # Generate Audio
         print("🎙️ Generating voice...")
         audio_dir = os.path.join(self.output_dir, "audio")
-        # FIX: Removed loop.run_in_executor, direct await use karo!
         audio_data = await self.audio_gen.generate_with_effects(script_data['segments'], audio_dir)
 
-        # Validate duration — FIX: await lagaya!
+        # Validate duration
         audio_data = await self._validate_duration(audio_data, script_data)
 
         actual_duration = audio_data['total_duration']
@@ -191,7 +203,10 @@ class YouTubeAutomationSystem:
         print("📹 Fetching footage...")
         footage_dir = os.path.join(self.output_dir, "footage")
         footage_clips = self.footage_fetcher.fetch_footage_for_script(script_data['segments'], topic)
-        self.footage_fetcher.download_footage(footage_clips, footage_dir)
+        # FIX: download_footage now returns a dict keyed by ORIGINAL segment
+        # index (not a re-indexed list) — this is what the video assembler
+        # uses to look up each segment's clip without index drift.
+        footage_clip_paths = self.footage_fetcher.download_footage(footage_clips, footage_dir)
 
         # Generate Captions
         print("📝 Generating karaoke captions...")
@@ -204,12 +219,14 @@ class YouTubeAutomationSystem:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         video_path = os.path.abspath(os.path.join(self.output_dir, f"video_{timestamp}.mp4"))
 
-        # FIX: Flexible caption parameter — try different names
+        # FIX: flexible caption parameter retained for backward compat, but
+        # footage_clip_paths (dict) is now always passed — the assembler
+        # supports both shapes defensively either way.
         try:
             self.video_assembler.create_video(
                 script_data['segments'],
                 audio_data,
-                footage_clips,
+                footage_clip_paths,
                 audio_data['word_timings'],
                 video_path,
                 caption_ass_path=ass_path
@@ -219,7 +236,7 @@ class YouTubeAutomationSystem:
                 self.video_assembler.create_video(
                     script_data['segments'],
                     audio_data,
-                    footage_clips,
+                    footage_clip_paths,
                     audio_data['word_timings'],
                     video_path,
                     ass_path=ass_path
@@ -229,17 +246,16 @@ class YouTubeAutomationSystem:
                     self.video_assembler.create_video(
                         script_data['segments'],
                         audio_data,
-                        footage_clips,
+                        footage_clip_paths,
                         audio_data['word_timings'],
                         video_path,
                         caption_path=ass_path
                     )
                 except TypeError:
-                    # Last resort: pass as positional argument
                     self.video_assembler.create_video(
                         script_data['segments'],
                         audio_data,
-                        footage_clips,
+                        footage_clip_paths,
                         audio_data['word_timings'],
                         video_path,
                         ass_path
@@ -269,6 +285,14 @@ class YouTubeAutomationSystem:
         else:
             print(f"✅ Thumbnail created: {thumbnail_path}")
 
+        # FIX: re-probe the actual rendered file's real duration instead of
+        # trusting audio_data['total_duration'] alone for the returned
+        # 'duration' field — this is what the quality gate checks against,
+        # so it must reflect what's really on disk after the assembler's
+        # hard `-t` cap, not the pre-render audio estimate.
+        real_duration = self._probe_duration(video_path)
+        final_duration = real_duration if real_duration > 0 else actual_duration
+
         return {
             'video_path': video_path,
             'latest_video_path': latest_video_path,
@@ -277,28 +301,37 @@ class YouTubeAutomationSystem:
             'description': seo_data['description'],
             'tags': seo_data['tags'],
             'topic': topic,
-            'duration': actual_duration,
+            'duration': final_duration,
             'pattern': pattern,
             'suspense_score': suspense_score,
         }
+
+    def _probe_duration(self, path: str) -> float:
+        try:
+            import subprocess
+            r = subprocess.run([
+                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1', path
+            ], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                return float(r.stdout.strip())
+        except Exception:
+            pass
+        return 0.0
 
     async def upload_to_platforms(self, video_data):
         results = {}
 
         if not os.path.exists(video_data['video_path']):
             print(f"❌ Video file missing: {video_data['video_path']}")
-            return {'error': 'Video file missing'}
+            return {'youtube': {'status': 'skipped', 'reason': 'video file missing'},
+                    'facebook': {'status': 'skipped', 'reason': 'video file missing'},
+                    'instagram': {'status': 'skipped', 'reason': 'video file missing'}}
 
-        # FIX: Quality gate — don't push a broken/out-of-range video live
-        # just because the file exists. Catches cases like the assembler
-        # producing an 80s+ video, a corrupt/near-empty file, etc.
         duration = video_data.get('duration', 0)
         file_size_mb = os.path.getsize(video_data['video_path']) / (1024 * 1024)
         dur_min = getattr(VIDEO_CONFIG, 'DURATION_MIN', 40)
         dur_max = getattr(VIDEO_CONFIG, 'DURATION_MAX', 55)
-        # Allow some slack beyond the target range before hard-blocking —
-        # a few seconds over/under is fine, but wildly off means something
-        # broke upstream (script/audio/assembly) and shouldn't go public.
         hard_min = dur_min - 10
         hard_max = dur_max + 25
 
@@ -307,8 +340,19 @@ class YouTubeAutomationSystem:
                   f"(expected {dur_min}-{dur_max}s, hard limit {hard_min}-{hard_max}s) "
                   f"| size {file_size_mb:.1f}MB")
             print(f"  ⏭️  Skipping ALL uploads — video kept locally for review: {video_data['video_path']}")
-            return {'error': f'Quality gate failed: duration={duration:.1f}s size={file_size_mb:.1f}MB',
-                    'status': 'blocked_quality_gate'}
+            # FIX: this used to return a flat {'error': ..., 'status': ...}
+            # dict whose top-level values are strings. run_daily() then did
+            # `for platform, result in upload_results.items(): result.get(...)`
+            # and crashed with 'str' object has no attribute 'get' because
+            # `result` here was a plain string. We now always return a dict
+            # of per-platform dicts (the shape run_daily() actually expects),
+            # even in the blocked case, so the loop never sees a bare string.
+            blocked_reason = f'blocked_quality_gate: duration={duration:.1f}s size={file_size_mb:.1f}MB'
+            return {
+                'youtube': {'status': 'blocked_quality_gate', 'reason': blocked_reason},
+                'facebook': {'status': 'blocked_quality_gate', 'reason': blocked_reason},
+                'instagram': {'status': 'blocked_quality_gate', 'reason': blocked_reason},
+            }
 
         thumbnail_path = video_data.get('thumbnail_path')
         if thumbnail_path and not os.path.exists(thumbnail_path):
@@ -337,7 +381,7 @@ class YouTubeAutomationSystem:
                 print(f"  ✅ YouTube: {yt_result.get('url', 'N/A')}")
             except Exception as e:
                 print(f"  ❌ YouTube failed: {e}")
-                results['youtube'] = {'error': str(e)}
+                results['youtube'] = {'status': 'error', 'error': str(e)}
         else:
             print("⏭️  Skipping YouTube — credentials not set")
             results['youtube'] = {'status': 'skipped', 'reason': 'credentials not set'}
@@ -360,7 +404,7 @@ class YouTubeAutomationSystem:
                 print(f"  ✅ Facebook: {fb_result.get('url', 'N/A')}")
             except Exception as e:
                 print(f"  ❌ Facebook failed: {e}")
-                results['facebook'] = {'error': str(e)}
+                results['facebook'] = {'status': 'error', 'error': str(e)}
         else:
             print("⏭️  Skipping Facebook — credentials not set")
             results['facebook'] = {'status': 'skipped', 'reason': 'credentials not set'}
@@ -382,78 +426,6 @@ class YouTubeAutomationSystem:
                         public_id=f"short_{os.path.splitext(os.path.basename(video_data['video_path']))[0]}",
                     )
                     if not public_url:
-                        results['instagram'] = {'error': 'Cloudinary upload failed'}
+                        results['instagram'] = {'status': 'error', 'error': 'Cloudinary upload failed'}
                     else:
-                        ig_result = self.ig_uploader.upload_reel(
-                            public_url,
-                            thumbnail_path,
-                            video_data['description'],
-                            video_data['tags']
-                        )
-                        results['instagram'] = ig_result
-                        print(f"  ✅ Instagram: {ig_result.get('url', 'N/A')}")
-            except Exception as e:
-                print(f"  ❌ Instagram failed: {e}")
-                results['instagram'] = {'error': str(e)}
-        else:
-            print("⏭️  Skipping Instagram — credentials not set")
-            results['instagram'] = {'status': 'skipped', 'reason': 'credentials not set'}
-
-        return results
-
-    async def run_daily(self):
-        print(f"\n🚀 Starting automation - {datetime.now()}")
-        print(f"🎯 Target: {getattr(PLATFORM_CONFIG, 'DAILY_SHORTS_COUNT', 1)} Short per run")
-
-        topics_data = self.topic_engine.get_daily_topics(count=1)
-
-        if not topics_data:
-            print("⚠️ No topics found! Using fallback.")
-            topics_data = self.topic_engine._get_fallback_topics()[:1]
-
-        successes = 0
-        for i, topic_data in enumerate(topics_data):
-            print(f"\n{'='*60}")
-            print(f"Video {i+1}/{len(topics_data)}: {topic_data.get('query', 'unknown')}")
-            print(f"{'='*60}")
-
-            try:
-                video_data = await self.create_video(topic_data)
-
-                print(f"\n📤 Starting uploads...")
-                upload_results = await self.upload_to_platforms(video_data)
-
-                print(f"\n✅ Video {i+1} complete!")
-                print(f"   📁 File: {video_data['video_path']}")
-                print(f"   ⏱️  Duration: {video_data['duration']:.1f}s")
-                print(f"   🎯 Pattern: {video_data.get('pattern', 'unknown')}")
-                print(f"   🔥 Suspense: {video_data.get('suspense_score', 0)}/100")
-
-                for platform, result in upload_results.items():
-                    status = result.get('status', 'unknown')
-                    url = result.get('url', 'N/A')
-                    if status in ['uploaded', 'published']:
-                        print(f"  🟢 {platform.title()}: {url}")
-                    elif status == 'skipped':
-                        print(f"  ⏭️  {platform.title()}: {result.get('reason', 'skipped')}")
-                    else:
-                        print(f"  🔴 {platform.title()}: {status} - {result.get('error', 'Unknown')}")
-
-                successes += 1
-
-                if i < len(topics_data) - 1:
-                    delay = getattr(PLATFORM_CONFIG, 'UPLOAD_DELAY_SECONDS', 120)
-                    print(f"\n⏳ Waiting {delay}s before next video...")
-                    await asyncio.sleep(delay)
-
-            except Exception as e:
-                print(f"❌ Error in video {i+1}: {e}")
-                traceback.print_exc()
-                continue
-
-        print(f"\n{'='*60}")
-        print(f"🏁 Run complete: {successes}/{len(topics_data)} videos succeeded")
-        print(f"{'='*60}")
-
-if __name__ == "__main__":
-    asyncio.run(YouTubeAutomationSystem().run_daily())
+                        ig_result = 
