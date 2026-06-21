@@ -1,4 +1,4 @@
-"""Video Assembler — Fast Cuts + Dynamic Motion + 9:16 Portrait"""
+"""Video Assembler â€” Fast Cuts + Dynamic Motion + 9:16 Portrait"""
 
 import os
 import subprocess
@@ -20,10 +20,10 @@ class VideoAssembler:
         self.preset = getattr(VIDEO_CONFIG, 'PRESET', 'veryfast')
         self.bitrate = getattr(VIDEO_CONFIG, 'BITRATE', '8000k')
 
-        assert self.width < self.height, f"❌ Portrait check failed"
-        print(f"  📐 {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
+        assert self.width < self.height, f"âŒ Portrait check failed"
+        print(f"  ðŸ“ {self.width}x{self.height} @ {self.fps}fps | CRF:{self.crf}")
 
-    # ─── ASS Subtitles ────────────────────────────────────────────
+    # â”€â”€â”€ ASS Subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _seconds_to_ass(self, s: float) -> str:
         h = int(s // 3600); m = int((s % 3600) // 60)
         sc = int(s % 60); cs = int((s % 1) * 100)
@@ -78,9 +78,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             lines.append("Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,, ")
         with open(ass_path, 'w', encoding='utf-8') as f:
             f.write(header + "\n".join(lines) + "\n")
-        print(f"    📝 ASS: {len(lines)} words | size:{font_size}px | align:{alignment} | marginV:{margin_v}")
+        print(f"    ðŸ“ ASS: {len(lines)} words | size:{font_size}px | align:{alignment} | marginV:{margin_v}")
 
-    # ─── Smooth Motion from Footage ───────────────────────────────────
+    # â”€â”€â”€ Smooth Motion from Footage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _smooth_cut_segment(self, clip_file: str, total_dur: float, temp_dir: str, seg_idx: int) -> str:
         """Create smooth motion segment with longer cuts and pan/zoom"""
         try:
@@ -138,7 +138,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode == 0 and os.path.exists(cut_path) and os.path.getsize(cut_path) > 1000:
                 cuts.append(cut_path)
-                print(f"      ✂️ Cut {cut_idx}: {cut_len:.1f}s | pan:({pan_x_start:.2f}→{pan_x_end:.2f})")
+                print(f"      âœ‚ï¸ Cut {cut_idx}: {cut_len:.1f}s | pan:({pan_x_start:.2f}â†’{pan_x_end:.2f})")
 
             current += cut_len
             cut_idx += 1
@@ -203,7 +203,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return out_path
         return None
 
-    # ─── Dynamic Background with Motion ─────────────────────────────────
+    # â”€â”€â”€ Dynamic Background with Motion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _dynamic_bg_segment(self, seg_type: str, duration: float, temp_dir: str, idx: int) -> str:
         """Create dynamic background with real motion feel"""
         colors = {
@@ -248,7 +248,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ], capture_output=True, text=True)
         return out if os.path.exists(out) else None
 
-    # ─── Suspense Visual Effect ─────────────────────────────────
+    # â”€â”€â”€ Suspense Visual Effect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _suspense_effect(self, base_video: str, effect_type: str, temp_dir: str, idx: int) -> str:
         """Add suspense visual effects (glitch, shake, flash, zoom)"""
         out = os.path.join(temp_dir, f"suspense_{effect_type}_{idx}.mp4")
@@ -294,7 +294,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return out if os.path.exists(out) else base_video
 
-    # ─── Main Video Creation ─────────────────────────────────
+    # â”€â”€â”€ Main Video Creation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def create_video(self, script_segments: List[Dict], audio_data: Dict,
                      footage_clips, word_timings: List[Dict],
                      output_path: str, caption_ass_path: str = None) -> str:
@@ -307,7 +307,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         FIX: duration is now hard-capped at the end with `-t` driven by the
         REAL measured audio duration, clamped into VIDEO_CONFIG's
-        DURATION_MIN/MAX range — so even if any upstream segment timing is
+        DURATION_MIN/MAX range â€” so even if any upstream segment timing is
         slightly off, the final render can never run away to 2x length.
         """
 
@@ -316,7 +316,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         total_audio = audio_data.get('total_duration', 0)
         target_duration = max(dur_min, min(dur_max, total_audio)) if total_audio > 0 else getattr(VIDEO_CONFIG, 'TARGET_DURATION', 47)
 
-        print(f"  🎯 Target duration: {target_duration:.1f}s ({dur_min}-{dur_max}s range)")
+        print(f"  ðŸŽ¯ Target duration: {target_duration:.1f}s ({dur_min}-{dur_max}s range)")
 
         if script_segments and total_audio > 0:
             current_total = sum(s.get('duration', 2) for s in script_segments)
@@ -403,7 +403,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     segment_files.append(out)
 
         if not segment_files:
-            raise ValueError("❌ No segments generated!")
+            raise ValueError("âŒ No segments generated!")
 
         concat_list = os.path.join(temp_dir, "concat.txt")
         with open(concat_list, 'w') as f:
@@ -445,12 +445,4 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         r = subprocess.run(concat_cmd, capture_output=True, text=True)
         if r.returncode != 0:
-            print(f"  ❌ Concat error: {r.stderr[:500]}")
-
-        if caption_ass_path and os.path.exists(caption_ass_path):
-            ass_path = caption_ass_path
-        else:
-            ass_path = os.path.join(temp_dir, "subs.ass")
-            self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE, max_duration=target_duration)
-        safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
-
+       
