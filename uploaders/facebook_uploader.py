@@ -1,5 +1,6 @@
 """Facebook Uploader with Algorithm Optimization"""
 
+import os
 import random
 import requests
 from typing import Dict
@@ -46,7 +47,22 @@ class FacebookUploader:
             print(f"⚠️ Facebook upload request failed: {e}")
             return {"error": str(e)}
 
-        result = response.json()
+        # FIX: response.json() was called blindly — on timeouts, rate
+        # limits, or Facebook closing the connection on large uploads,
+        # the body can come back empty, which crashes json() with
+        # "Expecting value: line 1 column 1 (char 0)" and hides the
+        # real cause. Check status + raw text first.
+        if not response.text.strip():
+            size_mb = round(os.path.getsize(video_path) / (1024 * 1024))
+            print(f"⚠️ Facebook returned empty response (HTTP {response.status_code}). "
+                  f"Likely a timeout or the upload got dropped mid-request for a {size_mb}MB file.")
+            return {"error": f"Empty response from Facebook (HTTP {response.status_code})"}
+
+        try:
+            result = response.json()
+        except ValueError:
+            print(f"⚠️ Facebook response wasn't valid JSON (HTTP {response.status_code}): {response.text[:300]}")
+            return {"error": f"Invalid JSON from Facebook (HTTP {response.status_code}): {response.text[:300]}"}
 
         if "id" in result:
             video_id = result["id"]
