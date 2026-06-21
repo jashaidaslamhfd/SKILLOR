@@ -15,9 +15,7 @@ class FootageFetcher:
         self.pexels_base = "https://api.pexels.com/videos"
         self.pixabay_base = "https://pixabay.com/api/videos"
 
-        # FIX: Added Mixkit & Coverr — better free motion videos than Pexels
         self.mixkit_base = "https://assets.mixkit.co/videos/preview"
-        # Coverr has no API, but we can use their search page structure
 
         self.mood_modifiers = {
             'hook': ["cinematic dramatic fast", "close up mysterious motion", "dark moody atmosphere moving"],
@@ -27,7 +25,6 @@ class FootageFetcher:
             'ctr': ["dramatic reveal motion", "close up emotional reaction", "bright realization moment"],
         }
 
-        # FIX: Fallback queries with MOTION keywords — forces dynamic footage
         self.fallback_queries = [
             "human brain neurons glowing motion",
             "person sleeping bedroom night moving",
@@ -48,7 +45,6 @@ class FootageFetcher:
         modifiers = self.mood_modifiers.get(seg_type, self.mood_modifiers['story'])
         modifier = modifiers[seg_idx % len(modifiers)]
 
-        # FIX: Always append motion keywords to get REAL moving footage
         return f"{core_topic} {modifier} motion".strip()
 
     def _get_used_clips_log(self, output_dir: str) -> set:
@@ -71,19 +67,11 @@ class FootageFetcher:
         with open(log_path, 'w') as f:
             f.write('\n'.join(existing))
 
-    # ─── NEW: Motion score validation ───────────────────────────
+    # ─── Motion score validation ───────────────────────────
     def _check_motion_score(self, video_path: str) -> float:
         """
         Check if video likely has REAL motion (not static image or slideshow)
         Returns: 0.0-1.0 motion score
-
-        FIX: Previously used '-count_frames' which forces ffprobe to fully
-        DECODE the entire video just to count frames — this alone was
-        taking many seconds per clip (called twice per clip: once on cache
-        check, once after download) and was a major contributor to the
-        20+ minute total runtime. We now use only fast metadata reads
-        (duration, bitrate, codec info) which return instantly without
-        decoding any frames.
         """
         try:
             result = subprocess.run([
@@ -111,8 +99,6 @@ class FootageFetcher:
             file_size = os.path.getsize(video_path)
             size_per_sec = file_size / duration
 
-            # Typical real motion video: 500KB-2MB per second at 1080p.
-            # Static/slideshow-style clips tend to compress far smaller.
             if size_per_sec < 100000:  # < 100KB/sec = probably static/low motion
                 return 0.2
 
@@ -121,7 +107,7 @@ class FootageFetcher:
         except Exception:
             return 0.5
 
-    # ─── NEW: Semantic matching ─────────────────────────────────
+    # ─── Semantic matching ─────────────────────────────────
     def _score_clip_relevance(self, clip_desc: str, segment_text: str) -> float:
         """Score how well a clip matches the segment text"""
         if not clip_desc or not segment_text:
@@ -130,7 +116,6 @@ class FootageFetcher:
         clip_words = set(clip_desc.lower().split())
         seg_words = set(segment_text.lower().split())
 
-        # Remove common words
         stopwords = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
                      'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
                      'would', 'could', 'should', 'may', 'might', 'must', 'shall',
@@ -174,7 +159,6 @@ class FootageFetcher:
             response = requests.get(f"{self.pexels_base}/search", headers=headers, params=params, timeout=10)
             data = response.json()
 
-            # FIX: Also try landscape and crop later if portrait returns nothing
             if not data.get('videos', []):
                 params["orientation"] = "landscape"
                 response = requests.get(f"{self.pexels_base}/search", headers=headers, params=params, timeout=10)
@@ -187,7 +171,6 @@ class FootageFetcher:
 
                 for file in video.get('video_files', []):
                     height = file.get('height', 0)
-                    # FIX: Prefer higher resolution, but also check file type
                     if height >= best_height and file.get('file_type', '').startswith('video'):
                         best_file = file
                         best_height = height
@@ -196,7 +179,6 @@ class FootageFetcher:
                     best_file = video['video_files'][0]
 
                 if best_file:
-                    # FIX: Build description from tags + user info for semantic matching
                     description = ' '.join([
                         video.get('alt', ''),
                         video.get('user', {}).get('name', ''),
@@ -234,7 +216,6 @@ class FootageFetcher:
             response = requests.get(f"{self.pixabay_base}/", params=params, timeout=10)
             data = response.json()
 
-            # FIX: Try all orientations if vertical empty
             if not data.get('hits', []):
                 params["orientation"] = "all"
                 response = requests.get(f"{self.pixabay_base}/", params=params, timeout=10)
@@ -243,7 +224,6 @@ class FootageFetcher:
             videos = []
             for hit in data.get('hits', []):
                 videos_data = hit.get('videos', {})
-                # FIX: Prefer larger sizes for better motion
                 for size in ['large', 'medium', 'small']:
                     url = videos_data.get(size, {}).get('url', '')
                     if url:
@@ -268,20 +248,18 @@ class FootageFetcher:
             print(f"    Pixabay error: {e}")
             return []
 
-    # ─── NEW: Search multiple sources ───────────────────────────
+    # ─── Search multiple sources ───────────────────────────
     def search_all_sources(self, query: str) -> List[Dict]:
         """Search all video sources and merge results"""
         all_videos = []
 
-        # Pexels
         pexels_videos = self.search_pexels(query, per_page=20)
         all_videos.extend(pexels_videos)
 
-        # Pixabay
         pixabay_videos = self.search_pixabay(query, per_page=20)
         all_videos.extend(pixabay_videos)
 
-        # FIX: Deduplicate by ID
+        # Deduplicate by ID
         seen_ids = set()
         unique = []
         for v in all_videos:
@@ -308,10 +286,18 @@ class FootageFetcher:
 
     def fetch_footage_for_script(self, script_segments: List[Dict], topic: str) -> List[Dict]:
         """
-        FIX: Semantic matching + motion validation for REAL video feel.
-        FIX: Searches for each segment used to run one-by-one (2 API calls
-        per segment, sequentially) — with several segments this added up
-        to a real chunk of the total runtime. Now searched concurrently.
+        Semantic matching + motion validation for REAL video feel.
+        Searches run concurrently for speed.
+
+        FIX: `used_ids` was being checked while building candidates but a
+        segment with zero unmatched candidates silently fell back to
+        `videos` (the FULL unfiltered list, including already-used clips)
+        — so the same clip could legitimately win twice and play back to
+        back / repeat across the video. We now guarantee global uniqueness
+        per fetch: if every scored candidate for a segment is already used,
+        we keep searching down the list before ever reusing an id, and we
+        only reuse a previously-used id as an absolute last resort when
+        nothing unused exists anywhere in the results.
         """
         used_ids = set()
 
@@ -344,24 +330,30 @@ class FootageFetcher:
                 print(f"    ⚠️ No clip found for seg {i}, using color bg")
                 continue
 
-            # FIX: Score by relevance to segment text
+            # FIX: Only ever consider candidates NOT already used this run.
+            unused_videos = [v for v in videos if v.get('id') not in used_ids]
+
+            if not unused_videos:
+                # Genuinely nothing unused left for this segment — fall back
+                # to color background instead of silently repeating a clip.
+                clips.append({
+                    'url': None,
+                    'start_time': segment.get('start', 0),
+                    'duration': segment.get('duration', 5),
+                    'segment_type': seg_type,
+                    'source': 'generated'
+                })
+                print(f"    ⚠️ Seg {i}: all candidates already used, using color bg")
+                continue
+
             scored = []
-            for v in videos:
-                if v.get('id') in used_ids:
-                    continue
+            for v in unused_videos:
                 relevance = self._score_clip_relevance(v.get('description', ''), seg_text)
                 scored.append((relevance, v))
 
-            # ─── FIX: Sort by relevance score only (not dict) ─────────────────
             scored.sort(key=lambda x: x[0], reverse=True)
-            top_candidates = [v for _, v in scored[:3]]
+            top_candidates = [v for _, v in scored[:3]] or unused_videos
 
-            if not top_candidates:
-                top_candidates = [v for v in videos if v.get('id') not in used_ids]
-                if not top_candidates:
-                    top_candidates = videos
-
-            # Randomize among top candidates for variety
             random.shuffle(top_candidates)
             selected = top_candidates[0]
             used_ids.add(selected.get('id', ''))
@@ -388,7 +380,6 @@ class FootageFetcher:
 
         filepath = os.path.join(output_dir, f"clip_{i}.mp4")
 
-        # FIX: Skip if already downloaded this URL
         if os.path.exists(filepath) and os.path.getsize(filepath) > 10000:
             motion = self._check_motion_score(filepath)
             if motion > 0.3:
@@ -427,7 +418,21 @@ class FootageFetcher:
             print(f"  ❌ Clip {i}: {e}")
             return i, None
 
-    def download_footage(self, clips: List[Dict], output_dir: str) -> List[str]:
+    def download_footage(self, clips: List[Dict], output_dir: str) -> Dict[int, str]:
+        """
+        FIX: Previously returned a re-indexed list (`downloaded = [results[i]
+        for i in sorted(...)]`), which silently DROPPED the original segment
+        index whenever any segment had no clip (failed download / no URL).
+        Example: if segment 2 had no clip, the old list became
+        [seg0_clip, seg1_clip, seg3_clip, seg4_clip, ...] — i.e. seg3's clip
+        physically lands at list position 2. Since the video assembler reads
+        clips back as `clip_{footage_idx}.mp4` and increments footage_idx
+        sequentially regardless of gaps, this caused later segments to load
+        the WRONG (already-used) clip file from disk — the visible
+        "same scene repeats" bug. We now return a dict keyed by the ORIGINAL
+        segment index, so gaps stay gaps instead of shifting everything
+        after them.
+        """
         os.makedirs(output_dir, exist_ok=True)
 
         # Clean old clips
@@ -438,11 +443,6 @@ class FootageFetcher:
                 except:
                     pass
 
-        # FIX: Downloads used to run one-by-one in a for-loop, so total time
-        # was the SUM of every clip's network download + ffprobe check.
-        # With ~6-10 segments this alone could eat several minutes. Running
-        # them concurrently overlaps the network waits, cutting this phase
-        # down to roughly the time of the single slowest download.
         from concurrent.futures import ThreadPoolExecutor
 
         results = {}
@@ -455,6 +455,5 @@ class FootageFetcher:
                 if filepath:
                     results[i] = filepath
 
-        # Preserve original clip order
-        downloaded = [results[i] for i in sorted(results.keys())]
-        return downloaded
+        # FIX: return index-keyed dict instead of a re-indexed list
+        return results
