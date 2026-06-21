@@ -89,7 +89,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # Use geq for smooth, continuous motion instead of discrete zoompan
             z_start = random.uniform(1.0, 1.15)
             z_end = random.uniform(1.15, 1.35)
-            
+
             # Smooth pan directions
             pan_x_start = random.uniform(0, 0.3)
             pan_x_end = random.uniform(0.3, 0.7)
@@ -129,7 +129,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         # FIX: Concatenate with smooth transitions (fade or crossfade)
         out_path = os.path.join(temp_dir, f"seg_footage_{seg_idx}.mp4")
-        
+
         if len(cuts) == 1:
             shutil.copy(cuts[0], out_path)
             return out_path
@@ -138,7 +138,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         filter_parts = []
         for i, c in enumerate(cuts):
             filter_parts.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
-        
+
         # Build xfade chain
         xfade_chain = "[v0]"
         for i in range(1, len(cuts)):
@@ -187,7 +187,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # FIX: Add subtle animated noise/grain for "real video" feel
         # Use geq for smooth color shifts + noise overlay
         z = random.uniform(1.05, 1.15)
-        
+
         # FIX: Create smooth motion with animated gradient + noise
         # This looks like real footage, not static color
         vf = (
@@ -200,7 +200,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         )
 
         out = os.path.join(temp_dir, f"seg_dynamic_{idx}.mp4")
-        
+
         # FIX: Use color source with noise for real texture
         subprocess.run([
             "ffmpeg", "-y", "-f", "lavfi",
@@ -224,7 +224,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     def _suspense_effect(self, base_video: str, effect_type: str, temp_dir: str, idx: int) -> str:
         """Add suspense visual effects (glitch, shake, flash, zoom)"""
         out = os.path.join(temp_dir, f"suspense_{effect_type}_{idx}.mp4")
-        
+
         effects = {
             "glitch": (
                 f"chromashift=cbh=-8:cbv=4,"
@@ -249,10 +249,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 f"chromashift=cbh=4:cbv=-2"
             )
         }
-        
+
         vf = effects.get(effect_type, effects["tension"])
         vf += f",scale={self.width}:{self.height}:force_original_aspect_ratio=increase,crop={self.width}:{self.height},setsar=1,format=yuv420p"
-        
+
         subprocess.run([
             "ffmpeg", "-y", "-i", base_video,
             "-vf", vf,
@@ -263,29 +263,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "-pix_fmt", "yuv420p", "-an",
             out
         ], capture_output=True, text=True)
-        
+
         return out if os.path.exists(out) else base_video
 
     # ─── Main Video Creation ─────────────────────────────────
     def create_video(self, script_segments: List[Dict], audio_data: Dict,
                      footage_clips: List[Dict], word_timings: List[Dict],
-                     output_path: str) -> str:
+                     output_path: str, caption_ass_path: str = None) -> str:
+        """FIXED: Accept optional 6th arg for backward compatibility with main.py"""
 
         # FIX: Calculate target duration from audio, enforce 40-55 sec
         total_audio = audio_data.get('total_duration', 0)
         target_duration = max(40, min(55, total_audio)) if total_audio > 0 else 50
-        
+
         print(f"  🎯 Target duration: {target_duration:.1f}s (40-55s range)")
 
         # FIX: Adjust segment durations to match target
         if script_segments and total_audio > 0:
             current_total = sum(s.get('duration', 2) for s in script_segments)
             ratio = target_duration / max(current_total, 1)
-            
+
             for s in script_segments:
                 if not s.get('is_pause'):
                     s['duration'] = min(max(s.get('duration', 2) * ratio, 1.5), 8.0)
-            
+
             # Re-calculate with word timings for precision
             if word_timings:
                 wt_idx = 0
@@ -306,11 +307,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         segment_files = []
         footage_idx = 0
-        
+
         for i, seg in enumerate(script_segments):
             seg_type = seg.get('type', 'story')
             duration = max(1.0, seg.get('duration', 2.5))
-            
+
             # FIX: Pause segments very short
             if seg.get('is_pause'):
                 pause = self._dynamic_bg_segment('pause', min(duration, 0.3), temp_dir, i)
@@ -334,11 +335,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         out = self._suspense_effect(out, "heartbeat", temp_dir, i)
                     elif seg_type == 'suspense':
                         out = self._suspense_effect(out, "tension", temp_dir, i)
-                    
+
                     segment_files.append(out)
                     footage_idx += 1
                     continue
-            
+
             # FIX: Dynamic background with motion instead of static color
             out = self._dynamic_bg_segment(seg_type, duration, temp_dir, i)
             if out: 
@@ -388,7 +389,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 "-pix_fmt", "yuv420p"
             ]
         concat_cmd.append(video_raw)
-        
+
         r = subprocess.run(concat_cmd, capture_output=True, text=True)
         if r.returncode != 0:
             print(f"  ❌ Concat error: {r.stderr[:500]}")
@@ -396,7 +397,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # FIX: Final render with captions - smooth encoding
         ass_path = os.path.join(temp_dir, "subs.ass")
         self._create_ass(word_timings, ass_path, CAPTION_CONFIG.FONT_SIZE)
-        safe_ass = ass_path.replace('\\', '/').replace(':', '\\:')
+        safe_ass = ass_path.replace('\', '/').replace(':', '\:')
 
         # FIX: Single-pass render with all optimizations
         r = subprocess.run([
@@ -418,7 +419,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         # Cleanup
         shutil.rmtree(temp_dir, ignore_errors=True)
-        
+
         # Verify output
         if os.path.exists(output_path):
             try:
@@ -430,5 +431,5 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 print(f"  ✅ Final video: {final_dur:.1f}s | {output_path}")
             except:
                 print(f"  ✅ Video created: {output_path}")
-        
+
         return output_path
