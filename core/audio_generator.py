@@ -201,9 +201,32 @@ class AudioGenerator:
 
         return self._get_audio_duration(path), boundaries
 
+    def _sanitize_for_tts(self, text: str) -> str:
+        """
+        FIX: Edge-TTS reads symbols literally out loud — '#' becomes
+        "hashtag", '/' becomes "slash", etc. Even though content_generator
+        already strips hashtags from LLM output, this is a last line of
+        defense applied right before TTS so nothing leaks through
+        (fallback text paths, manual edits, future content sources).
+        """
+        import re
+        if not text:
+            return text
+        text = re.sub(r'#\w+', '', text)      # hashtags, e.g. #Shorts
+        text = re.sub(r'#', '', text)          # any stray lone '#'
+        text = text.replace('/', ' ')          # slashes -> space (avoid "slash")
+        text = re.sub(r'[*_~`]', '', text)     # markdown leftovers
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
     async def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
         """FIXED: Async method — await _generate_speech!"""
         os.makedirs(output_dir, exist_ok=True)
+
+        # FIX: Sanitize every segment's text before it ever reaches TTS
+        for s in script_segments:
+            if not s.get('is_pause') and s.get('text'):
+                s['text'] = self._sanitize_for_tts(s['text'])
 
         speech_segs = [s for s in script_segments if not s.get('is_pause') and s.get('text', '').strip()]
         full_text = ' '.join(s['text'] for s in speech_segs)
