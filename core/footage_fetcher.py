@@ -74,56 +74,45 @@ class FootageFetcher:
     # ─── NEW: Motion score validation ───────────────────────────
     def _check_motion_score(self, video_path: str) -> float:
         """
-        Check if video has REAL motion (not static image or slideshow)
+        Check if video likely has REAL motion (not static image or slideshow)
         Returns: 0.0-1.0 motion score
+
+        FIX: Previously used '-count_frames' which forces ffprobe to fully
+        DECODE the entire video just to count frames — this alone was
+        taking many seconds per clip (called twice per clip: once on cache
+        check, once after download) and was a major contributor to the
+        20+ minute total runtime. We now use only fast metadata reads
+        (duration, bitrate, codec info) which return instantly without
+        decoding any frames.
         """
         try:
-            # Get frame count and duration
             result = subprocess.run([
                 'ffprobe', '-v', 'error',
                 '-select_streams', 'v:0',
-                '-count_frames', '-show_entries', 'stream=nb_read_frames,duration,r_frame_rate',
-                '-of', 'default=noprint_wrappers=1', video_path
-            ], capture_output=True, text=True, timeout=10)
+                '-show_entries', 'stream=duration,bit_rate,r_frame_rate,nb_frames',
+                '-show_entries', 'format=duration,bit_rate',
+                '-of', 'default=noprint_wrappers=1',
+                video_path
+            ], capture_output=True, text=True, timeout=5)
 
             if result.returncode != 0:
                 return 0.5  # Default: assume motion
 
-            lines = result.stdout.strip().split('\n')
             data = {}
-            for line in lines:
+            for line in result.stdout.strip().split('\n'):
                 if '=' in line:
                     k, v = line.split('=', 1)
                     data[k.strip()] = v.strip()
 
-            # Parse frame rate
-            fps_str = data.get('r_frame_rate', '30/1')
-            if '/' in fps_str:
-                num, den = fps_str.split('/')
-                fps = float(num) / float(den) if float(den) != 0 else 30
-            else:
-                fps = float(fps_str)
+            duration = float(data.get('duration', 0) or 0)
+            if duration <= 0:
+                duration = 10.0
 
-            # Parse frame count
-            frames = int(data.get('nb_read_frames', 0))
-            duration = float(data.get('duration', 10))
-
-            if frames == 0 or duration == 0:
-                return 0.5
-
-            # Calculate motion score
-            expected_frames = fps * duration
-            actual_ratio = frames / expected_frames if expected_frames > 0 else 1
-
-            # FIX: If frame count is suspiciously low, it's probably a static image
-            if actual_ratio < 0.5:
-                return 0.1  # Likely static/slideshow
-
-            # Check file size vs duration (motion videos are larger)
             file_size = os.path.getsize(video_path)
             size_per_sec = file_size / duration
 
-            # Typical motion video: 500KB-2MB per second at 1080p
+            # Typical real motion video: 500KB-2MB per second at 1080p.
+            # Static/slideshow-style clips tend to compress far smaller.
             if size_per_sec < 100000:  # < 100KB/sec = probably static/low motion
                 return 0.2
 
@@ -303,28 +292,46 @@ class FootageFetcher:
 
         return unique
 
+    def _search_for_segment(self, i: int, segment: Dict, topic: str) -> tuple:
+        seg_type = segment.get('type', 'story')
+        query = self._topic_to_query(topic, seg_type, i)
+        print(f"    🎬 Seg {i} ({seg_type}): searching '{query}'")
+
+        videos = self.search_all_sources(query)
+
+        if not videos:
+            fallback_q = self.fallback_queries[i % len(self.fallback_queries)]
+            print(f"    ⚠️ Seg {i}: no results, fallback: '{fallback_q}'")
+            videos = self.search_all_sources(fallback_q)
+
+        return i, videos
+
     def fetch_footage_for_script(self, script_segments: List[Dict], topic: str) -> List[Dict]:
         """
-        FIX: Semantic matching + motion validation for REAL video feel
+        FIX: Semantic matching + motion validation for REAL video feel.
+        FIX: Searches for each segment used to run one-by-one (2 API calls
+        per segment, sequentially) — with several segments this added up
+        to a real chunk of the total runtime. Now searched concurrently.
         """
-        clips = []
         used_ids = set()
 
+        from concurrent.futures import ThreadPoolExecutor
+        search_results = {}
+        max_workers = min(6, max(1, len(script_segments)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(self._search_for_segment, i, segment, topic)
+                for i, segment in enumerate(script_segments)
+            ]
+            for future in futures:
+                i, videos = future.result()
+                search_results[i] = videos
+
+        clips = []
         for i, segment in enumerate(script_segments):
             seg_type = segment.get('type', 'story')
             seg_text = segment.get('text', '')
-            query = self._topic_to_query(topic, seg_type, i)
-
-            print(f"    🎬 Seg {i} ({seg_type}): searching '{query}'")
-
-            # Search all sources
-            videos = self.search_all_sources(query)
-
-            # Fallback if no results
-            if not videos:
-                fallback_q = self.fallback_queries[i % len(self.fallback_queries)]
-                print(f"    ⚠️ No results, fallback: '{fallback_q}'")
-                videos = self.search_all_sources(fallback_q)
+            videos = search_results.get(i, [])
 
             if not videos:
                 clips.append({
@@ -334,7 +341,7 @@ class FootageFetcher:
                     'segment_type': seg_type,
                     'source': 'generated'
                 })
-                print(f"    ⚠️ No clip found, using color bg")
+                print(f"    ⚠️ No clip found for seg {i}, using color bg")
                 continue
 
             # FIX: Score by relevance to segment text
@@ -369,9 +376,56 @@ class FootageFetcher:
                 'description': selected.get('description', ''),
                 'orientation': selected.get('orientation', 'landscape')
             })
-            print(f"    ✅ Found clip from {selected['source']} ({selected.get('orientation', 'unknown')})")
+            print(f"    ✅ Seg {i}: found clip from {selected['source']} ({selected.get('orientation', 'unknown')})")
 
         return clips
+
+    def _download_one(self, i: int, clip: Dict, output_dir: str):
+        """Download + validate a single clip. Returns (i, filepath_or_None)."""
+        if not clip.get('url'):
+            print(f"  ⚠️ Clip {i}: no URL, using color bg")
+            return i, None
+
+        filepath = os.path.join(output_dir, f"clip_{i}.mp4")
+
+        # FIX: Skip if already downloaded this URL
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 10000:
+            motion = self._check_motion_score(filepath)
+            if motion > 0.3:
+                print(f"  ✅ Clip {i}: cached (motion: {motion:.2f})")
+                return i, filepath
+            else:
+                print(f"  ⚠️ Clip {i}: cached but low motion ({motion:.2f}), re-downloading")
+
+        try:
+            print(f"  ⬇️ Clip {i} ({clip['source']})...")
+            response = requests.get(clip['url'], stream=True, timeout=30)
+            response.raise_for_status()
+
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=65536):
+                    f.write(chunk)
+
+            file_size = os.path.getsize(filepath)
+            if file_size < 10000:
+                os.remove(filepath)
+                print(f"  ⚠️ Clip {i}: too small ({file_size} bytes)")
+                return i, None
+
+            motion = self._check_motion_score(filepath)
+            print(f"  📊 Clip {i}: {file_size//1024}KB | motion: {motion:.2f}")
+
+            if motion < 0.2:
+                print(f"  ⚠️ Clip {i}: LOW MOTION — likely static/slideshow, will use color bg")
+                os.remove(filepath)
+                return i, None
+
+            print(f"  ✅ Clip {i}: downloaded & validated")
+            return i, filepath
+
+        except Exception as e:
+            print(f"  ❌ Clip {i}: {e}")
+            return i, None
 
     def download_footage(self, clips: List[Dict], output_dir: str) -> List[str]:
         os.makedirs(output_dir, exist_ok=True)
@@ -384,54 +438,23 @@ class FootageFetcher:
                 except:
                     pass
 
-        downloaded = []
-        for i, clip in enumerate(clips):
-            if not clip.get('url'):
-                print(f"  ⚠️ Clip {i}: no URL, using color bg")
-                continue
+        # FIX: Downloads used to run one-by-one in a for-loop, so total time
+        # was the SUM of every clip's network download + ffprobe check.
+        # With ~6-10 segments this alone could eat several minutes. Running
+        # them concurrently overlaps the network waits, cutting this phase
+        # down to roughly the time of the single slowest download.
+        from concurrent.futures import ThreadPoolExecutor
 
-            filepath = os.path.join(output_dir, f"clip_{i}.mp4")
+        results = {}
+        max_workers = min(6, max(1, len(clips)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(self._download_one, i, clip, output_dir)
+                       for i, clip in enumerate(clips)]
+            for future in futures:
+                i, filepath = future.result()
+                if filepath:
+                    results[i] = filepath
 
-            # FIX: Skip if already downloaded this URL
-            if os.path.exists(filepath) and os.path.getsize(filepath) > 10000:
-                # Check motion score
-                motion = self._check_motion_score(filepath)
-                if motion > 0.3:
-                    downloaded.append(filepath)
-                    print(f"  ✅ Clip {i}: cached (motion: {motion:.2f})")
-                    continue
-                else:
-                    print(f"  ⚠️ Clip {i}: cached but low motion ({motion:.2f}), re-downloading")
-
-            try:
-                print(f"  ⬇️ Clip {i} ({clip['source']})...")
-                response = requests.get(clip['url'], stream=True, timeout=30)
-                response.raise_for_status()
-
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=65536):
-                        f.write(chunk)
-
-                # FIX: Validate downloaded clip
-                file_size = os.path.getsize(filepath)
-                if file_size < 10000:
-                    os.remove(filepath)
-                    print(f"  ⚠️ Clip {i}: too small ({file_size} bytes)")
-                    continue
-
-                # FIX: Check motion score
-                motion = self._check_motion_score(filepath)
-                print(f"  📊 Clip {i}: {file_size//1024}KB | motion: {motion:.2f}")
-
-                if motion < 0.2:
-                    print(f"  ⚠️ Clip {i}: LOW MOTION — likely static/slideshow, will use color bg")
-                    os.remove(filepath)
-                    continue
-
-                downloaded.append(filepath)
-                print(f"  ✅ Clip {i}: downloaded & validated")
-
-            except Exception as e:
-                print(f"  ❌ Clip {i}: {e}")
-
+        # Preserve original clip order
+        downloaded = [results[i] for i in sorted(results.keys())]
         return downloaded
