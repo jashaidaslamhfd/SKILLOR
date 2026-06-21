@@ -83,10 +83,12 @@ class CaptionConfig:
     OUTLINE_WIDTH: int = 6
     SHADOW: int = 2
 
-    # FIX: ALIGNMENT 2 = bottom-center (safe from YouTube UI)
-    # MARGIN_V = 1400 = lower 40% of 1920 height (safe zone)
-    ALIGNMENT: int = 2  # FIX: 5 → 2 (bottom-center, not middle)
-    MARGIN_V: int = 1400  # FIX: 0 → 1400 (safe zone)
+    # FIX: ALIGNMENT 2 + MARGIN_V 1400 was pushing captions into a broken
+    # middle zone (not bottom, not center) on a 1920px tall video — causing
+    # overlap/stacked captions to spill off-screen top or bottom. True
+    # center (5) with a small MARGIN_V keeps every caption fully on-screen.
+    ALIGNMENT: int = 5  # FIX: 2 → 5 (true vertical+horizontal center)
+    MARGIN_V: int = 0  # FIX: 1400 → 0 (center alignment ignores marginV offset issues)
 
     HIGHLIGHT_COLOR: str = "&H000000FF"  # Red emphasis
 
