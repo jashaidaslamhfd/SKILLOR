@@ -113,7 +113,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             cmd = [
                 "ffmpeg", "-y", "-ss", str(ss), "-i", clip_file,
                 "-t", str(cut_len), "-vf", vf,
-                "-c:v", "libx264", "-crf", str(self.crf), "-preset", "fast",
+                "-c:v", "libx264", "-crf", str(self.crf), "-preset", "veryfast",
                 "-r", str(self.fps), "-pix_fmt", "yuv420p",
                 "-g", str(self.fps), "-keyint_min", str(self.fps),
                 "-sc_threshold", "0", "-an",
@@ -225,7 +225,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 f"scale={self.width}:{self.height},setsar=1,format=yuv420p"
             ),
             "-c:v", "libx264", "-crf", str(self.crf),
-            "-preset", "fast", "-r", str(self.fps),
+            "-preset", "veryfast", "-r", str(self.fps),
             "-g", str(self.fps), "-keyint_min", str(self.fps),
             "-sc_threshold", "0",
             "-pix_fmt", "yuv420p",
@@ -270,7 +270,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "ffmpeg", "-y", "-i", base_video,
             "-vf", vf,
             "-c:v", "libx264", "-crf", str(self.crf),
-            "-preset", "fast", "-r", str(self.fps),
+            "-preset", "veryfast", "-r", str(self.fps),
             "-g", str(self.fps), "-keyint_min", str(self.fps),
             "-sc_threshold", "0",
             "-pix_fmt", "yuv420p", "-an",
