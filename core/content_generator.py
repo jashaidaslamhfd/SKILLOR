@@ -90,7 +90,12 @@ class ContentGenerator:
 
         wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
 
-        # FIX: Much stricter prompt — forces 100-115 words
+        # FIX: prompt now explicitly tells the model to output ONLY the raw
+        # spoken line after each marker — no word-count hints, no style
+        # labels, no instruction text repeated back. This is belt-and-
+        # suspenders with the _extract()/_strip_leaked_instructions() fixes
+        # below: even if the model still echoes some of this, the parser
+        # now strips it before it ever reaches TTS.
         prompt = f"""Write a viral YouTube Shorts script about EXACTLY this topic: "{topic}"
 
 Every section must be about "{topic}" only. Do NOT drift to other topics.
@@ -102,48 +107,44 @@ advice. Treat the topic like a mystery being unraveled, not a how-to.
 VIRAL PATTERN: {pattern}
 SUSPENSE LEVEL: {suspense_score}/100
 
-Write these 5 sections with EXACT word counts:
+Write these 5 sections. For EACH section, output ONLY the marker followed
+by a colon and the FINAL SPOKEN LINE — nothing else. Do NOT include word
+counts, style names, or any of these instructions in your answer.
 
-### HOOK: (18-22 words)
-Style: {style_name}. {style_instruction}
-Do NOT use "have you ever wondered" — vary opening words.
-End with "..."
+### HOOK:
+(Internally aim for 18-22 words. Style: {style_name}. {style_instruction}
+Do NOT use "have you ever wondered" — vary opening words. End with "...")
 
-### SHOCK: (8-10 words)
-One visual shock moment about "{topic}" — makes eyes widen.
-Triggers glitch/shake effect in video.
-End with "..."
+### SHOCK:
+(Internally aim for 8-10 words. One visual shock moment about "{topic}" —
+makes eyes widen. Triggers glitch/shake effect in video. End with "...")
 
-### SUSPENSE: (10-12 words)
-Shocking twist directly about "{topic}".
-End with "..."
+### SUSPENSE:
+(Internally aim for 10-12 words. Shocking twist directly about "{topic}".
+End with "...")
 
-### STORY: (55-65 words)
-Explain real science behind "{topic}":
+### STORY:
+(Internally aim for 55-65 words. Explain real science behind "{topic}":
 1) What's happening in body/brain — vivid, unsettling imagery
    (e.g. "your body is literally..." not dry textbook)
 2) UNEXPECTED TWIST — surprising discovery that recontextualizes everything
 Use "and", "but", "because", "which means" to connect — NO full stops mid-story
-except ONE "..." for narrator breath.
-End by looping back to hook's exact theme.
+except ONE "..." for narrator breath. End by looping back to hook's exact theme.)
 
-### CTR: (10-12 words)
-Style: {ctr_style}. {ctr_instruction}
+### CTR:
+(Internally aim for 10-12 words. Style: {ctr_style}. {ctr_instruction})
 
 CRITICAL RULES — FOLLOW EXACTLY:
 - Second person "you/your"
 - USA/UK English only
 - NO hashtags, NO emojis
-- TOTAL WORD COUNT: EXACTLY 100-115 words (count every word!)
-- HOOK: 18-22 words
-- SHOCK: 8-10 words
-- SUSPENSE: 10-12 words
-- STORY: 55-65 words
-- CTR: 10-12 words
+- TOTAL WORD COUNT across all 5 spoken lines: 100-115 words
 - If under 100 words: EXPAND story with more vivid, unsettling details
 - If over 115 words: TRIM story section
 - Use "..." for pause markers (TTS breath timing)
-- Word count calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm = 40-55s video"""
+- Word count calibrated to {AUDIO_CONFIG.WORDS_PER_MINUTE}wpm = 40-55s video
+- Your answer must contain ONLY the 5 markers each followed by their final
+  spoken line — no parenthetical notes, no word counts, no "Style:" labels"""
 
         raw = self._generate(prompt, max_tokens=500)
 
@@ -286,11 +287,73 @@ CRITICAL RULES — FOLLOW EXACTLY:
         }
 
     def _extract(self, label: str, text: str) -> str:
+        """
+        FIX (root cause of voice reading out section labels/word-count
+        hints/commas): the previous regex grabbed EVERYTHING right after
+        "LABEL:" up to the next marker, with no filtering. The prompt
+        itself puts parenthetical hints like "(18-22 words)" and lines
+        like "Style: curiosity question." directly after each marker —
+        and the LLM frequently echoes those instructions back verbatim
+        instead of (or in addition to) the actual spoken line. That raw,
+        unfiltered text — including word-count parentheticals and their
+        internal commas — was going straight into segments[i]['text'] and
+        therefore straight into the TTS voice. This is exactly the
+        symptom described: "hook bhi parh raha, suspense bhi parh raha,
+        comma bhi parh raha".
+
+        Fix: after extracting the raw block for a label, we now run it
+        through `_strip_leaked_instructions()` which removes parenthetical
+        word-count/seconds hints, strips leaked "Style:"/instruction-style
+        lines, and keeps only lines that look like real spoken content.
+        """
         if not text:
             return ""
-        pattern = rf'{label}:\s*(.+?)(?=\n\s*(?:HOOK|SHOCK|SUSPENSE|STORY|CTR):|$)'
+        pattern = rf'{label}:\s*(.+?)(?=\n\s*(?:###\s*)?(?:HOOK|SHOCK|SUSPENSE|STORY|CTR):|$)'
         m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        return m.group(1).strip() if m else ""
+        raw_block = m.group(1).strip() if m else ""
+        return self._strip_leaked_instructions(raw_block)
+
+    def _strip_leaked_instructions(self, block: str) -> str:
+        """Remove any prompt-instruction residue from an extracted section
+        before it can ever reach TTS."""
+        if not block:
+            return ""
+
+        # Remove parenthetical hints anywhere, e.g. "(18-22 words)",
+        # "(8-10 words, 3-4 seconds)", "(Internally aim for ...)"
+        block = re.sub(r'\([^)]*\)', '', block)
+
+        # Drop whole lines that are clearly leaked instructions rather
+        # than spoken script content.
+        instruction_line_patterns = [
+            r'^\s*style\s*:', r'^\s*internally\b', r'^\s*aim for\b',
+            r'^\s*do not\b', r'^\s*don\'t\b', r'^\s*end with\b',
+            r'^\s*rules?\s*:', r'^\s*note\s*:', r'^\s*words?\s*:',
+            r'^\s*seconds?\s*:', r'^\s*\d+\s*-\s*\d+\s*words\b',
+            r'^\s*###',
+        ]
+        lines = block.split('\n')
+        kept = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if any(re.search(p, stripped, re.IGNORECASE) for p in instruction_line_patterns):
+                continue
+            kept.append(stripped)
+
+        result = ' '.join(kept).strip()
+
+        # Final safety net: strip any stray standalone word-count/seconds
+        # fragments that survived as inline text, e.g. "18-22 words, 6-8
+        # seconds" appearing without parentheses.
+        result = re.sub(r'\b\d+\s*-\s*\d+\s*(?:words?|seconds?)\b', '', result, flags=re.IGNORECASE)
+        result = re.sub(r'\s+,', ',', result)
+        result = re.sub(r',\s*,', ',', result)
+        result = re.sub(r'\s+', ' ', result).strip()
+        result = result.strip(',').strip()
+
+        return result
 
     def _clean(self, text: str) -> str:
         text = re.sub(r'#\w+', '', text)
