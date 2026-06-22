@@ -18,10 +18,19 @@ class AudioGenerator:
         # settings.py silently did nothing, because this is the value that
         # actually gets passed to edge_tts. Falls back to GuyNeural if
         # AUDIO_CONFIG.VOICE isn't set, for safety.
-        self.voice = getattr(AUDIO_CONFIG, 'VOICE', 'en-US-GuyNeural')
-        self.base_rate = -5
-        self.pitch = "-3Hz"
-        self.volume = "+10%"
+        self.voice = getattr(AUDIO_CONFIG, 'VOICE', 'en-US-AndrewMultilingualNeural')
+        # FIX: pitch/volume/base_rate were hardcoded here, completely
+        # disconnected from AUDIO_CONFIG in settings.py — exactly the same
+        # class of bug the voice fix above already addressed. Changing
+        # PITCH/VOLUME/RATE in settings.py silently did nothing because
+        # these hardcoded values are what actually got passed to edge_tts.
+        # Now reads from AUDIO_CONFIG, with safe fallbacks tuned for a
+        # natural (non-robotic) AndrewMultilingualNeural read: no pitch
+        # shift and no volume boost, since both push this voice toward a
+        # processed/metallic sound.
+        self.base_rate = getattr(AUDIO_CONFIG, 'RATE_MIN', -5)
+        self.pitch = getattr(AUDIO_CONFIG, 'PITCH', '+0Hz')
+        self.volume = getattr(AUDIO_CONFIG, 'VOLUME', '+0%')
         self.sample_rate = 44100
         self.channels = 2
         self.audio_bitrate = "192k"
@@ -32,22 +41,35 @@ class AudioGenerator:
         """
         Dynamic TTS rate based on word count to hit 40-55s target.
         Format: "+10%" or "-10%" — Edge-TTS requires + or - prefix!
+
+        FIX: rate steps were hardcoded (-15/-10/-5/0/5/10), completely
+        disconnected from AUDIO_CONFIG.RATE_MIN/RATE_MAX in settings.py —
+        same disconnect class as the voice/pitch/volume bugs above.
+        Changing RATE_MIN/RATE_MAX in settings.py silently did nothing.
+        Now derives steps from the configured range, and clamps to it, so
+        a long script can never push the rate more negative than
+        RATE_MIN (the main remaining cause of robotic-sounding narration
+        on long scripts).
         """
+        rate_min = getattr(AUDIO_CONFIG, 'RATE_MIN', -8)
+        rate_max = getattr(AUDIO_CONFIG, 'RATE_MAX', 8)
+
         expected_duration = word_count / (self.target_wpm / 60)
 
         if expected_duration > 55:
-            rate = -15
+            rate = rate_min
         elif expected_duration > 50:
-            rate = -10
+            rate = round(rate_min * 0.66)
         elif expected_duration > 45:
-            rate = -5
+            rate = round(rate_min * 0.33)
         elif expected_duration > 40:
             rate = 0
         elif expected_duration > 35:
-            rate = 5
+            rate = round(rate_max * 0.5)
         else:
-            rate = 10
+            rate = rate_max
 
+        rate = max(rate_min, min(rate_max, rate))
         prefix = "+" if rate >= 0 else ""
         rate_str = f"{prefix}{rate}%"
         print(f"    🎙️ Words: {word_count} | Expected: {expected_duration:.1f}s | TTS rate: {rate_str}")
@@ -67,9 +89,18 @@ class AudioGenerator:
         return 0.0
 
     def _make_breath_pause(self, duration: float, output_path: str):
+        """FIX: previously this was flat brown noise at constant amplitude
+        for the whole pause -- that reads as a burst of static, not a
+        breath. A real inhale/exhale rises and falls in volume and is
+        gentler in tone. We now lowpass-filter the noise (removes the
+        harsh/hissy high end) and shape it with a fade-in/fade-out envelope
+        so it swells and fades like an actual breath instead of switching
+        on/off abruptly."""
+        fade = min(0.35, duration / 3)
         cmd = [
             'ffmpeg', '-y', '-f', 'lavfi',
-            '-i', f'anoisesrc=r={self.sample_rate}:color=brown:amplitude=0.018:duration={duration}',
+            '-i', f'anoisesrc=r={self.sample_rate}:color=pink:amplitude=0.025:duration={duration}',
+            '-af', f'lowpass=f=900,afade=t=in:st=0:d={fade},afade=t=out:st={max(0, duration - fade)}:d={fade}',
             '-ar', str(self.sample_rate),
             '-ac', str(self.channels),
             '-b:a', self.audio_bitrate,
