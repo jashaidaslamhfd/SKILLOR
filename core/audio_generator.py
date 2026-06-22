@@ -21,7 +21,7 @@ class AudioGenerator:
         # AUDIO_CONFIG.VOICE isn't set, for safety.
         self.voice = getattr(AUDIO_CONFIG, 'VOICE', 'en-US-AndrewMultilingualNeural')
         # FIX: pitch/volume/base_rate were hardcoded here, completely
-        # disconnected from AUDIO_CONFIG in settings.py — exactly the same
+        # disconnected from AUDIO_CONFIG in settings.py - exactly the same
         # class of bug the voice fix above already addressed. Changing
         # PITCH/VOLUME/RATE in settings.py silently did nothing because
         # these hardcoded values are what actually got passed to edge_tts.
@@ -42,10 +42,10 @@ class AudioGenerator:
     def _calculate_tts_rate(self, word_count: int) -> str:
         """
         Dynamic TTS rate based on word count to hit 40-55s target.
-        Format: "+10%" or "-10%" — Edge-TTS requires + or - prefix!
+        Format: "+10%" or "-10%" - Edge-TTS requires + or - prefix!
 
         FIX: rate steps were hardcoded (-15/-10/-5/0/5/10), completely
-        disconnected from AUDIO_CONFIG.RATE_MIN/RATE_MAX in settings.py —
+        disconnected from AUDIO_CONFIG.RATE_MIN/RATE_MAX in settings.py -
         same disconnect class as the voice/pitch/volume bugs above.
         Changing RATE_MIN/RATE_MAX in settings.py silently did nothing.
         Now derives steps from the configured range, and clamps to it, so
@@ -234,7 +234,7 @@ class AudioGenerator:
         return boundaries
 
     async def _generate_speech(self, text: str, path: str, rate: str) -> tuple:
-        """Async method — no asyncio.run() conflict!"""
+        """Async method - no asyncio.run() conflict!"""
         last_error = None
         boundaries = []
         for attempt in range(1, 4):
@@ -304,7 +304,7 @@ class AudioGenerator:
 
     def _sanitize_for_tts(self, text: str) -> str:
         """
-        Edge-TTS reads symbols literally out loud — '#' becomes "hashtag",
+        Edge-TTS reads symbols literally out loud - '#' becomes "hashtag",
         '/' becomes "slash", etc. Last line of defense right before TTS.
         """
         import re
@@ -400,24 +400,24 @@ class AudioGenerator:
         shutil.rmtree(sfx_dir, ignore_errors=True)
 
     async def generate_with_effects(self, script_segments: List[Dict], output_dir: str) -> Dict:
-        """Async method — await _generate_speech!
+        """Async method - await _generate_speech!
 
         FIX (duration doubling root cause): the previous version advanced
         `current_time` by `actual_dur` (the real duration of each cut MP3
         chunk, measured AFTER ffmpeg's `-ss`/`-t` cut, which always rounds
         to the nearest encoder frame/keyframe boundary) while computing
         caption timestamp shifts from `seg_start` (the boundary-estimated,
-        un-rounded start time). Each segment's rounding error — a few
-        hundredths to low tenths of a second — was carried forward and
+        un-rounded start time). Each segment's rounding error - a few
+        hundredths to low tenths of a second - was carried forward and
         ACCUMULATED into every subsequent segment's `shift`, AND into
         `current_time` itself, which is also what segment durations get
         re-derived from downstream in the video assembler. Across 8-12
         segments this drift compounded into many extra seconds, and in
         pathological cases (e.g. a near-empty/very short cut snapping to a
-        much longer keyframe boundary) a single segment could balloon —
+        much longer keyframe boundary) a single segment could balloon -
         explaining videos rendering at ~2x the intended length.
 
         FIX: we now track a single authoritative timeline cursor
         (`timeline_cursor`) that only ever advances by the EXACT duration we
         asked ffmpeg to cut (`seg_dur`, clamped to stay inside the real
-        speech length) — never by t
+        speech length) - never by t
