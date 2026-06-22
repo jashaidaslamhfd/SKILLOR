@@ -43,10 +43,10 @@ class VideoConfig:
 @dataclass
 class AudioConfig:
     # Voice: deep, mysterious, cinematic for USA/UK audience
-    VOICE: str = "en-US-GuyNeural"
-    RATE: str = "-5%"  # FIX: -12% → -5% (base rate, audio_generator.py dynamic override)
-    PITCH: str = "-3Hz"
-    VOLUME: str = "+10%"
+    VOICE: str = "en-US-AndrewMultilingualNeural"  # FIX: GuyNeural -> Andrew, more natural narration tone
+    RATE: str = "-2%"  # FIX: -5% → -2% (slower rates make edge-tts sound dragged/robotic)
+    PITCH: str = "+0Hz"  # FIX: -3Hz → +0Hz (pitch-shifting is what made the voice sound artificial)
+    VOLUME: str = "+0%"  # FIX: +10% → +0% (boosted volume causes compression/metallic artifacts)
 
     SAMPLE_RATE: int = 44100
     CHANNELS: int = 2
@@ -62,8 +62,11 @@ class AudioConfig:
     WORDS_PER_MINUTE: int = 130
 
     # NEW: Dynamic rate range (audio_generator.py uses this)
-    RATE_MIN: int = -15  # Fastest (for long scripts)
-    RATE_MAX: int = 10   # Slowest (for short scripts)
+    # FIX: -15/+10 → -8/+8 — the old -15% extreme was the main remaining
+    # cause of robotic-sounding long-script narration (TTS engines stretch
+    # words unnaturally at very slow rates).
+    RATE_MIN: int = -8   # Fastest (for long scripts)
+    RATE_MAX: int = 8    # Slowest (for short scripts)
 
     # NEW: Target duration enforcement
     TARGET_DURATION_MIN: float = 40.0
