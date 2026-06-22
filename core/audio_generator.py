@@ -256,40 +256,44 @@ class AudioGenerator:
         if not os.path.exists(path):
             return 0.0, []
 
-        # FIX (retention): For crisp delivery, we rely on higher TTS rate
-        # instead of post-processing. Post-processing (silence removal + 
-        # speed up) was destroying audio (1.6s for 111 words).
-        # The TTS rate is already calculated higher in _calculate_tts_rate.
+        # Post-processing: only apply on segments long enough to be safe.
+        # Short segments (< 4s) skip all processing — TTS rate already
+        # handles pacing via _calculate_tts_rate, and processing 2-3s clips
+        # was the root cause of "Speed up too aggressive / Silence removal
+        # too aggressive" on EVERY segment → empty/broken files → concat fail.
+        orig_dur = self._get_audio_duration(path)
+        skip_processing = orig_dur < 4.0
 
-        # Optional: Light silence removal only if safe
-        no_sil = path.replace('.mp3', '_ns.mp3')
-        self._remove_silence(path, no_sil)
-        if os.path.exists(no_sil): 
-            ns_dur = self._get_audio_duration(no_sil)
-            orig_dur = self._get_audio_duration(path)
-            if ns_dur >= orig_dur * 0.8:  # Only if we kept 80%+ of audio
-                os.replace(no_sil, path)
-                print(f"    🔇 Silence removed safely ({orig_dur:.1f}s → {ns_dur:.1f}s)")
-            else:
-                print(f"    ⚠️ Silence removal too aggressive, skipped")
-                if os.path.exists(no_sil): os.remove(no_sil)
+        if not skip_processing:
+            # Light silence removal
+            no_sil = path.replace('.mp3', '_ns.mp3')
+            self._remove_silence(path, no_sil)
+            if os.path.exists(no_sil):
+                ns_dur = self._get_audio_duration(no_sil)
+                if ns_dur >= orig_dur * 0.8:
+                    os.replace(no_sil, path)
+                    print(f"    🔇 Silence removed ({orig_dur:.1f}s → {ns_dur:.1f}s)")
+                else:
+                    print(f"    ⚠️ Silence removal skipped ({orig_dur:.1f}s → {ns_dur:.1f}s)")
+                    if os.path.exists(no_sil):
+                        os.remove(no_sil)
 
-        # Optional: Speed up only if safe
-        fast = path.replace('.mp3', '_fast.mp3')
-        self._speed_up(path, fast)
-        if os.path.exists(fast):
-            fast_dur = self._get_audio_duration(fast)
-            orig_dur = self._get_audio_duration(path)
-            if fast_dur >= orig_dur * 0.8 and fast_dur > 10:  # Must be > 10s
-                os.replace(fast, path)
-                # Scale word boundaries to match new speed
-                for b in boundaries:
-                    b['start'] /= self.speed_factor
-                    b['end'] /= self.speed_factor
-                print(f"    ⚡ Speed: {self.speed_factor}x applied | Timings scaled")
-            else:
-                print(f"    ⚠️ Speed up too aggressive ({orig_dur:.1f}s → {fast_dur:.1f}s), skipped")
-                if os.path.exists(fast): os.remove(fast)
+            # Speed up — only if segment is long enough AND result is reasonable
+            fast = path.replace('.mp3', '_fast.mp3')
+            self._speed_up(path, fast)
+            if os.path.exists(fast):
+                fast_dur = self._get_audio_duration(fast)
+                cur_dur = self._get_audio_duration(path)
+                if fast_dur >= cur_dur * 0.75:  # Removed the broken "> 10s" gate
+                    os.replace(fast, path)
+                    for b in boundaries:
+                        b['start'] /= self.speed_factor
+                        b['end'] /= self.speed_factor
+                    print(f"    ⚡ Speed {self.speed_factor}x applied ({cur_dur:.1f}s → {fast_dur:.1f}s)")
+                else:
+                    print(f"    ⚠️ Speed up skipped ({cur_dur:.1f}s → {fast_dur:.1f}s)")
+                    if os.path.exists(fast):
+                        os.remove(fast)
 
         hq = path.replace('.mp3', '_hq.mp3')
         subprocess.run([
@@ -427,84 +431,4 @@ class AudioGenerator:
         for idx, seg in enumerate(script_segments):
             if seg.get('is_pause'):
                 pause_dur = float(seg.get('duration', 0.4))
-                pause_path = os.path.join(output_dir, f'pause_{idx}.mp3')
-                self._make_breath_pause(pause_dur, pause_path)
-                if os.path.exists(pause_path):
-                    segment_files.append((pause_path, pause_dur))
-                timeline_cursor += pause_dur
-                continue
-
-            text = seg.get('text', '').strip()
-            if not text:
-                continue
-
-            text = self._sanitize_for_tts(text)
-            seg_path = os.path.join(output_dir, f'seg_{idx}.mp3')
-
-            try:
-                actual_dur, boundaries = await self._generate_speech(text, seg_path, tts_rate)
-            except Exception as e:
-                print(f"    ⚠️ TTS failed for segment {idx}: {e}")
-                continue
-
-            if not os.path.exists(seg_path) or actual_dur <= 0:
-                continue
-
-            # Shift word timings to absolute timeline position
-            for b in boundaries:
-                all_word_timings.append({
-                    'word': b['word'],
-                    'start': round(timeline_cursor + b['start'], 3),
-                    'end': round(timeline_cursor + b['end'], 3),
-                })
-
-            # Advance cursor by ACTUAL measured duration (not estimated)
-            segment_files.append((seg_path, actual_dur))
-            timeline_cursor += actual_dur
-
-        if not segment_files:
-            raise Exception("No audio segments generated")
-
-        # Concatenate all segments
-        concat_list = os.path.join(output_dir, 'concat.txt')
-        with open(concat_list, 'w') as f:
-            for path, _ in segment_files:
-                safe_path = path.replace("'", "'\\''")
-                f.write(f"file '{safe_path}'\n")
-
-        raw_speech = os.path.join(output_dir, 'speech_raw.mp3')
-        subprocess.run([
-            'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
-            '-i', concat_list, '-c', 'copy', raw_speech
-        ], capture_output=True, timeout=120)
-
-        if not os.path.exists(raw_speech):
-            raise Exception("Audio concatenation failed")
-
-        total_duration = self._get_audio_duration(raw_speech)
-
-        # Mix in background music + fan noise
-        final_path = os.path.join(output_dir, 'final_audio.mp3')
-        self._add_bg_music_and_fan(raw_speech, final_path, total_duration)
-        if not os.path.exists(final_path):
-            import shutil as _shutil
-            _shutil.copy(raw_speech, final_path)
-
-        # Add SFX transitions for retention
-        self._add_sfx_transitions(final_path, total_duration)
-
-        # Fallback: estimate timings if TTS gave none
-        if not all_word_timings:
-            print("    ⚠️ No word boundaries from TTS — using estimate fallback")
-            all_word_timings = self._generate_word_timings(final_path, " ".join(
-                s.get('text', '') for s in script_segments if not s.get('is_pause')
-            ))
-
-        print(f"    ✅ Audio generated: {total_duration:.1f}s | {len(all_word_timings)} word timings")
-
-        return {
-            'audio_path': final_path,
-            'total_duration': total_duration,
-            'word_timings': all_word_timings,
-            'word_count': all_words,
-        }
+                pause_path = os.pa
