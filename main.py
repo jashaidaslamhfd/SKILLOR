@@ -20,6 +20,11 @@ from core.content_generator import ContentGenerator
 from core.audio_generator import AudioGenerator
 from core.footage_fetcher import FootageFetcher
 from core.video_assembler import VideoAssembler
+try:
+    from core.cloud_uploader import CloudUploader
+except ImportError:
+    CloudUploader = None
+    print("⚠️ CloudUploader not found — Instagram upload disabled")
 from core.caption_generator import CaptionGenerator
 from core.thumbnail_generator import ThumbnailGenerator
 from uploaders.youtube_uploader import YouTubeUploader
