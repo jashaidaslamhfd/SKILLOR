@@ -48,12 +48,14 @@ class ViralTopicEngine:
                 "doctors get this wrong every time",
                 "the truth they don't want you to know",
             ],
-            'personal_stake': [  # Viewer engagement
+             'personal_stake': [ # Viewer engagement - 35+ audience killer
                 "this is happening to you right now",
-                "your brain is doing this as you watch",
+                "your brain is doing this as you watch", 
+                "your body is hiding this from you",
                 "you experienced this today",
                 "this is why you feel that way",
-                "your body is hiding this from you",
+            ],
+            'shock_visual': [
             ],
             'countdown': [  # List format — high retention
                 "3 signs your brain is",
@@ -69,7 +71,8 @@ class ViralTopicEngine:
             'sleep': 95, 'dream': 92, 'brain': 90, 'fear': 88,
             'memory': 85, 'consciousness': 87, 'paralysis': 96,
             'adrenaline': 89, 'intuition': 84, 'déjà vu': 91,
-            'lucid': 88, 'body': 82, 'mind': 80, 'psychology': 78,
+            'lucid': 88, 'body': 82, 'mind': 80, 'psychology': 92,
+            'Personal': 94
         }
 
     def fetch_trending_topics(self, timeframe: str = "now 1-d") -> List[Dict]:
@@ -187,7 +190,7 @@ class ViralTopicEngine:
         return [
             t for t in topics
             if (t.get('growth', 0) > 30 or t.get('viral_score', 0) > 30)
-            and t.get('suspense_score', 0) > 60  # NEW: Minimum suspense requirement
+            and t.get('suspense_score', 0) > 75  # NEW: Minimum suspense requirement
         ]
 
     def get_topic_angle(self, topic_data: Dict) -> str:
@@ -212,9 +215,9 @@ class ViralTopicEngine:
         """NEW: Generate shock-specific angle for visual effect"""
         shock_angles = [
             f"the exact moment {topic_data['query']} happens to you",
-            f"what your brain sees during {topic_data['query']}",
+            f"caught on camera: {topic_data['query']}",  # Nayi line
             f"the split second before {topic_data['query']} kicks in",
-            f"your body's reaction to {topic_data['query']} — caught on camera",
+            f"your body's reaction to {topic_data['query']} - visual proof", # Edit
             f"the visual proof that {topic_data['query']} is real",
         ]
         return random.choice(shock_angles)
