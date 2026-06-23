@@ -503,7 +503,7 @@ class AudioGenerator:
             _shutil.copy(raw_speech, final_path)
 
         # Add SFX transitions for retention
-         self._add_sfx_transitions(final_path, total_duration)
+       #  self._add_sfx_transitions(final_path, total_duration)
 
         # Fallback: estimate timings if TTS gave none
         if not all_word_timings:
