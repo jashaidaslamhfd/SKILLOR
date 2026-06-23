@@ -29,15 +29,15 @@ class AudioGenerator:
         # natural (non-robotic) AndrewMultilingualNeural read: no pitch
         # shift and no volume boost, since both push this voice toward a
         # processed/metallic sound.
-        self.base_rate = getattr(AUDIO_CONFIG, 'RATE_MIN', -5)
-        self.pitch = getattr(AUDIO_CONFIG, 'PITCH', '+0Hz')
-        self.volume = getattr(AUDIO_CONFIG, 'VOLUME', '+0%')
+        self.base_rate = getattr(AUDIO_CONFIG, 'RATE_MIN', -12)
+        self.pitch = getattr(AUDIO_CONFIG, 'PITCH', '-2Hz')
+        self.volume = getattr(AUDIO_CONFIG, 'VOLUME', '+3%')
         self.sample_rate = 44100
         self.channels = 2
         self.audio_bitrate = "192k"
-        self.target_wpm = 150  # FIX: Faster pacing for retention
-        self.speed_factor = 1.15  # FIX: 1.15x crisp speed
-        self.target_duration = 47
+        self.target_wpm = 135  # FIX: Faster pacing for retention
+        self.speed_factor = 1.08  # FIX: 1.15x crisp speed
+        self.target_duration = 41
 
     def _calculate_tts_rate(self, word_count: int) -> str:
         """
@@ -98,7 +98,7 @@ class AudioGenerator:
         harsh/hissy high end) and shape it with a fade-in/fade-out envelope
         so it swells and fades like an actual breath instead of switching
         on/off abruptly."""
-        fade = min(0.35, duration / 3)
+        fade = min(0.8, duration / 2)
         cmd = [
             'ffmpeg', '-y', '-f', 'lavfi',
             '-i', f'anoisesrc=r={self.sample_rate}:color=pink:amplitude=0.025:duration={duration}',
@@ -503,7 +503,7 @@ class AudioGenerator:
             _shutil.copy(raw_speech, final_path)
 
         # Add SFX transitions for retention
-       # self._add_sfx_transitions(final_path, total_duration)
+         self._add_sfx_transitions(final_path, total_duration)
 
         # Fallback: estimate timings if TTS gave none
         if not all_word_timings:
