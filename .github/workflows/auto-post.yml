@@ -3,7 +3,9 @@ name: YouTube Automation System
 on:
   # Schedule: Daily at 12:00 UTC (8:00 AM EST, 5:00 PM PKT)
   schedule:
-    - cron: '0 12 * * *'
+    - cron: '0 12 * * *' # USA Morning
+    - cron: '0 16 * * *' # USA Afternoon
+    - cron: '0 22 * * *' # USA Evening
   
   # Manual trigger from GitHub UI
   workflow_dispatch:
