@@ -1,53 +1,82 @@
-name: Auto Post YouTube Shorts
+name: YouTube Automation System
 
 on:
+  # Schedule: Daily at 12:00 UTC (8:00 AM EST, 5:00 PM PKT)
   schedule:
-    - cron: '0 12 * * *'  # Daily at 12:00 UTC
-  workflow_dispatch:      # Manual trigger
+    - cron: '0 12 * * *'
+  
+  # Manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Number of videos to generate'
+        required: false
+        default: '1'
+        type: string
+      topic:
+        description: 'Specific topic (optional)'
+        required: false
+        type: string
+      skip_upload:
+        description: 'Skip upload to platforms'
+        required: false
+        default: 'false'
+        type: boolean
 
-# FIX: Add permissions for better logging
+# Permissions
 permissions:
   contents: read
   actions: write
   checks: write
 
 jobs:
-  create-and-post:
+  automation:
+    name: Run YouTube Automation
     runs-on: ubuntu-latest
-    
-    # FIX: Add timeout to prevent infinite runs
-    timeout-minutes: 30
+    timeout-minutes: 30  # Prevent infinite runs
     
     steps:
+      # ============================================================
+      # Step 1: Checkout Code
+      # ============================================================
       - name: Checkout code
         uses: actions/checkout@v4
       
+      # ============================================================
+      # Step 2: Setup Python
+      # ============================================================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
       
-      - name: Install ffmpeg
+      # ============================================================
+      # Step 3: Install Dependencies
+      # ============================================================
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install cloudinary  # Ensure cloudinary is installed
+      
+      # ============================================================
+      # Step 4: Install FFmpeg
+      # ============================================================
+      - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
       
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-      
       # ============================================================
-      # FIX: Cache YouTube Token - WITHOUT run_id in key
+      # Step 5: Cache YouTube Token
       # ============================================================
       - name: Cache YouTube Token
         id: youtube-cache
         uses: actions/cache@v3
         with:
           path: token_cache.json
-          # FIX: Use stable key without run_id
           key: youtube-token-${{ runner.os }}-v1
-          # FIX: Restore from any previous version
           restore-keys: |
             youtube-token-${{ runner.os }}-v
       
@@ -55,13 +84,12 @@ jobs:
         run: |
           if [ -f token_cache.json ]; then
             echo "✅ YouTube token cache restored"
-            echo "Token age: $(($(date +%s) - $(stat -c %Y token_cache.json))) seconds"
           else
             echo "⏳ No cached token found, will create new one"
           fi
       
       # ============================================================
-      # Run the automation
+      # Step 6: Run Automation
       # ============================================================
       - name: Run YouTube Automation
         id: automation
@@ -71,8 +99,10 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           
-          # Other APIs
+          # Groq API
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          
+          # Stock Footage
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           
@@ -89,26 +119,38 @@ jobs:
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
           
+          # Python settings
+          PYTHONUNBUFFERED: '1'
+          
         run: |
-          python main.py 2>&1 | tee output.log
+          # Set default values from workflow inputs
+          COUNT="${{ github.event.inputs.count || '1' }}"
+          TOPIC="${{ github.event.inputs.topic || '' }}"
+          SKIP_UPLOAD="${{ github.event.inputs.skip_upload || 'false' }}"
+          
+          # Build command
+          CMD="python orchestrator.py --count $COUNT"
+          
+          if [ -n "$TOPIC" ]; then
+            CMD="$CMD --topic \"$TOPIC\""
+          fi
+          
+          if [ "$SKIP_UPLOAD" = "true" ]; then
+            CMD="$CMD --skip-upload"
+          fi
+          
+          echo "📤 Running: $CMD"
+          eval $CMD
       
       # ============================================================
-      # FIX: Upload outputs for monitoring
+      # Step 7: Upload Artifacts
       # ============================================================
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: automation-logs-${{ github.run_id }}
-          path: output.log
-          retention-days: 7
-      
-      - name: Upload token cache
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: token-cache-${{ github.run_id }}
-          path: token_cache.json
+          path: logs/
           retention-days: 7
       
       - name: Upload video
@@ -119,8 +161,24 @@ jobs:
           path: output/latest_video.mp4
           retention-days: 7
       
+      - name: Upload thumbnail
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-thumbnail-${{ github.run_id }}
+          path: output/latest_thumb.jpg
+          retention-days: 7
+      
+      - name: Upload token cache
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: token-cache-${{ github.run_id }}
+          path: token_cache.json
+          retention-days: 7
+      
       # ============================================================
-      # FIX: Failure Notifications
+      # Step 8: Notifications
       # ============================================================
       - name: Send failure notification
         if: failure()
@@ -128,15 +186,11 @@ jobs:
           echo "❌ YouTube Automation Failed!"
           echo "Run: ${{ github.run_id }}"
           echo "Time: $(date)"
-          echo "Check logs at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          
-          # FIX: Send email notification (if configured)
-          # or use webhook (Slack/Discord)
-          
-      # FIX: Success notification
+          echo "Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      
       - name: Send success notification
         if: success()
         run: |
           echo "✅ YouTube Automation Completed Successfully!"
           echo "Run: ${{ github.run_id }}"
-          echo "Video uploaded to YouTube Shorts"
+          echo "Time: $(date)"
