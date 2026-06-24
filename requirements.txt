@@ -8,3 +8,6 @@ openai
 decorator
 pillow
 python-dotenv
+edge-tts
+pytrends
+cloudinary
