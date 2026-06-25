@@ -1,5 +1,5 @@
 # ============================================================
-# YouTube Automation System - Production Requirements (UPGRADED)
+# YouTube Automation System - Production Requirements (FIXED)
 # ============================================================
 # Python 3.11+ Recommended (Fully Supports Google API Core Lifecycles)
 # 
@@ -22,14 +22,14 @@ httpx>=0.27.0,<1.0.0
 aiohttp>=3.10.5,<4.0.0
 
 # ============================================================
-# AI & LLM
+# AI & LLM (CRITICAL RE-PIN FOR PYPI STABILITY)
 # ============================================================
 
-# Groq API - AI Script Generation
-groq>=1.30.0,<2.0.0
+# Groq API - AI Script Generation (Fixed crash: version range matches PyPI releases)
+groq>=1.1.0,<2.0.0
 
 # OpenAI - Fallback (if needed)
-openai>=1.35.0,<2.0.0
+openai>=1.1.0,<2.0.0
 
 # ============================================================
 # TEXT-TO-SPEECH & AUDIO
@@ -52,15 +52,15 @@ Pillow>=10.4.0,<11.0.0
 # CLOUD & STORAGE
 # ============================================================
 
-# Cloudinary - Instagram video URL hosting
-cloudinary>=1.40.0,<2.0.0
+# Cloudinary - Instagram video URL hosting (Fixed version bounds)
+cloudinary>=1.36.0,<2.0.0
 
 # ============================================================
 # YOUTUBE API
 # ============================================================
 
 # Google APIs for YouTube Upload (Secured against Python 3.11 support warnings)
-google-api-python-client>=2.120.0,<3.0.0
+google-api-python-client>=2.100.0,<3.0.0
 google-auth-httplib2>=0.2.0,<1.0.0
 google-auth-oauthlib>=1.2.0,<2.0.0
 
