@@ -197,7 +197,6 @@ class ContentGenerator:
         """Generate title"""
         prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic=topic)
         raw = self._call_groq(prompt, max_tokens=100)
-        ]
         if raw:
             titles = [t.strip() for t in raw.split('\n') if t.strip()]
             if titles:
