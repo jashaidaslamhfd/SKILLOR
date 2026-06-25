@@ -89,6 +89,19 @@ jobs:
           else
             echo "⏳ No cached token found, will create new one"
           fi
+
+      # ── FIX: Cache state/ folder so used_topics.txt and used_clips.txt
+      #         survive across GitHub Actions runs (fresh machine each time)
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: state/
+          key: skillor-state-${{ runner.os }}-${{ github.run_number }}
+          restore-keys: |
+            skillor-state-${{ runner.os }}-
+
+      - name: Ensure state directory exists
+        run: mkdir -p state
       
       # ============================================================
       # Step 6: Run Automation
