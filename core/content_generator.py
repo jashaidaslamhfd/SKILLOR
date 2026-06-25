@@ -5,6 +5,7 @@ INTEGRATES: HookEngine for perfect hooks every time
 
 import re
 import time
+import random
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -79,6 +80,21 @@ class ContentGenerator:
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
+    def _generate_fallback_story(self, topic: str) -> str:
+        """Generate fallback story"""
+        templates = [
+            f"The science behind {topic} is simpler than you'd think. "
+            f"Your brain is actually trying to help you in a quiet, automatic way. "
+            f"And the part that really matters is how deeply your brain pays attention to you, "
+            f"even when you're not paying attention to yourself.",
+            
+            f"Here's what's actually happening with {topic}. "
+            f"Your mind has been processing this your whole life without you realizing it. "
+            f"The quiet truth is, your body knows exactly what it's doing. "
+            f"And understanding that changes everything about how you see it."
+        ]
+        return random.choice(templates)
+
     def generate_script(self, topic: str, angle: str = "", 
                         shock_angle: str = "", pattern: str = "memory_insight",
                         suspense_score: int = 70) -> Dict:
@@ -92,13 +108,16 @@ class ContentGenerator:
         
         print(f"   Hook: '{hook}'")
         print(f"   Score: {hook_result['validation'].score}/10")
+        print(f"   Status: {hook_result['status']}")
         
         # Step 2: Generate rest of script
         prompt = format_prompt(
             VIRAL_SCRIPT_GENERATOR,
             topic=topic,
             angle=angle or f"Understanding why {topic} happens",
-            shock_angle=shock_angle or f"your brain is quietly processing {topic}"
+            shock_angle=shock_angle or f"your brain is quietly processing {topic}",
+            pattern=pattern,
+            suspense_score=suspense_score
         )
         
         raw = self._call_groq(prompt, max_tokens=500)
@@ -187,36 +206,99 @@ class ContentGenerator:
             'ctr': ctr
         }
 
-    def _generate_fallback_story(self, topic: str) -> str:
-        """Generate fallback story"""
-        return (f"The science behind {topic} is simpler than you'd think. "
-                f"Your brain is actually trying to help you in a quiet, automatic way. "
-                f"And the part that really matters is how deeply your brain pays attention to you.")
-
     def generate_title(self, topic: str) -> str:
-        """Generate title"""
+        """Generate title - FIXED"""
         prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic=topic)
         raw = self._call_groq(prompt, max_tokens=100)
+        
         if raw:
             titles = [t.strip() for t in raw.split('\n') if t.strip()]
             if titles:
-               title = titles[0]
-               words = title.split()
-            if len(words) > 7:
-               title = ' '.join(words[:6])
+                title = titles[0]
+                words = title.split()
+                # Limit to 6 words max
+                if len(words) > 6:
+                    title = ' '.join(words[:6])
                 return title
-                return f"Your brain is forgetting right now 🧠"
-                return f"Why your {topic} gets worse after 35 🧠"
+        
+        # Fallback titles
+        fallbacks = [
+            f"Your brain is forgetting {topic} right now 🧠",
+            f"Why your {topic} gets worse after 35 🧠",
+            f"Nobody tells men about {topic} after 40 😳",
+            f"Your memory is changing with {topic} right now"
+        ]
+        return random.choice(fallbacks)
 
     def generate_thumbnail_words(self, topic: str) -> List[str]:
         """Generate 3 words for thumbnail"""
-        words = ['MEMORY', 'BRAIN', 'FOG']
+        base_words = ['MEMORY', 'BRAIN', 'FOG']
         topic_words = [w.upper() for w in topic.split() if len(w) > 2]
-        all_words = topic_words + words
+        all_words = topic_words + base_words
         seen = set()
         unique = []
         for w in all_words:
             if w not in seen and len(w) >= 3:
                 seen.add(w)
                 unique.append(w)
-        return unique[:3] if len(unique) >= 3 else ['MEMORY', 'BRAIN', 'FOG']
+        
+        # Ensure 3 words
+        while len(unique) < 3:
+            for w in base_words:
+                if w not in unique:
+                    unique.append(w)
+                    if len(unique) >= 3:
+                        break
+        
+        return unique[:3]
+
+    def generate_seo(self, topic: str, script: str) -> Dict:
+        """Generate SEO description and tags"""
+        description = (
+            f"The truth about {topic} explained. "
+            f"Science behind why this happens to men after 35. "
+            f"Follow for more brain health facts your doctor won't explain. "
+            f"#Shorts #MemoryFacts #BrainHealth"
+        )
+        
+        tags = [
+            "memory", "brain fog", "forget", "men over 35",
+            "memory loss", "brain health", "why do i forget",
+            "youtube shorts", "brain facts", "health shorts"
+        ]
+        
+        return {
+            'description': description[:250],
+            'tags': tags[:15],
+            'keywords': f"memory,brain fog,forget,men over 35,brain health"
+        }
+
+
+# ============================================================
+# TEST
+# ============================================================
+if __name__ == "__main__":
+    print("🚀 TESTING CONTENT GENERATOR\n" + "="*60)
+    
+    generator = ContentGenerator()
+    
+    # Test with a topic
+    topic = "forgetting names"
+    print(f"\n📝 Generating content for: {topic}")
+    print("-" * 40)
+    
+    script = generator.generate_script(topic=topic)
+    
+    print(f"\n📊 SCRIPT RESULT:")
+    print(f"   Hook: {script['hook']}")
+    print(f"   Hook Score: {script['hook_score']}/10")
+    print(f"   Word Count: {script['word_count']}")
+    print(f"   Duration: {script['duration']}s")
+    print(f"   Segments: {len(script['segments'])}")
+    
+    print(f"\n📝 FULL SCRIPT:")
+    print(script['full_script'])
+    
+    print(f"\n🏷️ TITLE:")
+    title = generator.generate_title(topic)
+    print(f"   {title}")
