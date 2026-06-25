@@ -71,7 +71,7 @@ class AudioConfig:
     SFX_VOLUME: float = 0.15
 
     # WPM: 120 = calm adult conversation pace
-    WORDS_PER_MINUTE: int = 120
+    WORDS_PER_MINUTE: int = 150--155
 
     # Rate range: tight range = consistent calm tone
     RATE_MIN: int = -8
