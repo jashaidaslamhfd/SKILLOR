@@ -428,7 +428,7 @@ def display_status():
     print(f"    Status: {health['status']}")
     if health['warnings']:
         print(f"    ⚠️ Warnings: {len(health['warnings'])}")
-        for warning in health['warnings'] skin:
+        for warning in health['warnings']:
             print(f"       - {warning}")
     if health['errors']:
         print(f"    ❌ Errors: {len(health['errors'])}")
