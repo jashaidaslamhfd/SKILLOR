@@ -4,6 +4,7 @@ FIXES:
 1. ✅ No 403 Forbidden: Bypasses Microsoft's GitHub Runner IP block completely.
 2. ✅ Premium Human Male Voice: Uses Canopy Labs Orpheus engine with 'troy' voice.
 3. ✅ Stable Captions: Automatically calculates flawless mathematical word timings.
+4. ✅ WAV Format Compatibility: Streams WAV from Groq and transcodes to MP3 via FFmpeg.
 """
 
 import os
@@ -85,7 +86,7 @@ class AudioGenerator:
         return timings
 
     # ============================================================
-    # MAIN ENGINE - GROQ TTS REQUEST
+    # MAIN ENGINE - GROQ TTS REQUEST (WAV COMPATIBLE)
     # ============================================================
 
     async def generate_with_effects(self, script_segments: List[Dict],
@@ -111,26 +112,29 @@ class AudioGenerator:
         if all_words <= 1:
             raise ValueError("❌ No valid script text found to send to Groq TTS.")
 
-        final_path = os.path.join(output_dir, 'final_audio.mp3')
+        # Groq Orpheus engine strictly demands .wav file extension/format in API spec
+        final_path_wav = os.path.join(output_dir, 'final_audio.wav')
+        final_path_mp3 = os.path.join(output_dir, 'final_audio.mp3')
         success = False
 
         print(f"    🎙️ Requesting Groq Cloud Human Voice (Words: {all_words})...")
 
-        # 2. Call Groq inside an async thread wrapper
+        # 2. Call Groq inside an async thread wrapper with response_format parameter
         for attempt in range(1, 4):
             try:
                 def call_groq_api():
                     response = self.client.audio.speech.create(
                         model=self.model,
                         voice=self.voice,
-                        input=clean_final_text
+                        input=clean_final_text,
+                        response_format="wav"  # 👈 Explicitly requested WAV by Groq backend
                     )
-                    response.stream_to_file(final_path)
+                    response.stream_to_file(final_path_wav)
 
                 await asyncio.to_thread(call_groq_api)
 
-                if os.path.exists(final_path) and os.path.getsize(final_path) > 1000:
-                    print(f"      ✅ Groq Real Voice Stream Secured: {os.path.getsize(final_path)} bytes")
+                if os.path.exists(final_path_wav) and os.path.getsize(final_path_wav) > 1000:
+                    print(f"      ✅ Groq Real Voice Stream Secured (WAV): {os.path.getsize(final_path_wav)} bytes")
                     success = True
                     break
 
@@ -143,31 +147,35 @@ class AudioGenerator:
             print("    🛑 CRITICAL: Groq API failed after 3 attempts. Killing pipeline for safety!")
             raise RuntimeError("Groq TTS failed. Pipeline halted to prevent silent video creation.")
 
-        # 3. HQ Normalization Block using FFmpeg
-        hq = final_path.replace('.mp3', '_hq.mp3')
+        # 3. Transcode WAV to MP3 using FFmpeg (HQ Normalization Block)
         cmd = [
-            'ffmpeg', '-y', '-i', final_path,
+            'ffmpeg', '-y', '-i', final_path_wav,
             '-ar', str(self.sample_rate), '-ac', str(self.channels),
-            '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', hq
+            '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', final_path_mp3
         ]
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             await asyncio.wait_for(process.communicate(), timeout=30)
-            if os.path.exists(hq) and os.path.getsize(hq) > 0:
-                os.replace(hq, final_path)
         except Exception as e:
             print(f"      ⚠️ FFmpeg Optimization bypass: {e}")
 
-        total_duration = await self._get_audio_duration_async(final_path)
-        all_word_timings = await self._generate_word_timings_fallback(final_path, clean_final_text)
+        # Cleanup raw WAV file to keep directory clean
+        if os.path.exists(final_path_wav):
+            try:
+                os.remove(final_path_wav)
+            except Exception:
+                pass
+
+        total_duration = await self._get_audio_duration_async(final_path_mp3)
+        all_word_timings = await self._generate_word_timings_fallback(final_path_mp3, clean_final_text)
 
         print(f"    ✅ Voice Track Verified: {total_duration:.1f}s | Captions synced.")
 
         return {
-            'audio_path': final_path,
-            'final_audio': final_path,
+            'audio_path': final_path_mp3,
+            'final_audio': final_path_mp3,
             'total_duration': total_duration,
             'word_timings': all_word_timings,
             'word_count': all_words,
