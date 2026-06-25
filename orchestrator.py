@@ -335,12 +335,12 @@ class AutomationOrchestrator:
         hook  = script.get('hook', '')
         story = script.get('story', '')
         return "\n".join([
+            "#Shorts #shorts #memory #brainfog #brainhealth",
+            "",
             hook, "",
             (story[:300] + "...") if len(story) > 300 else story, "",
-            "🧠 Follow for daily memory & brain health tips.", "",
-            "#memory #brainfog #brainhealth #menshealth #memoryloss",
+            "🧠 Follow for daily memory & brain health tips.",
         ])
-
 
 # ============================================================
 # MAIN
