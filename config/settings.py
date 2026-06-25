@@ -1,15 +1,15 @@
 """
-Settings — REFINED: Memory & Brain Fog Science for Men 35+
+Settings — REFINED: Memory & Brain Fog Science for Men 35+ (GROQ SPEECH READY)
 AUDIENCE: USA/UK Males 35-54
 NICHE: Memory Loss & Brain Fog (Micro-Niche)
 GOAL: Low Competition, High Demand
 
 FIXES:
-1. ✅ Correct ASS color codes (BGR format)
-2. ✅ Increased caption margin for safe zone
-3. ✅ Proper dataclass usage
-4. ✅ Optimized video settings for YouTube Shorts
-5. ✅ Audio settings optimized for natural voice
+1. ✅ Voice Engine Upgraded: Changed from Edge-TTS to Groq 'troy' persona.
+2. ✅ Health Check Fixed: Removed rigid checks for rate min/max to support Groq native scale.
+3. ✅ Correct ASS color codes (BGR format)
+4. ✅ Increased caption margin for safe zone
+5. ✅ Proper dataclass usage
 """
 
 import os
@@ -55,18 +55,13 @@ class VideoConfig:
 
 
 # ============================================================
-# AUDIO CONFIG — Voice Matched to 35-54 Male Audience
+# AUDIO CONFIG — Voice Matched to 35-54 Male Audience (GROQ)
 # ============================================================
 @dataclass
 class AudioConfig:
-    # VOICE: Deep calm male voice for 35-54 audience trust
-    # en-US-GuyNeural = Deep, calm, mature American male
-    VOICE: str = "en-US-GuyNeural"
-
-    # Rate: -5% = noticeably slower = thoughtful = credible
-    RATE: str = "-5%"
-    PITCH: str = "+0Hz"
-    VOLUME: str = "+0%"
+    # ✅ FIXED: Upgraded to Groq's Premium Deep Human Male Persona
+    VOICE: str = "troy"
+    MODEL: str = "canopylabs/orpheus-v1-english"
 
     SAMPLE_RATE: int = 44100
     CHANNELS: int = 2
@@ -77,12 +72,8 @@ class AudioConfig:
     FAN_NOISE_VOLUME: float = 0.010
     SFX_VOLUME: float = 0.15
 
-    # WPM: 120 = calm adult conversation pace
+    # WPM reference for word count tracking
     WORDS_PER_MINUTE: int = 120
-
-    # Rate range: tight range = consistent calm tone
-    RATE_MIN: int = -8
-    RATE_MAX: int = 2
 
     TARGET_DURATION_MIN: float = 42.0
     TARGET_DURATION_MAX: float = 55.0
@@ -358,7 +349,7 @@ class APIKeys:
 
 
 # ============================================================
-# HEALTH CHECK
+# HEALTH CHECK — Cleaned for Groq Native Output
 # ============================================================
 def health_check() -> Dict:
     """Check all configurations"""
@@ -371,13 +362,6 @@ def health_check() -> Dict:
     # Check Video Config
     if VideoConfig.DURATION_MIN > VideoConfig.DURATION_MAX:
         result['errors'].append("VideoConfig: DURATION_MIN > DURATION_MAX")
-    
-    # Check Audio Config
-    if AudioConfig.RATE_MIN > AudioConfig.RATE_MAX:
-        result['errors'].append("AudioConfig: RATE_MIN > RATE_MAX")
-    
-    if AudioConfig.WORDS_PER_MINUTE < 100 or AudioConfig.WORDS_PER_MINUTE > 150:
-        result['warnings'].append(f"AudioConfig: WORDS_PER_MINUTE={AudioConfig.WORDS_PER_MINUTE} (recommended 110-130)")
     
     # Check Caption Config
     if CaptionConfig.MARGIN_V < 280:
@@ -411,46 +395,45 @@ API_KEYS = APIKeys()
 def display_status():
     """Display configuration status"""
     print("=" * 60)
-    print("📊 CONFIGURATION STATUS")
+    print("📊 CONFIGURATION STATUS (GROQ NATIVE)")
     print("=" * 60)
     
     print("\n🎯 NICHE:")
-    print(f"   Topics: {len(NICHE_CONFIG.TOPICS)}")
-    print(f"   Keywords: {len(NICHE_CONFIG.KEYWORDS)}")
-    print(f"   Sub-niches: {len(NICHE_CONFIG.SUB_NICHES)}")
+    print(f"    Topics: {len(NICHE_CONFIG.TOPICS)}")
+    print(f"    Keywords: {len(NICHE_CONFIG.KEYWORDS)}")
+    print(f"    Sub-niches: {len(NICHE_CONFIG.SUB_NICHES)}")
     
     print("\n🎬 VIDEO:")
-    print(f"   Duration: {VIDEO_CONFIG.DURATION_MIN}-{VIDEO_CONFIG.DURATION_MAX}s")
-    print(f"   Resolution: {VIDEO_CONFIG.RESOLUTION}")
-    print(f"   FPS: {VIDEO_CONFIG.FPS}")
+    print(f"    Duration: {VIDEO_CONFIG.DURATION_MIN}-{VIDEO_CONFIG.DURATION_MAX}s")
+    print(f"    Resolution: {VIDEO_CONFIG.RESOLUTION}")
+    print(f"    FPS: {VIDEO_CONFIG.FPS}")
     
     print("\n🎙️ AUDIO:")
-    print(f"   Voice: {AUDIO_CONFIG.VOICE}")
-    print(f"   Rate: {AUDIO_CONFIG.RATE}")
-    print(f"   WPM: {AUDIO_CONFIG.WORDS_PER_MINUTE}")
+    print(f"    Voice Engine: {AUDIO_CONFIG.MODEL}")
+    print(f"    Selected Voice: {AUDIO_CONFIG.VOICE}")
     
     print("\n📝 CAPTIONS:")
-    print(f"   Font Size: {CAPTION_CONFIG.FONT_SIZE}px")
-    print(f"   Alignment: {CAPTION_CONFIG.ALIGNMENT}")
-    print(f"   Margin V: {CAPTION_CONFIG.MARGIN_V}")
+    print(f"    Font Size: {CAPTION_CONFIG.FONT_SIZE}px")
+    print(f"    Alignment: {CAPTION_CONFIG.ALIGNMENT}")
+    print(f"    Margin V: {CAPTION_CONFIG.MARGIN_V}")
     
     print("\n🔑 API KEYS:")
     api_status = API_KEYS.validate()
     for key, value in api_status.items():
         status = "✅" if value else "❌"
-        print(f"   {status} {key}")
+        print(f"    {status} {key}")
     
     print("\n🔍 HEALTH CHECK:")
     health = health_check()
-    print(f"   Status: {health['status']}")
+    print(f"    Status: {health['status']}")
     if health['warnings']:
-        print(f"   ⚠️ Warnings: {len(health['warnings'])}")
-        for warning in health['warnings'][:3]:
-            print(f"      - {warning}")
+        print(f"    ⚠️ Warnings: {len(health['warnings'])}")
+        for warning in health['warnings'] skin:
+            print(f"       - {warning}")
     if health['errors']:
-        print(f"   ❌ Errors: {len(health['errors'])}")
+        print(f"    ❌ Errors: {len(health['errors'])}")
         for error in health['errors']:
-            print(f"      - {error}")
+            print(f"       - {error}")
     
     print("\n" + "=" * 60)
 
