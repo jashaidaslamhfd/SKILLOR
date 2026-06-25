@@ -6,6 +6,7 @@ FIXES:
 3. ✅ Proper duration matching (42-55s)
 4. ✅ Proper async event loop handling
 5. ✅ Correct audio_path key
+6. ✅ Fixed 'boundary' unexpected keyword argument TypeError
 """
 
 import os
@@ -109,7 +110,7 @@ class AudioGenerator:
         text = re.sub(r",\s+(?=[a-z])", " ", text)
         text = text.replace(";", "").replace("—", " ").replace("–", " ")
         text = re.sub(r"\(.*?\)", "", text)
-        text = re.sub(r"  +", " ", text).strip()
+        text = re.sub(r" +", " ", text).strip()
         if text and text[-1] not in ".!?":
             text += "."
         return text
@@ -147,13 +148,12 @@ class AudioGenerator:
         boundaries = []
         last_error = None
 
-        # ✅ FIX: Use Communicate directly
         for attempt in range(1, 4):
             try:
+                # ✅ FIX: Removed boundary="WordBoundary" from Communicate arguments
                 comm = edge_tts.Communicate(
                     text, voice=self.voice, rate=rate,
-                    volume=self.volume, pitch=self.pitch,
-                    boundary="WordBoundary"
+                    volume=self.volume, pitch=self.pitch
                 )
 
                 with open(path, "wb") as f:
@@ -329,7 +329,7 @@ class AudioGenerator:
         print(f"    ⚠️ Creating fallback audio...")
         
         try:
-            # Try TTS
+            # ✅ FIX: Removed boundary parameter from fallback Communicate initialization
             comm = edge_tts.Communicate(
                 fallback_text, 
                 voice=self.voice,
