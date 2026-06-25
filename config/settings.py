@@ -23,7 +23,7 @@ from datetime import time
 # ============================================================
 @dataclass
 class VideoConfig:
-    DURATION_MIN: int = 42
+    DURATION_MIN: int = 35
     DURATION_MAX: int = 55
     TARGET_DURATION: int = 48
 
