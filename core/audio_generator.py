@@ -8,6 +8,7 @@ FIXES:
 5. ✅ Correct audio_path key
 6. ✅ Fixed 'boundary' unexpected keyword argument TypeError
 7. ✅ FIXED FFmpeg Freeze: Replaced blocking subprocess.run with non-blocking async communication
+8. ✅ FIXED FFprobe Blocker: Made duration check fully async to match 2026 pipeline standards
 """
 
 import os
@@ -16,15 +17,17 @@ import subprocess
 import shutil
 import re
 import random
+import logging
 from typing import Dict, List, Tuple
 
 import edge_tts  # ✅ Must be at top
-
 from config.settings import AUDIO_CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 class AudioGenerator:
-    """Production Audio Generator - FINAL FIXED"""
+    """Production Audio Generator - FINAL FIXED WITH FULL ASYNC SHIELD"""
 
     def __init__(self):
         self.voice = getattr(AUDIO_CONFIG, 'VOICE', 'en-US-GuyNeural')
@@ -73,7 +76,7 @@ class AudioGenerator:
         return rate_str
 
     # ============================================================
-    # NATURAL BREATH PAUSE (ASYNC BUG-3 FIX)
+    # NATURAL BREATH PAUSE
     # ============================================================
 
     async def _make_breath_pause(self, duration: float, output_path: str) -> None:
@@ -86,7 +89,6 @@ class AudioGenerator:
             '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', output_path
         ]
         try:
-            # Replaced subprocess.run with async exec to avoid deadlocks
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -95,19 +97,24 @@ class AudioGenerator:
             print(f"    ⚠️ Breath pause generation warning: {e}")
 
     # ============================================================
-    # UTILITY METHODS
+    # ASYNC AUDIO DURATION UTILITY (FIXED ASYNC BUG)
     # ============================================================
 
-    def _get_audio_duration(self, path: str) -> float:
+    async def _get_audio_duration_async(self, path: str) -> float:
+        """Fully async duration calculation to prevent GitHub pipeline loop lockups"""
         if not path or not os.path.exists(path):
             return 0.0
         try:
-            r = subprocess.run([
+            cmd = [
                 'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1', path
-            ], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0 and r.stdout.strip():
-                return float(r.stdout.strip())
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+            if stdout:
+                return float(stdout.decode().strip())
         except Exception:
             pass
         return 0.0
@@ -132,8 +139,8 @@ class AudioGenerator:
         text = re.sub(r'[*_~`]', '', text)
         return re.sub(r'\s+', ' ', text).strip()
 
-    def _generate_word_timings_fallback(self, audio_path: str, text: str) -> List[Dict]:
-        dur = self._get_audio_duration(audio_path)
+    async def _generate_word_timings_fallback(self, audio_path: str, text: str) -> List[Dict]:
+        dur = await self._get_audio_duration_async(audio_path)
         words = text.split()
         if not words or dur <= 0:
             return []
@@ -148,41 +155,42 @@ class AudioGenerator:
         return timings
 
     # ============================================================
-    # TTS GENERATION - FIXED (DIRECT ASYNC + ASYNC FFMPEG HQ)
+    # TTS GENERATION - FIXED & CLEAN CONCURRENCY SHIELD
     # ============================================================
 
     async def _generate_speech(self, text: str, path: str, rate: str) -> Tuple[float, List[Dict]]:
-        """Generate TTS using edge-tts - FIXED"""
+        """Generate TTS using edge-tts - HIGHLY STABLE CONCURRENCY MODEL"""
         text = self._clean_text_for_tts(text)
         boundaries = []
         last_error = None
 
         for attempt in range(1, 4):
             try:
-                # ✅ FIX: No boundary keyword
                 comm = edge_tts.Communicate(
                     text, voice=self.voice, rate=rate,
                     volume=self.volume, pitch=self.pitch
                 )
 
+                # Stream direct write block with flat pipeline parsing
                 with open(path, "wb") as f:
-                    async def _run():
-                        async def stream_audio():
-                            async for chunk in comm.stream():
-                                if chunk["type"] == "audio":
-                                    f.write(chunk["data"])
-                                elif chunk["type"] == "WordBoundary":
+                    async def stream_worker():
+                        async for chunk in comm.stream():
+                            if chunk["type"] == "audio":
+                                f.write(chunk["data"])
+                            elif chunk["type"] == "WordBoundary":
+                                word_clean = chunk["text"].strip()
+                                # Prevent empty word/punctuation gaps crashing the video layer
+                                if word_clean:
                                     boundaries.append({
-                                        "word": chunk["text"],
+                                        "word": word_clean,
                                         "start": chunk["offset"] / 10_000_000,
                                         "end": (chunk["offset"] + chunk["duration"]) / 10_000_000,
                                     })
-                        await stream_audio()
                     
-                    await asyncio.wait_for(_run(), timeout=90)
+                    await asyncio.wait_for(stream_worker(), timeout=60)
 
                 if os.path.exists(path) and os.path.getsize(path) > 100:
-                    print(f"      ✅ TTS: {os.path.getsize(path)} bytes")
+                    print(f"      ✅ TTS Capture: {os.path.getsize(path)} bytes on attempt {attempt}")
                     break
 
             except asyncio.TimeoutError:
@@ -193,7 +201,7 @@ class AudioGenerator:
                 print(f"      ⚠️ TTS error attempt {attempt}/3: {e}")
 
             if attempt < 3:
-                await asyncio.sleep(3)
+                await asyncio.sleep(2)
         else:
             print(f"      ❌ TTS failed after 3 attempts: {last_error}")
             return 0.0, []
@@ -201,7 +209,7 @@ class AudioGenerator:
         if not os.path.exists(path) or os.path.getsize(path) < 100:
             return 0.0, []
 
-        # HQ encode (ASYNC BUG-3 FIX: Preventing pipe deadlock)
+        # HQ encode with async ffmpeg processing
         hq = path.replace('.mp3', '_hq.mp3')
         cmd = [
             'ffmpeg', '-y', '-i', path,
@@ -216,20 +224,20 @@ class AudioGenerator:
             if os.path.exists(hq) and os.path.getsize(hq) > 0:
                 os.replace(hq, path)
         except Exception as e:
-            print(f"      ⚠️ HQ encoding failed or timed out: {e}. Using raw audio.")
+            print(f"      ⚠️ HQ encoding bypass: {e}. Defaulting to native channel allocation.")
 
-        duration = self._get_audio_duration(path)
-        print(f"      📊 Duration: {duration:.1f}s | Words: {len(boundaries)}")
+        duration = await self._get_audio_duration_async(path)
+        print(f"      📊 Duration: {duration:.1f}s | Valid Word Segments: {len(boundaries)}")
         
         return duration, boundaries
 
     # ============================================================
-    # MAIN: GENERATE AUDIO - FIXED
+    # MAIN: GENERATE AUDIO WITH EFFECTS
     # ============================================================
 
     async def generate_with_effects(self, script_segments: List[Dict],
                                     output_dir: str, topic: str = "") -> Dict:
-        """Generate complete audio - FIXED"""
+        """Generate complete audio track with zero block guarantees"""
         os.makedirs(output_dir, exist_ok=True)
 
         all_words = sum(
@@ -254,7 +262,7 @@ class AudioGenerator:
             if seg.get('is_pause'):
                 dur = float(seg.get('duration', 0.4))
                 p = os.path.join(output_dir, f'pause_{idx}.mp3')
-                await self._make_breath_pause(dur, p) # ✅ Await async fix
+                await self._make_breath_pause(dur, p) 
                 if os.path.exists(p) and os.path.getsize(p) > 100:
                     segment_files.append((p, dur))
                 cursor += dur
@@ -270,11 +278,11 @@ class AudioGenerator:
             try:
                 actual_dur, boundaries = await self._generate_speech(text, seg_path, tts_rate)
             except Exception as e:
-                print(f"    ⚠️ Segment {idx} failed: {e}")
+                print(f"    ⚠️ Segment {idx} critical capture exception: {e}")
                 continue
 
             if not os.path.exists(seg_path) or actual_dur <= 0:
-                print(f"    ⚠️ Segment {idx}: no audio generated")
+                print(f"    ⚠️ Segment {idx}: empty chunk bypass applied")
                 continue
 
             for b in boundaries:
@@ -286,7 +294,7 @@ class AudioGenerator:
             
             segment_files.append((seg_path, actual_dur))
             cursor += actual_dur
-            print(f"    ✅ Segment {idx}: {actual_dur:.1f}s")
+            print(f"    ✅ Segment {idx} processed: {actual_dur:.1f}s")
 
         if not segment_files:
             print("❌ No audio segments generated! Using fallback...")
@@ -297,7 +305,7 @@ class AudioGenerator:
             print("❌ No valid audio segments! Using fallback...")
             return await self._create_fallback_audio(output_dir)
 
-        # Concatenate
+        # Concatenate mapping
         concat_list = os.path.join(output_dir, 'concat.txt')
         with open(concat_list, 'w') as f:
             for path, _ in valid:
@@ -305,7 +313,6 @@ class AudioGenerator:
 
         raw_speech = os.path.join(output_dir, 'speech_raw.mp3')
         
-        # ASYNC BUG-3 FIX: Non-blocking Concat process execution
         cmd_concat = [
             'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_list,
             '-ar', str(self.sample_rate), '-ac', str(self.channels),
@@ -317,23 +324,23 @@ class AudioGenerator:
             )
             await asyncio.wait_for(process.communicate(), timeout=60)
         except Exception as e:
-            print(f"❌ Async concat failed or timed out: {e}")
+            print(f"❌ Async concat chain error: {e}")
 
         if not os.path.exists(raw_speech) or os.path.getsize(raw_speech) < 100:
             return await self._create_fallback_audio(output_dir)
 
-        total_duration = self._get_audio_duration(raw_speech)
+        total_duration = await self._get_audio_duration_async(raw_speech)
         final_path = os.path.join(output_dir, 'final_audio.mp3')
         
         shutil.copy(raw_speech, final_path)
-        print(f"    ✅ Audio saved: {final_path}")
+        print(f"    ✅ Audio pipeline sequence written: {final_path}")
 
-        # Word timings fallback
+        # Word timings fallback execution
         if not all_word_timings:
             full_text = ' '.join(s.get('text', '') for s in script_segments if not s.get('is_pause'))
-            all_word_timings = self._generate_word_timings_fallback(final_path, full_text)
+            all_word_timings = await self._generate_word_timings_fallback(final_path, full_text)
 
-        print(f"    ✅ Audio complete: {total_duration:.1f}s | {len(all_word_timings)} word timings")
+        print(f"    ✅ Audio track compiled successfully: {total_duration:.1f}s")
 
         return {
             'audio_path': final_path,
@@ -344,15 +351,15 @@ class AudioGenerator:
         }
 
     # ============================================================
-    # FALLBACK AUDIO - FIXED
+    # FALLBACK AUDIO WITH FULL STRUCTURAL PROTECTION
     # ============================================================
 
     async def _create_fallback_audio(self, output_dir: str) -> Dict:
-        """Create fallback audio with actual voice"""
+        """Create fallback audio with actual native channel distribution"""
         fallback_path = os.path.join(output_dir, 'fallback_audio.mp3')
         fallback_text = "Your brain is amazing. The science behind memory loss is simpler than you think. Follow for more brain facts."
         
-        print(f"    ⚠️ Creating fallback audio...")
+        print(f"    ⚠️ Triggering system fallback configuration...")
         
         try:
             comm = edge_tts.Communicate(
@@ -368,14 +375,11 @@ class AudioGenerator:
                     if chunk["type"] == "audio":
                         f.write(chunk["data"])
             
-            if os.path.exists(fallback_path) and os.path.getsize(fallback_path) > 100:
-                print(f"    ✅ Fallback audio created: {os.path.getsize(fallback_path)} bytes")
-            else:
-                raise Exception("Fallback audio empty")
+            if not (os.path.exists(fallback_path) and os.path.getsize(fallback_path) > 100):
+                raise Exception("Empty dynamic asset stream")
                 
         except Exception as e:
-            print(f"    ❌ Fallback TTS failed: {e}")
-            # Sine wave fallback (Async fix applied here too)
+            print(f"    ❌ System Fallback failed: {e}. Initializing sine wave hardware patch.")
             cmd_sine = [
                 'ffmpeg', '-y', '-f', 'lavfi',
                 '-i', 'sine=frequency=440:duration=5',
@@ -388,7 +392,6 @@ class AudioGenerator:
             except:
                 pass
         
-        # Fallback timings
         fallback_timings = [
             {'word': 'YOUR', 'start': 0.0, 'end': 0.4},
             {'word': 'BRAIN', 'start': 0.4, 'end': 0.8},
@@ -396,7 +399,7 @@ class AudioGenerator:
             {'word': 'AMAZING', 'start': 1.0, 'end': 1.5},
         ]
         
-        duration = self._get_audio_duration(fallback_path)
+        duration = await self._get_audio_duration_async(fallback_path)
         
         return {
             'audio_path': fallback_path,
