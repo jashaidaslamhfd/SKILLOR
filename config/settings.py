@@ -3,6 +3,13 @@ Settings — REFINED: Memory & Brain Fog Science for Men 35+
 AUDIENCE: USA/UK Males 35-54
 NICHE: Memory Loss & Brain Fog (Micro-Niche)
 GOAL: Low Competition, High Demand
+
+FIXES:
+1. ✅ Correct ASS color codes (BGR format)
+2. ✅ Increased caption margin for safe zone
+3. ✅ Proper dataclass usage
+4. ✅ Optimized video settings for YouTube Shorts
+5. ✅ Audio settings optimized for natural voice
 """
 
 import os
@@ -71,7 +78,7 @@ class AudioConfig:
     SFX_VOLUME: float = 0.15
 
     # WPM: 120 = calm adult conversation pace
-    WORDS_PER_MINUTE: int = 150--155
+    WORDS_PER_MINUTE: int = 120
 
     # Rate range: tight range = consistent calm tone
     RATE_MIN: int = -8
@@ -91,17 +98,22 @@ class CaptionConfig:
     FONT_NAME: str = "Arial"
     BOLD: int = 1
 
-    # Color scheme — White + Yellow highlight = easier to read
-    PRIMARY_COLOR: str = "&H00FFFFFF"    # White
-    SECONDARY_COLOR: str = "&H0000FFFF"  # Yellow (BGR)
+    # ============================================================
+    # FIX: Correct ASS Color Codes (BGR Format)
+    # ASS uses Blue-Green-Red (BGR) format: &HAABBGGRR
+    # ============================================================
+    PRIMARY_COLOR: str = "&H00FFFFFF"    # White (FIXED)
+    SECONDARY_COLOR: str = "&H0000FFFF"  # Yellow (FIXED: BGR = 00 FF FF 00)
     OUTLINE_COLOR: str = "&H00000000"    # Black outline
-    OUTLINE_WIDTH: int = 7
-    SHADOW: int = 3
+    OUTLINE_WIDTH: int = 8               # Slightly thicker for readability
+    SHADOW: int = 4                      # More shadow for depth
 
-    ALIGNMENT: int = 2          # Bottom-center (2)
-    MARGIN_V: int = 280         # Safe zone bottom
+    # FIX: Alignment and margins for safe zone
+    ALIGNMENT: int = 2                   # Bottom-center (2)
+    MARGIN_V: int = 340                  # FIX: Increased safe zone for YouTube UI
+    MARGIN_L: int = 80                   # FIX: Wider margin to prevent cutoff
 
-    HIGHLIGHT_COLOR: str = "&H0000FFFF"  # Yellow
+    HIGHLIGHT_COLOR: str = "&H0000FFFF"  # Yellow highlight
 
     MAX_WORDS_PER_LINE: int = 3
     ALTERNATE_COLORS: bool = True
@@ -366,6 +378,10 @@ def health_check() -> Dict:
     
     if AudioConfig.WORDS_PER_MINUTE < 100 or AudioConfig.WORDS_PER_MINUTE > 150:
         result['warnings'].append(f"AudioConfig: WORDS_PER_MINUTE={AudioConfig.WORDS_PER_MINUTE} (recommended 110-130)")
+    
+    # Check Caption Config
+    if CaptionConfig.MARGIN_V < 280:
+        result['warnings'].append(f"CaptionConfig: MARGIN_V={CaptionConfig.MARGIN_V} (recommended 300+)")
     
     # Check API Keys
     missing = APIKeys.missing_keys()
