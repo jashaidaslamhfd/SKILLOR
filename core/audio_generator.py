@@ -4,7 +4,7 @@ FIXES:
 1. ✅ No Beep/Sine Wave: Clean payload stream ensures real human voice generation.
 2. ✅ Zero SSML Crash: Uses robust plain text to completely prevent Edge-TTS parsing drops.
 3. ✅ Anti-403 Multi-Attempt: Passes entire script as 1 single request to secure GitHub Runner IPs.
-4. ✅ Flawless Timings: Automatically falls back to math-based sequential matching if offsets drop.
+4. ✅ Flawless Timings: Fixed dictionary keys to guarantee compatibility with video layout engines.
 """
 
 import os
@@ -102,7 +102,13 @@ class AudioGenerator:
         for word, weight in zip(words, weights):
             clean = word.strip('.,!?;:\"()[]{}"\'')
             d = weight * scale
-            timings.append({'word': clean, 'start': round(cur, 3), 'end': round(cur + d, 3)})
+            # FIXED: Added explicit 'duration' key for system stability match
+            timings.append({
+                'word': clean, 
+                'start': round(cur, 3), 
+                'end': round(cur + d, 3),
+                'duration': round(d, 3)
+            })
             cur += d
         return timings
 
@@ -158,6 +164,7 @@ class AudioGenerator:
                                         "word": word_clean,
                                         "start": chunk["offset"] / 10_000_000,
                                         "end": (chunk["offset"] + chunk["duration"]) / 10_000_000,
+                                        "duration": chunk["duration"] / 10_000_000  # Added standard track key
                                     })
                     
                     await asyncio.wait_for(stream_worker(), timeout=75)
@@ -232,7 +239,6 @@ class AudioGenerator:
                         f.write(chunk["data"])
         except Exception as e:
             print(f"    ❌ Backup cloud rejected. Writing flat silence matrix to preserve video structure: {e}")
-            # Agar cloud bilkul block karde, to beep ke bajaye silent background generate karein taake video kharab na ho
             cmd_silent = [
                 'ffmpeg', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
                 '-t', '45', '-acodec', 'libmp3lame', fallback_path
