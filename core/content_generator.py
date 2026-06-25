@@ -197,11 +197,17 @@ class ContentGenerator:
         """Generate title"""
         prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic=topic)
         raw = self._call_groq(prompt, max_tokens=100)
+        ]
         if raw:
             titles = [t.strip() for t in raw.split('\n') if t.strip()]
             if titles:
-                return titles[0]
-        return f"Why your {topic} gets worse after 35 🧠"
+               title = titles[0]
+               words = title.split()
+            if len(words) > 7:
+               title = ' '.join(words[:6])
+                return title
+                return f"Your brain is forgetting right now 🧠"
+                return f"Why your {topic} gets worse after 35 🧠"
 
     def generate_thumbnail_words(self, topic: str) -> List[str]:
         """Generate 3 words for thumbnail"""
