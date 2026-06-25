@@ -54,10 +54,10 @@ class VideoConfig:
 class AudioConfig:
     # VOICE: Deep calm male voice for 35-54 audience trust
     # en-US-GuyNeural = Deep, calm, mature American male
-    VOICE: str = "en-US-GuyNeural"
+    VOICE: str = "en-US-AndrewNeural"
 
     # Rate: -5% = noticeably slower = thoughtful = credible
-    RATE: str = "-5%"
+    RATE: str = "-8%"
     PITCH: str = "+0Hz"
     VOLUME: str = "+0%"
 
@@ -74,8 +74,8 @@ class AudioConfig:
     WORDS_PER_MINUTE: int = 120
 
     # Rate range: tight range = consistent calm tone
-    RATE_MIN: int = -6
-    RATE_MAX: int = 2
+    RATE_MIN: int = -10
+    RATE_MAX: int = -3
 
     TARGET_DURATION_MIN: float = 42.0
     TARGET_DURATION_MAX: float = 55.0
