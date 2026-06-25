@@ -84,9 +84,9 @@ class FootageFetcher:
         # ============================================================
         self.mood_modifiers = {
             'hook': [
-                "man frustrated forgetful stressed closeup",
-                "close up mysterious movement",
-                "dark moody atmosphere"
+                "man face closeup shocked surprised reaction",
+                "middle aged man touching head confused",
+                "person looking directly camera serious face",
             ],
             'shock': [
                 "dramatic reveal motion",
