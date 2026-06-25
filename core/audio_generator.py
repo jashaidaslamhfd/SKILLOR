@@ -63,39 +63,48 @@ class AudioGenerator:
         return text
 
     async def _generate_word_timings_fallback(self, audio_path: str, text: str) -> List[Dict]:
-        """Sample-accurate mathematical sync engine for Groq TTS output"""
+        """
+        FIXED v2: Syllable-weighted timing engine.
+        Groq Troy gives no word boundaries, so we estimate from actual audio
+        duration using syllable counts — much better caption sync than char-length.
+        """
         dur = await self._get_audio_duration_async(audio_path)
         words = text.split()
         if not words or dur <= 0:
             return []
-        
-        # Har word ko uski character length ke hisaab se weight assign karein
-        weights = [1.0 + (0.10 if len(w.strip('.,!?;:\"\' ')) > 8 else 0.05 if len(w.strip('.,!?;:\"\' ')) > 5 else 0) for w in words]
-        total_weight = sum(weights)
-        
-        if total_weight <= 0:
-            total_weight = len(words)
-            weights = [1.0] * len(words)
 
-        scale = dur / total_weight
+        def syllable_count(word: str) -> int:
+            w = word.lower().strip('.,!?;:\"\' ')
+            if not w:
+                return 1
+            count = len(re.findall(r'[aeiou]+', w))
+            return max(1, count)
+
+        # Syllable-weighted: longer words get more screen time
+        weights = []
+        for word in words:
+            syl = syllable_count(word)
+            w = syl * 1.0 + (0.15 if len(word) > 7 else 0)
+            weights.append(max(0.5, w))
+
+        scale = dur / sum(weights)
         timings, cur = [], 0.0
-        
+
         for word, weight in zip(words, weights):
             clean = word.strip('.,!?;:\"()[]{}"\'')
-            d = weight * scale
+            d = max(0.12, min(1.2, weight * scale))
             timings.append({
-                'word': clean, 
-                'start': round(cur, 3), 
-                'end': round(min(cur + d, dur), 3),
+                'word':     clean,
+                'start':    round(cur, 3),
+                'end':      round(min(cur + d, dur), 3),
                 'duration': round(d, 3)
             })
             cur += d
-            
-        # Aakhri word ka end time securely audio duration se bind karein
+
         if timings:
             timings[-1]['end'] = round(dur, 3)
             timings[-1]['duration'] = round(timings[-1]['end'] - timings[-1]['start'], 3)
-            
+
         return timings
 
     # ============================================================
@@ -185,4 +194,4 @@ class AudioGenerator:
             'total_duration': total_duration,
             'word_timings': all_word_timings,
             'word_count': all_words,
-        }
+                             }
