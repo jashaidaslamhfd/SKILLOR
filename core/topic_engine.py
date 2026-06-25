@@ -1,22 +1,18 @@
 """
-Topic Engine — REFINED: Memory & Brain Fog Only (FIXED)
+Topic Engine — REFINED: Memory & Brain Fog Only (FIXED WITH ROBUST 429 FALLBACK)
 NICHE: Men 35-54 experiencing memory loss and brain fog
 GOAL: Low competition, high demand topics
 SOURCE: Google Trends + Fallback topics
-
-FIXES:
-1. ✅ Random seed reset for variety
-2. ✅ No repeated topics
-3. ✅ Fresh topics every run
-4. ✅ Proper error handling
-5. ✅ Rate limit handling
 """
 
 import time
 import random
 import re
+import logging
 from datetime import datetime
 from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     from pytrends.request import TrendReq
@@ -33,19 +29,19 @@ class ViralTopicEngine:
         self.pytrends = None
         if TrendReq:
             try:
+                # 10s connect timeout, 25s read timeout
                 self.pytrends = TrendReq(hl='en-US', tz=360, timeout=(10, 25))
                 print("✅ Google Trends initialized")
             except Exception as e:
                 print(f"⚠️ Google Trends init failed: {e}")
         
-        # FIX: Track used topics to prevent repetition
+        # Track used topics to prevent repetition across iterations
         self.used_topics = set()
         
         # ============================================================
         # REFINED: ONLY Memory & Brain Fog Keywords
         # ============================================================
         self.memory_keywords = [
-            # Memory Loss
             "why do i forget names",
             "why do i forget things easily",
             "why can't i remember anything",
@@ -153,30 +149,25 @@ class ViralTopicEngine:
             {"query": "Why your brain fog gets worse in the afternoon", "keyword": "brain fog", "growth": 440, "suspense": 86},
         ]
 
-    # ============================================================
-    # FETCH TRENDING TOPICS
-    # ============================================================
-    
     def fetch_trending_topics(self, timeframe: str = "now 1-d") -> List[Dict]:
-        """Fetch trending topics from Google Trends"""
+        """Fetch trending topics from Google Trends with instant 429 fallback switch"""
         trending = []
         
         if not self.pytrends:
-            print("⚠️ Google Trends not available, using fallback")
+            print("⚠️ Google Trends not available, using fallback directly")
             return self._get_fallback_topics()
         
-        # FIX: Shuffle keywords for variety
         keywords = self.memory_keywords.copy()
         random.shuffle(keywords)
         
         for keyword in keywords[:5]:
             try:
-                print(f"   Fetching trends for: {keyword}")
-                time.sleep(random.uniform(2, 4))
+                print(f"   Fetching live trends for: '{keyword}'")
+                time.sleep(random.uniform(2, 4)) # Human-like gap
                 
                 self.pytrends.build_payload(
                     [keyword],
-                    cat=14,
+                    cat=14, # Health category
                     timeframe=timeframe,
                     geo='US'
                 )
@@ -190,7 +181,6 @@ class ViralTopicEngine:
                             query = str(row['query'])
                             cleaned = self._clean_topic(query)
                             
-                            # FIX: Skip if already used
                             if cleaned in self.used_topics:
                                 continue
                             
@@ -209,29 +199,25 @@ class ViralTopicEngine:
                             })
                             
             except Exception as e:
-                print(f"   ⚠️ Error fetching {keyword}: {e}")
-                if "429" in str(e):
-                    print("   ⏳ Rate limited, waiting 30s...")
-                    time.sleep(30)
+                # CRITICAL BUG FIX: Agar 429 block detect ho, to mazeed loops chala kar time waste na karein
+                # Seedha loop break kar ke local engine par fallback kar jayein
+                print(f"⚠️ Error fetching trend data for '{keyword}': {e}")
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    print("🛑 Google Trends API blocked us (Code 429). Instantly switching to Safe Local Fallbacks...")
+                    break # Break the loop immediately and return what we have or fallbacks
                 continue
         
         filtered = self.filter_dead_topics(trending)
-        
         if not filtered:
-            print("⚠️ No trending topics found, using fallback")
+            print("⚠️ No live trending data found, serving rich fallback niches.")
             return self._get_fallback_topics()
-        
+            
         return filtered
 
-    # ============================================================
-    # CLEAN TOPICS
-    # ============================================================
-    
     def _clean_topic(self, query: str) -> str:
-        """Clean and format topic"""
+        """Clean and format topic text"""
         if not query:
             return ""
-        
         query = re.sub(r'^\d+\s+', '', query)
         query = re.sub(r'\s+(reasons|ways|things|facts|signs|tricks|hacks|tips)\s+', ' ', query)
         
@@ -241,10 +227,6 @@ class ViralTopicEngine:
         
         return query.strip().capitalize()
 
-    # ============================================================
-    # CALCULATE SCORES
-    # ============================================================
-    
     def _calculate_suspense_score(self, query: str) -> int:
         """Calculate how relevant this topic is to memory/brain fog"""
         query_lower = query.lower()
@@ -269,193 +251,123 @@ class ViralTopicEngine:
     def _select_viral_pattern(self, query: str, suspense_score: int) -> str:
         """Select best viral pattern for the topic"""
         query_lower = query.lower()
-        
         if any(w in query_lower for w in ['brain fog', 'foggy', 'spaced', 'mental']):
             return random.choice(self.viral_patterns['brain_fog'])
-        
         if any(w in query_lower for w in ['memory', 'forget', 'remember', 'recall']):
             return random.choice(self.viral_patterns['memory_insight'])
-        
         if suspense_score > 85:
             return random.choice(self.viral_patterns['memory_science'])
-        
-        if any(w in query_lower for w in ['you', 'your', 'my']):
-            return random.choice(self.viral_patterns['personal_stake'])
-        
-        return random.choice(self.viral_patterns['memory_insight'])
+        return random.choice(self.viral_patterns['personal_stake'])
 
-    # ============================================================
-    # FILTER DEAD TOPICS
-    # ============================================================
-    
     def filter_dead_topics(self, topics: List[Dict]) -> List[Dict]:
         """Filter out low-quality topics"""
         filtered = []
-        
         for t in topics:
-            if t.get('viral_score', 0) < 40:
+            if t.get('viral_score', 0) < 40 or t.get('suspense_score', 0) < 65:
                 continue
-            if t.get('suspense_score', 0) < 65:
-                continue
-            
             query = t.get('query', '').lower()
             memory_terms = ['memory', 'forget', 'remember', 'recall', 'fog', 'mental']
             if not any(term in query for term in memory_terms):
                 continue
-            
             filtered.append(t)
-        
         return filtered
 
-    # ============================================================
-    # GET DAILY TOPICS - FIXED
-    # ============================================================
-    
     def get_daily_topics(self, count: int = 1) -> List[Dict]:
-        """Get daily topics with variety - FIXED"""
+        """Get daily topics with variety"""
+        random.seed() # Hard reset seed for dynamic random choice on every cron run
         
-        # FIX: Reset random seed for variety each run
-        random.seed()
-        
-        # FIX: Clear used topics if too many (to prevent stagnation)
         if len(self.used_topics) > 100:
             self.used_topics.clear()
             print("🔄 Cleared used topics cache (limit reached)")
         
         topics = []
-        
         try:
-            trending = self.fetch_trending_topics("now 1-d")
-            if trending:
-                topics = trending
+            topics = self.fetch_trending_topics("now 1-d")
         except Exception as e:
-            print(f"⚠️ Google Trends failed: {e}")
-        
-        # If no topics, use fallback
-        if not topics:
-            print("⚠️ Using fallback topics")
+            print(f"⚠️ Critical fetch engine crash bypass: {e}")
             topics = self._get_fallback_topics()
-        
-        # Sort by viral score
+            
+        # Ensure fallback if topics empty
+        if not topics:
+            topics = self._get_fallback_topics()
+            
+        # Sort by best potential performance
         topics.sort(key=lambda x: (x.get('viral_score', 0) + x.get('suspense_score', 50)), reverse=True)
         
-        # FIX: Remove duplicates by query
+        # Remove structural duplicates
         unique = list({t['query']: t for t in topics}.values())
         
-        # FIX: Filter out used topics
+        # Filter out fresh ones
         fresh_topics = [t for t in unique if t['query'] not in self.used_topics]
         
-        # If all topics are used, clear the used set and try again
-        if not fresh_topics and self.used_topics:
-            print("🔄 All topics used, resetting...")
+        if not fresh_topics:
             self.used_topics.clear()
             fresh_topics = unique[:count]
-        
-        # Take only what we need
+            
         result_topics = fresh_topics[:count]
         
-        # Mark as used
+        # Save to used stack
         for t in result_topics:
             self.used_topics.add(t['query'])
-        
-        # FIX: Shuffle for variety
+            
         random.shuffle(result_topics)
-        
         return result_topics
 
-    # ============================================================
-    # GET TOPIC METADATA
-    # ============================================================
-    
-    def get_topic_metadata(self, topic_data: Dict) -> Dict:
-        """Return enriched metadata for a topic"""
-        query = topic_data.get('query', '')
-        suspense = self._calculate_suspense_score(query)
-        pattern = self._select_viral_pattern(query, suspense)
-        
-        return {
-            'query': query,
-            'suspense_score': suspense,
-            'viral_pattern': pattern,
-            'keywords': [k for k in self.suspense_scores.keys() if k in query.lower()][:5],
-            'estimated_views': '10K-100K',
-            'difficulty': 'low',
-            'timestamp': datetime.now().isoformat(),
-        }
+    def get_trending_topic(self, specific_topic: str = None) -> str:
+        """
+        ORCHESTRATOR COMPATIBLE WRAPPER
+        Resolves topic into a final string. Returns plain topic query text.
+        """
+        if specific_topic:
+            print(f"🎯 Using manually passed topic: '{specific_topic}'")
+            return specific_topic
+            
+        resolved_list = self.get_daily_topics(count=1)
+        if resolved_list and len(resolved_list) > 0:
+            final_topic = resolved_list[0].get('query')
+            # Extra security layer in case formatting pattern gets appended
+            pattern = resolved_list[0].get('pattern', '')
+            if pattern and random.random() > 0.5: # 50% chance to mix with viral hooks
+                # Extract hook modifier elegantly
+                return f"{final_topic} ({pattern.lower()})"
+            return final_topic
+            
+        return "Why short term memory gets worse after 35"
 
-    # ============================================================
-    # FALLBACK TOPICS - FIXED with Variety
-    # ============================================================
-    
     def _get_fallback_topics(self) -> List[Dict]:
-        """Get fallback topics with variety - FIXED"""
-        
-        # FIX: Shuffle for variety
+        """Get fallback topics with shuffling variety"""
         fallbacks = self.fallback_topics.copy()
         random.shuffle(fallbacks)
         
-        # FIX: Filter out used topics
         fresh_fallbacks = [t for t in fallbacks if t['query'] not in self.used_topics]
-        
-        # If all used, reset
-        if not fresh_fallbacks and self.used_topics:
+        if not fresh_fallbacks:
             self.used_topics.clear()
             fresh_fallbacks = fallbacks
-        
-        # Add pattern
+            
         for t in fresh_fallbacks:
             t['pattern'] = self._select_viral_pattern(t['query'], t.get('suspense', 70))
             t['source'] = 'fallback'
-            t['viral_score'] = t.get('viral_score', 80)
-        
+            t['viral_score'] = t.get('viral_score', 85)
+            t['suspense_score'] = t.get('suspense', 90)
+            
         return fresh_fallbacks
 
-    # ============================================================
-    # CLEAR USED TOPICS
-    # ============================================================
-    
-    def clear_used_topics(self):
-        """Clear used topics cache"""
-        self.used_topics.clear()
-        print("🧹 Cleared used topics cache")
-
-    # ============================================================
-    # GET STATS
-    # ============================================================
-    
     def get_stats(self) -> Dict:
-        """Get topic engine statistics"""
         return {
             'used_topics_count': len(self.used_topics),
             'fallback_topics_count': len(self.fallback_topics),
-            'memory_keywords_count': len(self.memory_keywords),
             'trending_available': self.pytrends is not None,
         }
 
 
-# ============================================================
-# TEST
-# ============================================================
 if __name__ == "__main__":
     print("🚀 TESTING TOPIC ENGINE (FIXED)\n" + "="*60)
-    
     engine = ViralTopicEngine()
     
-    print("\n📊 Fetching topics...")
-    topics = engine.get_daily_topics(count=5)
+    print("\n📊 Resolving direct orchestrator string topic:")
+    print(f"👉 Topic: '{engine.get_trending_topic()}'")
     
-    print(f"\n✅ Found {len(topics)} topics:\n")
-    
+    print("\n📊 Testing raw structure output:")
+    topics = engine.get_daily_topics(count=2)
     for i, topic in enumerate(topics, 1):
-        print(f"{i}. {topic.get('query')}")
-        print(f"   Viral Score: {topic.get('viral_score', 0)}")
-        print(f"   Suspense Score: {topic.get('suspense_score', 0)}")
-        print(f"   Pattern: {topic.get('pattern', 'unknown')}")
-        print(f"   Source: {topic.get('source', 'unknown')}")
-        print()
-    
-    print("\n📊 STATS:")
-    print(engine.get_stats())
-    
-    print("\n" + "="*60)
-    print("✅ Topic Engine ready!")
+        print(f"{i}. {topic.get('query')} (Source: {topic.get('source')})")
