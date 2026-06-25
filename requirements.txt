@@ -1,7 +1,7 @@
 # ============================================================
-# YouTube Automation System - Production Requirements (FIXED)
+# YouTube Automation System - Production Requirements (UPGRADED)
 # ============================================================
-# Python 3.10+ required
+# Python 3.11+ Recommended (Fully Supports Google API Core Lifecycles)
 # 
 # Installation:
 #   pip install --upgrade pip
@@ -17,26 +17,26 @@
 # ============================================================
 
 # HTTP Requests & Async
-requests>=2.31.0,<3.0.0
+requests>=2.32.0,<3.0.0
 httpx>=0.27.0,<1.0.0
-aiohttp>=3.10.0,<4.0.0
+aiohttp>=3.10.5,<4.0.0
 
 # ============================================================
 # AI & LLM
 # ============================================================
 
 # Groq API - AI Script Generation
-groq>=1.0.0,<2.0.0
+groq>=1.30.0,<2.0.0
 
 # OpenAI - Fallback (if needed)
-openai>=1.0.0,<2.0.0
+openai>=1.35.0,<2.0.0
 
 # ============================================================
 # TEXT-TO-SPEECH & AUDIO
 # ============================================================
 
 # Edge TTS - Microsoft Azure TTS (Natural Voice)
-edge-tts>=6.1.0,<7.0.0
+edge-tts>=6.1.3,<7.0.0
 
 # Audio/Video Processing (FFmpeg wrapper)
 ffmpeg-python>=0.2.0,<1.0.0
@@ -53,14 +53,14 @@ Pillow>=10.4.0,<11.0.0
 # ============================================================
 
 # Cloudinary - Instagram video URL hosting
-cloudinary>=1.36.0,<2.0.0
+cloudinary>=1.40.0,<2.0.0
 
 # ============================================================
 # YOUTUBE API
 # ============================================================
 
-# Google APIs for YouTube Upload
-google-api-python-client>=2.100.0,<3.0.0
+# Google APIs for YouTube Upload (Secured against Python 3.11 support warnings)
+google-api-python-client>=2.120.0,<3.0.0
 google-auth-httplib2>=0.2.0,<1.0.0
 google-auth-oauthlib>=1.2.0,<2.0.0
 
@@ -71,42 +71,42 @@ google-auth-oauthlib>=1.2.0,<2.0.0
 # Google Trends - Topic Discovery
 pytrends>=4.9.0,<5.0.0
 
-# HTML/XML Parsing (Required by pytrends)
-lxml>=5.1.0,<6.0.0
+# HTML/XML Parsing (Required by pytrends - Upgraded for security compliance)
+lxml>=5.2.0,<6.0.0
 
 # ============================================================
 # UTILITIES
 # ============================================================
 
 # Environment Variables
-python-dotenv>=1.0.0,<2.0.0
+python-dotenv>=1.0.1,<2.0.0
 
-# Data Handling
-numpy>=1.26.0,<2.0.0
+# Data Handling (Optimized for Python 3.11 wheel alignment)
+numpy>=1.26.4,<2.0.0
 
 # Timezone Handling
-pytz>=2024.1,<2025.0
+pytz>=2024.1
 
 # Scheduling
-apscheduler>=3.10.0,<4.0.0
+apscheduler>=3.10.4,<4.0.0
 
 # Decorators
-decorator>=5.1.0,<6.0.0
+decorator>=5.1.1,<6.0.0
 
 # ============================================================
 # OPTIONAL (Recommended for Production)
 # ============================================================
 
 # Retry Logic
-tenacity>=8.2.0,<9.0.0
+tenacity>=8.3.0,<9.0.0
 
 # Rate Limiting
 ratelimit>=2.2.1,<3.0.0
 
 # Date/Time Handling
-python-dateutil>=2.8.2,<3.0.0
+python-dateutil>=2.9.0,<3.0.0
 
-# JSON Handling
+# JSON Handling (Extremely Fast parsing for Large Video Tasks/Metadata)
 ujson>=5.10.0,<6.0.0
 
 # ============================================================
@@ -114,12 +114,12 @@ ujson>=5.10.0,<6.0.0
 # ============================================================
 
 # Interactive Debugging
-# ipython>=8.0.0,<9.0.0
+# ipython>=8.24.0,<9.0.0
 
 # Code Quality
-# black>=24.0.0,<25.0.0
+# black>=24.4.2,<25.0.0
 # flake8>=7.0.0,<8.0.0
-# mypy>=1.8.0,<2.0.0
+# mypy>=1.10.0,<2.0.0
 
 # ============================================================
 # QUICK INSTALL COMMAND
