@@ -84,7 +84,7 @@ class FootageFetcher:
         # ============================================================
         self.mood_modifiers = {
             'hook': [
-                "cinematic dramatic motion",
+                "man frustrated forgetful stressed closeup",
                 "close up mysterious movement",
                 "dark moody atmosphere"
             ],
