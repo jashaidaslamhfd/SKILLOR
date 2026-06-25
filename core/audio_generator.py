@@ -5,6 +5,7 @@ FIXES:
 2. ✅ Premium Human Male Voice: Uses Canopy Labs Orpheus engine with 'troy' voice.
 3. ✅ Stable Captions: Automatically calculates flawless mathematical word timings.
 4. ✅ WAV Format Compatibility: Streams WAV from Groq and transcodes to MP3 via FFmpeg.
+5. ✅ Updated Groq API Client: Switched from deprecated stream_to_file to write_to_file.
 """
 
 import os
@@ -12,7 +13,7 @@ import asyncio
 import re
 import logging
 from typing import Dict, List
-from groq import Groq  # ✅ Edge-tts ki jagah Groq import kiya
+from groq import Groq
 from config.settings import AUDIO_CONFIG
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,10 @@ class AudioGenerator:
     """Production Audio Generator using Groq Voice Node (Troy Persona)"""
 
     def __init__(self):
-        # GitHub Repository Secrets se automatically GROQ_API_KEY utha lega
         self.client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         
-        # Default model aur voice settings
         self.model = "canopylabs/orpheus-v1-english"
-        self.voice = "troy"  # Premium Deep Psychology Voice
+        self.voice = "troy"
 
         self.sample_rate = 44100
         self.channels = 2
@@ -68,7 +67,6 @@ class AudioGenerator:
         if not words or dur <= 0:
             return []
         
-        # Subtitle engine ke liye exact dictionary keys match karna zaroori hai
         weights = [1.0 + (0.10 if len(w.strip('.,!?;:\"\' ')) > 8 else 0.05 if len(w.strip('.,!?;:\"\' ')) > 5 else 0) for w in words]
         scale = dur / sum(weights)
         timings, cur = [], 0.0
@@ -86,15 +84,13 @@ class AudioGenerator:
         return timings
 
     # ============================================================
-    # MAIN ENGINE - GROQ TTS REQUEST (WAV COMPATIBLE)
+    # MAIN ENGINE - GROQ TTS REQUEST (UPDATED WRITE_TO_FILE)
     # ============================================================
 
     async def generate_with_effects(self, script_segments: List[Dict],
                                     output_dir: str, topic: str = "") -> Dict:
-        """Compiles script segments and streams real voice from Groq Cloud."""
         os.makedirs(output_dir, exist_ok=True)
 
-        # 1. Gather all text safely
         text_pieces = []
         for s in script_segments:
             if not s.get('is_pause') and s.get('text', '').strip():
@@ -103,7 +99,6 @@ class AudioGenerator:
         raw_combined_text = " ".join(text_pieces)
         clean_final_text = self._sanitize_plain_text(raw_combined_text)
         
-        # Psychology voice ko behtar karne ke liye mood direction pass karein
         if not clean_final_text.startswith("["):
             clean_final_text = f"[dramatic] {clean_final_text}"
             
@@ -112,14 +107,12 @@ class AudioGenerator:
         if all_words <= 1:
             raise ValueError("❌ No valid script text found to send to Groq TTS.")
 
-        # Groq Orpheus engine strictly demands .wav file extension/format in API spec
         final_path_wav = os.path.join(output_dir, 'final_audio.wav')
         final_path_mp3 = os.path.join(output_dir, 'final_audio.mp3')
         success = False
 
         print(f"    🎙️ Requesting Groq Cloud Human Voice (Words: {all_words})...")
 
-        # 2. Call Groq inside an async thread wrapper with response_format parameter
         for attempt in range(1, 4):
             try:
                 def call_groq_api():
@@ -127,9 +120,10 @@ class AudioGenerator:
                         model=self.model,
                         voice=self.voice,
                         input=clean_final_text,
-                        response_format="wav"  # 👈 Explicitly requested WAV by Groq backend
+                        response_format="wav"
                     )
-                    response.stream_to_file(final_path_wav)
+                    # ✅ FIXED: stream_to_file ki jagah nayi library ka write_to_file method use kiya
+                    response.write_to_file(final_path_wav)
 
                 await asyncio.to_thread(call_groq_api)
 
@@ -141,13 +135,12 @@ class AudioGenerator:
             except Exception as e:
                 print(f"      ⚠️ Groq attempt {attempt}/3 error: {e}")
                 if attempt < 3:
-                    await asyncio.sleep(4)
+                    await asyncio.sleep(6)  # 👈 Rate limit 429 se bachne ke liye wait time 6 seconds kiya
 
         if not success:
             print("    🛑 CRITICAL: Groq API failed after 3 attempts. Killing pipeline for safety!")
             raise RuntimeError("Groq TTS failed. Pipeline halted to prevent silent video creation.")
 
-        # 3. Transcode WAV to MP3 using FFmpeg (HQ Normalization Block)
         cmd = [
             'ffmpeg', '-y', '-i', final_path_wav,
             '-ar', str(self.sample_rate), '-ac', str(self.channels),
@@ -161,7 +154,6 @@ class AudioGenerator:
         except Exception as e:
             print(f"      ⚠️ FFmpeg Optimization bypass: {e}")
 
-        # Cleanup raw WAV file to keep directory clean
         if os.path.exists(final_path_wav):
             try:
                 os.remove(final_path_wav)
