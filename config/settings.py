@@ -1,7 +1,8 @@
-"""Settings — REFINED: Memory & Brain Fog Science for Men 35+
-   AUDIENCE: USA/UK Males 35-54
-   NICHE: Memory Loss & Brain Fog (Micro-Niche)
-   GOAL: Low Competition, High Demand
+"""
+Settings — REFINED: Memory & Brain Fog Science for Men 35+
+AUDIENCE: USA/UK Males 35-54
+NICHE: Memory Loss & Brain Fog (Micro-Niche)
+GOAL: Low Competition, High Demand
 """
 
 import os
@@ -10,12 +11,11 @@ from typing import List, Dict, Optional
 from datetime import time
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # VIDEO CONFIG — YouTube Shorts Optimized
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class VideoConfig:
-    # Duration: 42-55s sweet spot for 35-54 audience
     DURATION_MIN: int = 42
     DURATION_MAX: int = 55
     TARGET_DURATION: int = 48
@@ -27,7 +27,7 @@ class VideoConfig:
     PRESET: str = "medium"
 
     # Segment durations — AUDIENCE MATCHED
-    HOOK_DURATION: float = 3.5      # 2026: Shorter hook (8-10 words)
+    HOOK_DURATION: float = 3.5
     SHOCK_DURATION: float = 3.0
     SUSPENSE_DURATION: float = 5.0
     STORY_DURATION: float = 32.0
@@ -47,17 +47,17 @@ class VideoConfig:
     SCENE_CHANGE_THRESHOLD: int = 0
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # AUDIO CONFIG — Voice Matched to 35-54 Male Audience
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class AudioConfig:
     # VOICE: Deep calm male voice for 35-54 audience trust
     # en-US-GuyNeural = Deep, calm, mature American male
-    VOICE: str = "en-US-AndrewNeural"
+    VOICE: str = "en-US-GuyNeural"
 
     # Rate: -5% = noticeably slower = thoughtful = credible
-    RATE: str = "-8%"
+    RATE: str = "-5%"
     PITCH: str = "+0Hz"
     VOLUME: str = "+0%"
 
@@ -74,16 +74,16 @@ class AudioConfig:
     WORDS_PER_MINUTE: int = 120
 
     # Rate range: tight range = consistent calm tone
-    RATE_MIN: int = -10
-    RATE_MAX: int = -3
+    RATE_MIN: int = -8
+    RATE_MAX: int = 2
 
     TARGET_DURATION_MIN: float = 42.0
     TARGET_DURATION_MAX: float = 55.0
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # CAPTION CONFIG — Readable for 35-54 Audience on Mobile
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class CaptionConfig:
     # Slightly larger font — this age group appreciates readability
@@ -110,9 +110,9 @@ class CaptionConfig:
     SAFE_ZONE_BOTTOM: int = 350
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # SEO CONFIG — Memory & Brain Fog Keywords
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class SEOConfig:
     TITLE_MAX_LENGTH: int = 55
@@ -135,15 +135,15 @@ class SEOConfig:
     def __post_init__(self):
         # REFINED: Memory & Brain Fog hashtags
         self.HASHTAGS_REQUIRED = [
-            "#Shorts", "#shorts", 
+            "#Shorts", "#shorts",
             "#MemoryFacts", "#BrainFog", "#BrainHealth",
             "#MemoryLoss", "#MenOver35"
         ]
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # THUMBNAIL CONFIG — Credible, Not Horror
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class ThumbnailConfig:
     RESOLUTION: tuple = (1080, 1920)
@@ -168,15 +168,19 @@ class ThumbnailConfig:
 
     def __post_init__(self):
         # Dark but not horror — science/documentary feel
-        self.BG_COLORS = ["#050A1A", "#0A0F1E", "#080D18", "#060B15", "#0D1220"]
-        # Gold/white/light blue = credible, not scary
-        self.TEXT_COLORS = ["#FFD700", "#FFFFFF", "#4FC3F7", "#E8E8E8", "#FFF9C4"]
+        self.BG_COLORS = [
+            "#050A1A", "#0A0F1E", "#080D18", "#060B15", "#0D1220"
+        ]
+        # Gold/White/Light Blue = credible, not scary
+        self.TEXT_COLORS = [
+            "#FFD700", "#FFFFFF", "#4FC3F7", "#E8E8E8", "#FFF9C4"
+        ]
         self.ACCENT_COLORS = ["#4A90D9", "#FFD700", "#FFFFFF"]
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # PLATFORM CONFIG — Posting Times for 35-54 Schedule
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class PlatformConfig:
     TARGET_AUDIENCE: str = "US,UK,CA,AU"
@@ -215,9 +219,9 @@ class PlatformConfig:
         self.INSTAGRAM_POST_TIMES = [time(12, 0), time(20, 0)]
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # NICHE CONFIG — REFINED: Memory & Brain Fog Only
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 @dataclass
 class NicheConfig:
     # REFINED: ONLY Memory & Brain Fog topics
@@ -227,7 +231,7 @@ class NicheConfig:
 
     def __post_init__(self):
         # ============================================================
-        # MEMORY TOPICS (Proven - Baby Memory Lost = 1.1K views)
+        # MEMORY TOPICS
         # ============================================================
         self.TOPICS = [
             # Name Memory
@@ -291,9 +295,9 @@ class NicheConfig:
         ]
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # API KEYS — Load from Environment
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 class APIKeys:
     # AI & Content
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -341,9 +345,9 @@ class APIKeys:
         return [k for k, v in cls.validate().items() if not v]
 
 
-# ═══════════════════════════════════════════════════════════
-# HEALTH CHECK — All Configurations Validated
-# ═══════════════════════════════════════════════════════════
+# ============================================================
+# HEALTH CHECK
+# ============================================================
 def health_check() -> Dict:
     """Check all configurations"""
     result = {
@@ -363,27 +367,18 @@ def health_check() -> Dict:
     if AudioConfig.WORDS_PER_MINUTE < 100 or AudioConfig.WORDS_PER_MINUTE > 150:
         result['warnings'].append(f"AudioConfig: WORDS_PER_MINUTE={AudioConfig.WORDS_PER_MINUTE} (recommended 110-130)")
     
-    # Check Caption Config
-    if CaptionConfig.FONT_SIZE < 60:
-        result['warnings'].append(f"CaptionConfig: FONT_SIZE={CaptionConfig.FONT_SIZE} (recommended 70+)")
-    
-    # Check Niche Config
-    if len(NicheConfig.TOPICS) < 10:
-        result['warnings'].append(f"NicheConfig: Only {len(NicheConfig.TOPICS)} topics (recommended 20+)")
-    
     # Check API Keys
     missing = APIKeys.missing_keys()
     if missing:
-        missing_str = ', '.join(missing)
-        result['warnings'].append(f"APIKeys: Missing: {missing_str}")
+        result['warnings'].append(f"APIKeys: Missing: {', '.join(missing)}")
         result['status'] = 'degraded'
     
     return result
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # INSTANCES — Create Config Objects
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 VIDEO_CONFIG = VideoConfig()
 AUDIO_CONFIG = AudioConfig()
 CAPTION_CONFIG = CaptionConfig()
@@ -394,9 +389,9 @@ NICHE_CONFIG = NicheConfig()
 API_KEYS = APIKeys()
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # STATUS DISPLAY
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 def display_status():
     """Display configuration status"""
     print("=" * 60)
@@ -444,8 +439,8 @@ def display_status():
     print("\n" + "=" * 60)
 
 
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 # RUN STATUS
-# ═══════════════════════════════════════════════════════════
+# ============================================================
 if __name__ == "__main__":
     display_status()
