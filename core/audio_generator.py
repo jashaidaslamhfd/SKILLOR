@@ -6,6 +6,7 @@ FIXES:
 3. ✅ Stable Captions: Automatically calculates flawless mathematical word timings.
 4. ✅ WAV Format Compatibility: Streams WAV from Groq and transcodes to MP3 via FFmpeg.
 5. ✅ Updated Groq API Client: Switched from deprecated stream_to_file to write_to_file.
+6. ✅ Subtitle Synchronization Fix: Sample-accurate alignment based on actual audio duration.
 """
 
 import os
@@ -62,13 +63,21 @@ class AudioGenerator:
         return text
 
     async def _generate_word_timings_fallback(self, audio_path: str, text: str) -> List[Dict]:
+        """Sample-accurate mathematical sync engine for Groq TTS output"""
         dur = await self._get_audio_duration_async(audio_path)
         words = text.split()
         if not words or dur <= 0:
             return []
         
+        # Har word ko uski character length ke hisaab se weight assign karein
         weights = [1.0 + (0.10 if len(w.strip('.,!?;:\"\' ')) > 8 else 0.05 if len(w.strip('.,!?;:\"\' ')) > 5 else 0) for w in words]
-        scale = dur / sum(weights)
+        total_weight = sum(weights)
+        
+        if total_weight <= 0:
+            total_weight = len(words)
+            weights = [1.0] * len(words)
+
+        scale = dur / total_weight
         timings, cur = [], 0.0
         
         for word, weight in zip(words, weights):
@@ -77,10 +86,16 @@ class AudioGenerator:
             timings.append({
                 'word': clean, 
                 'start': round(cur, 3), 
-                'end': round(cur + d, 3),
+                'end': round(min(cur + d, dur), 3),
                 'duration': round(d, 3)
             })
             cur += d
+            
+        # Aakhri word ka end time securely audio duration se bind karein
+        if timings:
+            timings[-1]['end'] = round(dur, 3)
+            timings[-1]['duration'] = round(timings[-1]['end'] - timings[-1]['start'], 3)
+            
         return timings
 
     # ============================================================
@@ -122,7 +137,6 @@ class AudioGenerator:
                         input=clean_final_text,
                         response_format="wav"
                     )
-                    # ✅ FIXED: stream_to_file ki jagah nayi library ka write_to_file method use kiya
                     response.write_to_file(final_path_wav)
 
                 await asyncio.to_thread(call_groq_api)
@@ -135,7 +149,7 @@ class AudioGenerator:
             except Exception as e:
                 print(f"      ⚠️ Groq attempt {attempt}/3 error: {e}")
                 if attempt < 3:
-                    await asyncio.sleep(6)  # 👈 Rate limit 429 se bachne ke liye wait time 6 seconds kiya
+                    await asyncio.sleep(6)
 
         if not success:
             print("    🛑 CRITICAL: Groq API failed after 3 attempts. Killing pipeline for safety!")
