@@ -763,13 +763,12 @@ class FacebookUploader:
     def optimize_description(self, description: str) -> str:
         """Optimize description for Facebook algorithm"""
         hooks = [
-            "\n\nWhat do you think? ðŸ’­",
-            "\n\nTag someone who needs to see this! ðŸ‘‡",
-            "\n\nComment 'YES' if you agree! ðŸ’¯",
-            "\n\nShare if this blew your mind! ðŸ¤¯",
-            "\n\nFollow for more daily facts! ðŸ””",
+            "\n\nWhat do you think? 💭",
+            "\n\nTag someone who needs to see this! 👇",
+            "\n\nComment YES if this happened to you! ✅",
+            "\n\nShare if this explains a lot! 🧠",
+            "\n\nFollow for more brain facts! 🔔",
         ]
-        
         # Add engagement hook
         import random
         hook = random.choice(hooks)
