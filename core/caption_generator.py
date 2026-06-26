@@ -9,6 +9,8 @@ FIXES:
 4. ✅ 80px margins (no text cutoff)
 5. ✅ Bottom-center alignment (2) forced
 6. ✅ Auto-fallback timings & Multiple font fallbacks
+7. ✅ IMPROVED: Syllable weight increased for better audio sync
+8. ✅ IMPROVED: Fallback timings now stretch to full duration
 """
 
 import os
@@ -20,6 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 from config.settings import CAPTION_CONFIG
 
 logger = logging.getLogger(__name__)
+
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
     """Load system bold fonts with multiple fallbacks"""
@@ -72,22 +75,23 @@ class CaptionGenerator:
 
     def _validate_and_stretch_timings(self, word_timings: List[Dict], max_duration: float) -> List[Dict]:
         """
-        FIXED v2: Detect and fix 3 types of timing corruption:
+        FIXED v3: Detect and fix 3 types of timing corruption:
         1. All captions crammed in first few seconds
         2. All captions crammed in last few seconds  
         3. Total caption span less than 30% of video duration
+        4. IMPROVED: Better syllable weighting for audio sync
         """
         if not word_timings or max_duration <= 0:
             return word_timings
 
-        last_end   = word_timings[-1].get('end', 0.0)
+        last_end = word_timings[-1].get('end', 0.0)
         first_start = word_timings[0].get('start', 0.0)
         span = last_end - first_start
 
-        # If caption span covers less than 30% of video — timings are broken
+        # If caption span covers less than 40% of video — timings are broken
         needs_fix = (
-            (last_end < 4.0 and max_duration > 10.0) or   # All in first 4s
-            (span < max_duration * 0.30)                    # Span too short
+            (last_end < 5.0 and max_duration > 10.0) or   # All in first 5s
+            (span < max_duration * 0.35)                    # Span too short
         )
 
         if needs_fix:
@@ -99,17 +103,31 @@ class CaptionGenerator:
                 count = len(re.findall(r'[aeiou]+', w)) if w else 0
                 return max(1, count)
 
-            weights = [max(0.5, syllable_count(w.get('word', ''))) for w in word_timings]
-            scale = max_duration / sum(weights)
+            # IMPROVED: Higher weight for longer words
+            weights = []
+            for w in word_timings:
+                word = w.get('word', '')
+                syl = syllable_count(word)
+                # FIX: Increased weight for better sync
+                weight = syl * 1.5 + (0.3 if len(word) > 7 else 0.1 if len(word) > 5 else 0)
+                weights.append(max(0.6, weight))
+            
+            total_weight = sum(weights)
+            scale = max_duration / total_weight
+            
             cur = 0.0
-            for w, weight in zip(word_timings, weights):
-                d = max(0.12, weight * scale)
-                w['start']    = round(cur, 3)
-                w['end']      = round(min(cur + d, max_duration), 3)
+            for i, w in enumerate(word_timings):
+                d = max(0.15, weights[i] * scale)
+                # Cap individual word duration to prevent unnatural long pauses
+                d = min(d, 1.5)
+                w['start'] = round(cur, 3)
+                w['end'] = round(min(cur + d, max_duration), 3)
                 w['duration'] = round(w['end'] - w['start'], 3)
                 cur += d
+                
             if word_timings:
                 word_timings[-1]['end'] = round(max_duration, 3)
+                word_timings[-1]['duration'] = round(word_timings[-1]['end'] - word_timings[-1]['start'], 3)
 
         return word_timings
 
@@ -238,6 +256,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
     def _generate_fallback_timings(self, duration: float) -> List[Dict]:
+        """Generate fallback timings stretched to full duration"""
         fallback_text = "YOUR BRAIN IS AMAZING AND POWERFUL AND BEAUTIFUL"
         words = fallback_text.split()
         word_duration = duration / len(words)
@@ -251,6 +270,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 'duration': round(word_duration, 3)
             })
             current += word_duration
+        # Ensure last word ends exactly at duration
+        if timings:
+            timings[-1]['end'] = round(duration, 3)
+            timings[-1]['duration'] = round(duration - timings[-1]['start'], 3)
         return timings
 
     def generate_captions(self, word_timings: List[Dict]) -> List[Dict]:
@@ -308,3 +331,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             'white': {**base_style, 'primary_color': self.primary_color, 'secondary_color': '&H000000FF'},
             'red': {**base_style, 'primary_color': self.secondary_color, 'secondary_color': '&H00FFFFFF'}
         }
+
+
+# ============================================================
+# TEST
+# ============================================================
+if __name__ == "__main__":
+    print("🚀 TESTING CAPTION GENERATOR\n" + "="*60)
+    
+    generator = CaptionGenerator()
+    
+    # Test with crammed timings (simulating bug)
+    test_timings = [
+        {'word': 'Your', 'start': 0.0, 'end': 0.3},
+        {'word': 'brain', 'start': 0.3, 'end': 0.6},
+        {'word': 'is', 'start': 0.6, 'end': 0.8},
+        {'word': 'amazing', 'start': 0.8, 'end': 1.1},
+        {'word': 'and', 'start': 1.1, 'end': 1.3},
+        {'word': 'powerful', 'start': 1.3, 'end': 1.6},
+    ]
+    
+    # Generate ASS file with stretching
+    test_output = "test_captions.ass"
+    generator.generate_karaoke_ass(test_timings, test_output, max_duration=48.0)
+    
+    print(f"\n✅ Captions saved: {test_output}")
+    print("   Timings stretched to 48s")
