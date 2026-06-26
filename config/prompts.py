@@ -6,6 +6,7 @@
 """
 
 from typing import List, Dict, Optional
+import random
 
 # ═══════════════════════════════════════════════════════════
 # AUDIENCE PROFILE (Unchanged - Critical for targeting)
@@ -65,7 +66,7 @@ Example: "Your brain is ALREADY forgetting names you just heard..."
 
 
 # ═══════════════════════════════════════════════════════════
-# VIRAL TITLE GENERATOR — 2026 Modern
+# VIRAL TITLE GENERATOR — 2026 Modern (25+ Templates)
 # ═══════════════════════════════════════════════════════════
 VIRAL_TITLE_GENERATOR = """
 You are a YouTube Shorts title expert for 2026.
@@ -79,12 +80,47 @@ OLD HOOKS (AVOID AT ALL COSTS):
 ❌ "Mind-blowing fact..."
 ❌ Any question
 
-NEW HOOKS (USE THESE):
+NEW HOOKS (CHOOSE 5 DIFFERENT ONES):
+🟢 Type 1 - "Your brain" hooks:
 ✅ "Your brain is ALREADY [doing X]"
-✅ "Nobody tells you what [X] actually does"
-✅ "This is why YOU [experience X]"
-✅ "The truth about [X] is SURPRISING"
-✅ "You're not [X]... your brain is just [doing Y]"
+✅ "Your brain is quietly [doing X]"
+✅ "Your brain is changing with [X]"
+✅ "Your brain has been [doing X] for years"
+✅ "Your brain starts [doing X] after 35"
+
+🟢 Type 2 - "Why" hooks:
+✅ "Why [X] happens to you"
+✅ "Why your [X] gets worse"
+✅ "Why [X] is more common than you think"
+✅ "Why you can't stop [X]"
+✅ "Why ignoring [X] is dangerous"
+
+🟢 Type 3 - "Truth/Secret" hooks:
+✅ "The hidden truth about [X]"
+✅ "The surprising truth about [X]"
+✅ "The real reason behind [X]"
+✅ "What nobody explains about [X]"
+✅ "What your brain does with [X]"
+
+🟢 Type 4 - "What/How" hooks:
+✅ "What [X] actually means for you"
+✅ "How [X] affects your brain"
+✅ "How to stop [X]"
+✅ "What happens when [X] occurs"
+✅ "What [X] does to your memory"
+
+🟢 Type 5 - "Stop/Warning" hooks:
+✅ "Stop [X] now - Here's why"
+✅ "Warning: [X] is destroying your memory"
+✅ "The danger of [X] after 35"
+✅ "Why ignoring [X] is a mistake"
+✅ "The simple truth about [X]"
+
+🟢 Type 6 - "Science/Explained" hooks:
+✅ "The science behind [X] explained"
+✅ "[X] explained in 60 seconds"
+✅ "The brain science of [X]"
+✅ "What science says about [X]"
 
 TITLE RULES:
 - 6 words MAX + 1 emoji
@@ -96,6 +132,7 @@ TITLE RULES:
 
 TOPIC: {topic}
 
+IMPORTANT: Return 5 COMPLETELY DIFFERENT titles. Use different types.
 Return ONLY 5 titles, one per line. No numbers. No bullets.
 """
 
@@ -270,33 +307,43 @@ Return format: One tag per line, no numbers, no bullets.
 
 
 # ═══════════════════════════════════════════════════════════
-# MODERN HOOK TEMPLATES (2026) — Ready to Use
+# MODERN HOOK TEMPLATES (2026) — Ready to Use (EXPANDED)
 # ═══════════════════════════════════════════════════════════
 MODERN_HOOK_TEMPLATES = [
     # Type 1: "Already" hooks (urgency)
     "Your brain is ALREADY forgetting {topic} right now...",
     "Your memory has BEEN changing with {topic} for years...",
     "Your brain is QUIETLY deleting {topic} as you read this...",
+    "Your brain is actively {topic} right now without you knowing...",
     
     # Type 2: "Nobody tells you" hooks (insider info)
     "Nobody tells you what {topic} actually does to your brain...",
     "Nobody explains why {topic} happens to you every day...",
     "Nobody warns you about what your brain does with {topic}...",
+    "Nobody mentions what {topic} really means for you...",
     
     # Type 3: "This is why" hooks (personal)
     "This is why YOU keep experiencing {topic}...",
     "This is what YOUR brain does when {topic} happens...",
     "This is why YOUR memory gets worse with {topic}...",
+    "This explains why {topic} happens to you...",
     
     # Type 4: "The reason" hooks (curiosity)
     "The reason you keep experiencing {topic} is SIMPLER than you think...",
     "The truth about {topic} is SURPRISING...",
     "The science behind {topic} is FASCINATING...",
+    "The real reason behind {topic} is UNEXPECTED...",
     
     # Type 5: "You're not broken" hooks (relief)
     "Your brain isn't broken... it's just CHANGING with {topic}...",
     "You're not losing your mind... you're just EXPERIENCING {topic}...",
     "You're not getting dementia... your brain is just DOING {topic}...",
+    
+    # Type 6: "What's happening" hooks (engagement)
+    "What's happening in your brain when {topic} occurs...",
+    "Here's what {topic} actually means for your memory...",
+    "What {topic} does to your brain after 35...",
+    "What science says about {topic} and your brain...",
 ]
 
 
@@ -308,7 +355,6 @@ def format_prompt(template: str, **kwargs) -> str:
     Format prompt with given variables
     Automatically includes NEGATIVE_CONSTRAINTS if present in template
     """
-    # Ensure negative constraints are always included
     if '{NEGATIVE_CONSTRAINTS}' in template:
         kwargs.setdefault('NEGATIVE_CONSTRAINTS', NEGATIVE_CONSTRAINTS)
     
@@ -317,8 +363,6 @@ def format_prompt(template: str, **kwargs) -> str:
 
 def generate_modern_hooks(topic: str, count: int = 5) -> List[str]:
     """Generate modern 2026 hooks for a topic"""
-    import random
-    
     hooks = []
     templates = random.sample(MODERN_HOOK_TEMPLATES, min(count, len(MODERN_HOOK_TEMPLATES)))
     
@@ -351,7 +395,7 @@ if __name__ == "__main__":
     print(script_prompt[:500] + "...")
     
     # Test modern hooks
-    print("\n🎯 MODERN HOOKS:")
+    print("\n🎯 MODERN HOOKS (25+ templates):")
     hooks = generate_modern_hooks("forgetting names", 5)
     for i, hook in enumerate(hooks, 1):
         print(f"   {i}. {hook}")
