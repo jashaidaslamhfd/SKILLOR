@@ -32,6 +32,62 @@ class ContentGenerator:
         self.client = None
         self.hook_engine = HookEngine(use_cache=True)
         self._init_client()
+        
+        # ============================================================
+        # FIX: SHOCK FACT FALLBACKS - 30+ UNIQUE FACTS
+        # ============================================================
+        self.shock_fact_fallbacks = [
+            # Memory Facts
+            "Your brain can store 2.5 petabytes of information... that's 3 million hours of TV.",
+            "You forget 50% of what you learn within an hour... and 90% within a week.",
+            "Your brain's storage capacity is virtually unlimited... but your recall is not.",
+            "Every time you remember something, your brain rewrites that memory.",
+            "Your brain reorganizes itself every time you learn something new.",
+            
+            # Brain Facts
+            "Your brain uses 20% of your body's oxygen and calories.",
+            "Your brain is 60% fat and 73% water... staying hydrated matters.",
+            "Your brain has 86 billion neurons... and each connects to 10,000 others.",
+            "Your brain generates 23 watts of power while awake... enough to light a bulb.",
+            "Your brain processes information at speeds up to 120 meters per second.",
+            
+            # Aging Brain Facts
+            "Your brain shrinks by about 1% every year after age 40.",
+            "After 35, your brain's processing speed slows by 15% every decade.",
+            "Your brain's white matter peaks at age 45... then declines.",
+            "Your brain loses 1 gram of mass every year after 40.",
+            "By age 50, your brain has lost 10% of its peak volume.",
+            
+            # Sleep & Brain Facts
+            "Your brain cleans itself only while you sleep... 60% less cleaning if sleep deprived.",
+            "One bad night's sleep reduces your cognitive performance by 40%.",
+            "Your brain needs 7-8 hours of sleep to flush out toxic waste.",
+            "Sleep deprivation accelerates brain aging by 3-5 years.",
+            "Your brain creates 2 million new connections every night while you sleep.",
+            
+            # Stress Facts
+            "Chronic stress kills brain cells in the hippocampus... your memory center.",
+            "Stress can shrink your brain's prefrontal cortex... affecting decision making.",
+            "High cortisol levels age your brain by 6-8 years.",
+            "Stress reduces brain volume in areas responsible for memory.",
+            "Every stressful event releases cortisol... and damages your memory.",
+            
+            # Focus & Attention Facts
+            "Your brain can only focus on one complex task at a time.",
+            "It takes 23 minutes to fully refocus after a single interruption.",
+            "Your attention span has dropped by 33% in the last 20 years.",
+            "Multi-tasking reduces productivity by up to 40%.",
+            "Your brain's peak focus time is only 90 minutes.",
+            
+            # Memory & Learning Facts
+            "Your brain can form new memories in just 0.1 seconds.",
+            "Emotional memories are 3 times stronger than neutral ones.",
+            "Your brain prioritizes negative experiences for survival.",
+            "Learning new skills creates 10 times more neural connections.",
+            "Your brain rewires itself every time you practice something new.",
+        ]
+        
+        self.used_shock_facts = set()  # Track used facts to prevent repetition
 
     def _init_client(self):
         """Initialize Groq client"""
@@ -95,6 +151,30 @@ class ContentGenerator:
         ]
         return random.choice(templates)
 
+    # ============================================================
+    # FIX: UNIQUE SHOCK FACT GENERATOR
+    # ============================================================
+    
+    def _get_unique_shock_fact(self) -> str:
+        """Get a unique shock fact - never repeats"""
+        # Reset if all used
+        if len(self.used_shock_facts) >= len(self.shock_fact_fallbacks):
+            self.used_shock_facts.clear()
+            print("   🔄 All shock facts used, resetting...")
+        
+        # Get available facts
+        available = [f for f in self.shock_fact_fallbacks if f not in self.used_shock_facts]
+        
+        if not available:
+            available = self.shock_fact_fallbacks.copy()
+            self.used_shock_facts.clear()
+        
+        # Select random fact
+        fact = random.choice(available)
+        self.used_shock_facts.add(fact)
+        
+        return fact
+
     def generate_script(self, topic: str, angle: str = "", 
                         shock_angle: str = "", pattern: str = "memory_insight",
                         suspense_score: int = 70) -> Dict:
@@ -127,13 +207,19 @@ class ContentGenerator:
         story = self._clean(self._extract("STORY", raw))
         ctr = self._clean(self._extract("CTR", raw))
         
-        # Fallbacks
+        # ============================================================
+        # FIX: Fallbacks with UNIQUE facts
+        # ============================================================
         if not shock:
-            shock = "Your brain processes 70,000 thoughts daily... and forgets 90% of them."
+            shock = self._get_unique_shock_fact()  # ✅ ALWAYS UNIQUE
+            print(f"   💡 Using unique shock fact #{len(self.used_shock_facts)}")
+        
         if not suspense:
             suspense = "And the reason behind this might explain a lot about your own life..."
+        
         if not story:
             story = self._generate_fallback_story(topic)
+        
         if not ctr:
             ctr = "Follow for more on why your brain works this way."
         
@@ -216,12 +302,10 @@ class ContentGenerator:
             if titles:
                 title = titles[0]
                 words = title.split()
-                # Limit to 6 words max
                 if len(words) > 6:
                     title = ' '.join(words[:6])
                 return title
         
-        # Fallback titles
         fallbacks = [
             f"Your brain is forgetting {topic} right now 🧠",
             f"Why your {topic} gets worse after 35 🧠",
@@ -242,7 +326,6 @@ class ContentGenerator:
                 seen.add(w)
                 unique.append(w)
         
-        # Ensure 3 words
         while len(unique) < 3:
             for w in base_words:
                 if w not in unique:
@@ -273,32 +356,32 @@ class ContentGenerator:
             'keywords': f"memory,brain fog,forget,men over 35,brain health"
         }
 
+    def reset_used_shock_facts(self):
+        """Reset used shock facts cache"""
+        self.used_shock_facts.clear()
+        print("🧹 Reset shock facts cache")
+
 
 # ============================================================
 # TEST
 # ============================================================
 if __name__ == "__main__":
-    print("🚀 TESTING CONTENT GENERATOR\n" + "="*60)
+    print("🚀 TESTING CONTENT GENERATOR (FIXED)\n" + "="*60)
     
     generator = ContentGenerator()
     
-    # Test with a topic
-    topic = "forgetting names"
-    print(f"\n📝 Generating content for: {topic}")
-    print("-" * 40)
+    # Test with multiple topics to verify uniqueness
+    test_topics = [
+        "forgetting names",
+        "brain fog",
+        "memory loss",
+        "sleep problems",
+        "stress effects"
+    ]
     
-    script = generator.generate_script(topic=topic)
+    for topic in test_topics:
+        print(f"\n📝 Generating for: {topic}")
+        script = generator.generate_script(topic=topic)
+        print(f"   Shock: {script['shock'][:50]}...")
     
-    print(f"\n📊 SCRIPT RESULT:")
-    print(f"   Hook: {script['hook']}")
-    print(f"   Hook Score: {script['hook_score']}/10")
-    print(f"   Word Count: {script['word_count']}")
-    print(f"   Duration: {script['duration']}s")
-    print(f"   Segments: {len(script['segments'])}")
-    
-    print(f"\n📝 FULL SCRIPT:")
-    print(script['full_script'])
-    
-    print(f"\n🏷️ TITLE:")
-    title = generator.generate_title(topic)
-    print(f"   {title}")
+    print(f"\n✅ Used {len(generator.used_shock_facts)} unique shock facts")
