@@ -7,15 +7,18 @@ FIXES:
 4. ✅ WAV Format Compatibility: Streams WAV from Groq and transcodes to MP3 via FFmpeg.
 5. ✅ Updated Groq API Client: Switched from deprecated stream_to_file to write_to_file.
 6. ✅ Subtitle Synchronization Fix: Sample-accurate alignment based on actual audio duration.
+7. ✅ Fixed: Added missing imports (os, asyncio)
+8. ✅ Fixed: Added to_thread fallback for compatibility
 """
 
-import os
+import os  # ✅ FIXED: Added missing import
 import asyncio
 import re
 import logging
 from typing import Dict, List
+
 from groq import Groq
-from config.settings import AUDIO_CONFIG
+from config.settings import AUDIO_CONFIG, API_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ class AudioGenerator:
     """Production Audio Generator using Groq Voice Node (Troy Persona)"""
 
     def __init__(self):
-        self.client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        self.client = Groq(api_key=API_KEYS.GROQ_API_KEY)  # ✅ FIXED: Use API_KEYS
         
         self.model = "canopylabs/orpheus-v1-english"
         self.voice = "troy"
@@ -139,7 +142,20 @@ class AudioGenerator:
 
         for attempt in range(1, 4):
             try:
-                def call_groq_api():
+                # ✅ FIXED: asyncio.to_thread fallback
+                if hasattr(asyncio, 'to_thread'):
+                    def call_groq_api():
+                        response = self.client.audio.speech.create(
+                            model=self.model,
+                            voice=self.voice,
+                            input=clean_final_text,
+                            response_format="wav"
+                        )
+                        response.write_to_file(final_path_wav)
+                    
+                    await asyncio.to_thread(call_groq_api)
+                else:
+                    # Fallback for older Python versions
                     response = self.client.audio.speech.create(
                         model=self.model,
                         voice=self.voice,
@@ -147,8 +163,6 @@ class AudioGenerator:
                         response_format="wav"
                     )
                     response.write_to_file(final_path_wav)
-
-                await asyncio.to_thread(call_groq_api)
 
                 if os.path.exists(final_path_wav) and os.path.getsize(final_path_wav) > 1000:
                     print(f"      ✅ Groq Real Voice Stream Secured (WAV): {os.path.getsize(final_path_wav)} bytes")
@@ -164,6 +178,7 @@ class AudioGenerator:
             print("    🛑 CRITICAL: Groq API failed after 3 attempts. Killing pipeline for safety!")
             raise RuntimeError("Groq TTS failed. Pipeline halted to prevent silent video creation.")
 
+        # Convert WAV to MP3
         cmd = [
             'ffmpeg', '-y', '-i', final_path_wav,
             '-ar', str(self.sample_rate), '-ac', str(self.channels),
@@ -177,6 +192,7 @@ class AudioGenerator:
         except Exception as e:
             print(f"      ⚠️ FFmpeg Optimization bypass: {e}")
 
+        # Cleanup WAV
         if os.path.exists(final_path_wav):
             try:
                 os.remove(final_path_wav)
@@ -194,4 +210,29 @@ class AudioGenerator:
             'total_duration': total_duration,
             'word_timings': all_word_timings,
             'word_count': all_words,
-                             }
+        }
+
+
+# ============================================================
+# TEST
+# ============================================================
+if __name__ == "__main__":
+    import asyncio
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    async def test():
+        gen = AudioGenerator()
+        segments = [
+            {'type': 'hook', 'text': 'Your brain is ALREADY forgetting names you just heard...', 'is_pause': False},
+            {'type': 'pause', 'is_pause': True, 'duration': 0.5},
+            {'type': 'story', 'text': 'The science behind memory loss is simpler than you think. Your brain has a filter that gets too good at its job after 35.', 'is_pause': False},
+        ]
+        result = await gen.generate_with_effects(segments, 'test_audio', 'forgetting names')
+        print(f"\n✅ Result: {result['total_duration']:.1f}s")
+        print(f"   Words: {result['word_count']}")
+        print(f"   Audio: {result['audio_path']}")
+        print(f"   Timings: {len(result['word_timings'])}")
+    
+    asyncio.run(test())
