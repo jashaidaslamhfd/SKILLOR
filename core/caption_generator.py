@@ -75,11 +75,12 @@ class CaptionGenerator:
 
     def _validate_and_stretch_timings(self, word_timings: List[Dict], max_duration: float) -> List[Dict]:
         """
-        FIXED v3: Detect and fix 3 types of timing corruption:
+        FIXED v4: Detect and fix caption sync issues:
         1. All captions crammed in first few seconds
         2. All captions crammed in last few seconds  
-        3. Total caption span less than 30% of video duration
-        4. IMPROVED: Better syllable weighting for audio sync
+        3. Total caption span less than 35% of video duration
+        4. ✅ NEW: Start/end boundary mismatch (captions fast in middle)
+        5. IMPROVED: Better syllable weighting for audio sync
         """
         if not word_timings or max_duration <= 0:
             return word_timings
@@ -88,10 +89,17 @@ class CaptionGenerator:
         first_start = word_timings[0].get('start', 0.0)
         span = last_end - first_start
 
-        # If caption span covers less than 40% of video — timings are broken
+        # ✅ FIX: Check if captions end too early (gap > 15% at end)
+        end_gap = max_duration - last_end
+        # ✅ FIX: Check if average word duration is too fast (< 0.2s per word)
+        avg_word_dur = span / max(1, len(word_timings))
+
+        # If caption span covers less than 35% of video — timings are broken
         needs_fix = (
             (last_end < 5.0 and max_duration > 10.0) or   # All in first 5s
-            (span < max_duration * 0.35)                    # Span too short
+            (span < max_duration * 0.35) or                 # Span too short
+            (end_gap > max_duration * 0.15 and last_end < max_duration * 0.85) or  # ✅ End too early
+            (avg_word_dur < 0.20 and max_duration > 15.0)  # ✅ Words too fast
         )
 
         if needs_fix:
