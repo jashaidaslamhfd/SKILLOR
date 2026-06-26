@@ -1,597 +1,414 @@
-"""
-Topic Engine — REFINED: Memory & Brain Fog Only (FIXED WITH ROBUST 429 FALLBACK)
-NICHE: Men 35-54 experiencing memory loss and brain fog
-GOAL: Low competition, high demand topics
-SOURCE: Google Trends + Fallback topics
+"""AI Prompts for Groq — 2026 Modern Hooks
+   NICHE: Mystery Crispy Body Science for Men 35+
+   AUDIENCE: USA/UK Males 35-54
+   FORMAT: YouTube Shorts (40-55 seconds)
+   GOAL: Make viewer UNABLE to swipe away
+   STRUCTURE: Hook → Suspense → Problem → Solution → Loopback → CTR
 """
 
-import time
-import random
-import re
-import logging
-from datetime import datetime
 from typing import List, Dict, Optional
+import random
 
-logger = logging.getLogger(__name__)
+# ═══════════════════════════════════════════════════════════
+# AUDIENCE PROFILE (Unchanged - Critical for targeting)
+# ═══════════════════════════════════════════════════════════
+AUDIENCE_PROFILE = """
+AUDIENCE:
+- Age: 35-54 (51.7% are 35-44, 48.3% are 45-54)
+- Gender: 76.2% Male
+- Location: USA 33.5% | UK (remaining English)
+- Device: 79.6% Mobile
+- Behavior: Working adults, scroll during lunch, before bed, on couch
+- Pain Point: Experiencing memory loss and brain fog
+- Search Terms: "why do i forget", "brain fog", "memory loss"
+- Emotional State: Worried, alone, confused
+- What Works: "I thought I was the only one"
+- What Fails: Broad science, teen shock, horror tone
+"""
 
-try:
-    from pytrends.request import TrendReq
-except ImportError:
-    TrendReq = None
-    print("⚠️ pytrends not installed. Install with: pip install pytrends")
+# ═══════════════════════════════════════════════════════════
+# NEGATIVE CONSTRAINTS (CRITICAL - Do Not Remove)
+# ═══════════════════════════════════════════════════════════
+NEGATIVE_CONSTRAINTS = """
+--- ⛔ NEGATIVE CONSTRAINTS (These are FORBIDDEN) ---
+1. ABSOLUTELY NO mention of sleep, insomnia, or waking up
+2. ABSOLUTELY NO mention of stress, cortisol, or anxiety
+3. ABSOLUTELY NO mention of testosterone or men's health (other than memory)
+4. ABSOLUTELY NO mention of parenting, children, or babies
+5. DO NOT use "shocking", "terrifying", "horrifying", "crazy", "insane"
+6. DO NOT use "scientists say", "studies show", "research proves"
+7. If ANY of these appear, the script is REJECTED
+"""
+
+# ═══════════════════════════════════════════════════════════
+# 2026 HOOK PSYCHOLOGY — What Works NOW
+# ═══════════════════════════════════════════════════════════
+HOOK_PSYCHOLOGY_2026 = """
+MODERN HOOK RULES (2026):
+
+CRITICAL: Old hooks don't work anymore.
+- "Did you know" → SWIPE (weak, passive)
+- "Scientists discovered" → SWIPE (too formal)
+- "Shocking truth" → SWIPE (overused)
+- Questions → SWIPE (statements are stronger)
+
+WHAT WORKS IN 2026:
+1. Direct statements: "Your brain is ALREADY forgetting..."
+2. Personal address: "This is why YOU forget names..."
+3. Experience validation: "The reason you forget is SIMPLER than you think..."
+4. Urgency words: "ALREADY", "RIGHT NOW", "BEEN"
+5. Confirmation: "You're not broken... your brain is just CHANGING"
+
+FORMULA: [Urgency/Possession] + [Action happening to viewer] + [Curiosity gap]
+Example: "Your brain is ALREADY forgetting names you just heard..."
+         ^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^
+         Urgency       Action on viewer            Curiosity gap
+"""
 
 
-class ViralTopicEngine:
-    """Topic Engine for Memory & Brain Fog Niche - FIXED"""
+# ═══════════════════════════════════════════════════════════
+# VIRAL TITLE GENERATOR — 2026 Modern (25+ Templates)
+# ═══════════════════════════════════════════════════════════
+VIRAL_TITLE_GENERATOR = """
+You are a YouTube Shorts title expert for 2026.
+
+GOAL: Create titles that make a 40-year-old man think "this is about ME"
+
+OLD HOOKS (AVOID AT ALL COSTS):
+❌ "Did you know..."
+❌ "Scientists discovered..."
+❌ "Shocking truth..."
+❌ "Mind-blowing fact..."
+❌ Any question
+
+NEW HOOKS (CHOOSE 5 DIFFERENT ONES):
+🟢 Type 1 - "Your brain" hooks:
+✅ "Your brain is ALREADY [doing X]"
+✅ "Your brain is quietly [doing X]"
+✅ "Your brain is changing with [X]"
+✅ "Your brain has been [doing X] for years"
+✅ "Your brain starts [doing X] after 35"
+
+🟢 Type 2 - "Why" hooks:
+✅ "Why [X] happens to you"
+✅ "Why your [X] gets worse"
+✅ "Why [X] is more common than you think"
+✅ "Why you can't stop [X]"
+✅ "Why ignoring [X] is dangerous"
+
+🟢 Type 3 - "Truth/Secret" hooks:
+✅ "The hidden truth about [X]"
+✅ "The surprising truth about [X]"
+✅ "The real reason behind [X]"
+✅ "What nobody explains about [X]"
+✅ "What your brain does with [X]"
+
+🟢 Type 4 - "What/How" hooks:
+✅ "What [X] actually means for you"
+✅ "How [X] affects your brain"
+✅ "How to stop [X]"
+✅ "What happens when [X] occurs"
+✅ "What [X] does to your memory"
+
+🟢 Type 5 - "Stop/Warning" hooks:
+✅ "Stop [X] now - Here's why"
+✅ "Warning: [X] is destroying your memory"
+✅ "The danger of [X] after 35"
+✅ "Why ignoring [X] is a mistake"
+✅ "The simple truth about [X]"
+
+🟢 Type 6 - "Science/Explained" hooks:
+✅ "The science behind [X] explained"
+✅ "[X] explained in 60 seconds"
+✅ "The brain science of [X]"
+✅ "What science says about [X]"
+
+TITLE RULES:
+- 6 words MAX + 1 emoji
+- MUST create urgency
+- MUST be personal ("you/your")
+- MUST be a statement (not question)
+- MUST have curiosity gap
+- MUST be about memory or brain fog
+
+TOPIC: {topic}
+
+IMPORTANT: Return 5 COMPLETELY DIFFERENT titles. Use different types.
+Return ONLY 5 titles, one per line. No numbers. No bullets.
+"""
+
+
+# ═══════════════════════════════════════════════════════════
+# VIRAL SCRIPT GENERATOR — 2026 Modern with Storytelling
+# ═══════════════════════════════════════════════════════════
+VIRAL_SCRIPT_GENERATOR = """
+You are a YouTube Shorts script writer for 2026.
+
+AUDIENCE: Men 35-54 experiencing unexplained body signals, memory issues, brain fog, or physical changes.
+TONE: "A calm doctor who has experienced this too" — relatable, credible, never scary.
+GOAL: Make them feel understood, explain the body/brain science simply, hook them to follow.
+
+STRUCTURE: Hook → Suspense → Problem → Solution → Loopback → CTR
+TARGET LENGTH: 40-55 seconds spoken at natural pace
+
+CRITICAL: The hook must be MODERN and URGENT.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### HOOK (8-10 words, 2-3 seconds):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CRITICAL: This is the most important line in the entire script.
+The viewer decides to stay or swipe in 1-2 seconds.
+
+OLD HOOKS (WILL CAUSE SWIPE):
+❌ "Have you ever wondered why..."
+❌ "Did you know that..."
+❌ "Scientists have discovered..."
+❌ "The shocking truth about..."
+❌ "What if I told you..."
+
+MODERN HOOKS (WILL STOP SCROLL):
+✅ "Your brain is ALREADY forgetting names you just heard..."
+✅ "Your body has been signaling this for years..."
+✅ "Nobody tells you what actually happens to your body after 35..."
+✅ "This is why YOU feel this... and it's not what you think..."
+✅ "Your body isn't broken... it's just CHANGING..."
+
+RULES FOR 2026 HOOK:
+✓ Must start with: "Your", "Nobody", "This is why", "The reason", "You're not"
+✓ Must use urgency words: "ALREADY", "RIGHT NOW", "BEEN", "QUIETLY"
+✓ Must be personal: "you/your"
+✓ Must be a statement (NOT question)
+✓ Must be 8-10 words
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### SHOCK (8-10 words, 2-3 seconds):
+- One specific, surprising fact about the topic (brain OR body)
+- Must confirm they were right to stay
+- Calm delivery — surprising, not scary
+- End with "..."
+
+Examples:
+- "Your brain processes 70,000 thoughts daily... and forgets 90% of them"
+- "Your gut has 100 million neurons... almost as many as your spine"
+- "Your heart skips a beat every day... and you never notice"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### SUSPENSE (10-12 words, 4-5 seconds):
+- Calm curiosity build — this is the PROBLEM setup
+- "But here's what's REALLY happening in your body..."
+- "And the reason might explain what you've been feeling..."
+- End with "..."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### STORY (50-60 words, 22-28 seconds):
+- PROBLEM then SOLUTION — conversational, like a friend explaining over coffee
+- Connect to daily experiences the viewer actually feels
+- Short sentences. Max 10 words each.
+- Natural breath pause midway: "..."
+- Always "you", "your", "you've" — never "people" or "individuals"
+- End the STORY with a LOOPBACK callback to the hook (satisfying close)
+
+Example: "Your body has something called an energy regulation system. And after 35... it starts prioritizing survival over performance. Which means your body is hoarding energy it should be giving you. The good news... understanding this is the first step to working with it, not against it."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### CTR (10-12 words, 4-5 seconds):
+- Callback to the hook — creates a satisfying loop
+- Warm invitation, NOT urgency/FOMO pressure
+- ✅ MUST include ONE of: Follow, Subscribe, or Like
+- Examples:
+  "Follow for more on why your body works this way."
+  "Subscribe — Part 2 reveals what actually fixes this."
+  "Like if this happened to you... Follow for Part 2."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL RULES:
+- Topics can be about BRAIN, MEMORY, or any BODY SCIENCE mystery
+- Hook MUST be 8-10 words (NOT more)
+- Use "you/your" throughout
+- NO "shocking", "terrifying", "crazy"
+- NO parenting topics
+- Place "..." only where a real person would naturally pause to breathe
+- TOTAL script must read in 40-55 seconds (spoken at natural pace)
+
+Topic: {topic}
+Angle: {angle}
+Shock Angle: {shock_angle}
+
+Return ONLY the script with the exact markers. No extra text. No explanations.
+"""
+
+
+# ═══════════════════════════════════════════════════════════
+# SHOCK MOMENT GENERATOR — Credible, Not Horror
+# ═══════════════════════════════════════════════════════════
+SHOCK_MOMENT_GENERATOR = """
+Generate ONE surprising fact moment for video editing emphasis.
+
+Target audience: Males 35-54 experiencing memory loss.
+The moment should feel: "whoa I didn't know that" NOT "oh god that's terrifying"
+
+Rules:
+- 8-10 words maximum
+- Must be about memory or brain fog: {topic}
+- Language: calm but surprising — "quietly", "actually", "without you realizing"
+- Avoid: "terrifying", "horrifying", "deadly", "destroying"
+- Use: "fascinating", "surprising", "unexpected", "worth knowing"
+
+{NEGATIVE_CONSTRAINTS}
+
+Topic: {topic}
+Shock Angle: {shock_angle}
+
+Return ONLY the fact text, no markers, no extra words.
+"""
+
+
+# ═══════════════════════════════════════════════════════════
+# SEO DESCRIPTION — USA/UK Male 35-54 Optimized
+# ═══════════════════════════════════════════════════════════
+SEO_DESCRIPTION_GENERATOR = """
+Write a YouTube Shorts description optimized for USA/UK male audience aged 35-54.
+
+Rules:
+- STRICT LENGTH: 100-150 words
+- FIRST LINE: Hook with main keyword + "#Shorts"
+- First 2 lines visible before "...more" — make them count
+- Include timestamps: Hook 0:00, Key fact 0:08, Main insight 0:15, Takeaway 0:40
+- 3-5 hashtags: include #Shorts, #MemoryFacts, #BrainHealth
+- CTA: "Follow for more science your doctor won't explain"
+- Keywords: {keywords}
+- Natural placement, NO keyword stuffing
+- Tone: informative, credible — like a science newsletter, not viral bait
+
+Topic: {topic}
+"""
+
+
+# ═══════════════════════════════════════════════════════════
+# TAGS GENERATOR — USA/UK Male 35-54 Search Behavior
+# ═══════════════════════════════════════════════════════════
+TAGS_GENERATOR = """
+Generate 10-14 YouTube Shorts tags for USA/UK male audience aged 35-54.
+
+This audience searches differently than teens:
+- They search for PROBLEMS they experience: "why do i forget things", "memory after 40"
+- They trust: "brain science", "health facts", "explained"
+- They avoid: "shocking", "insane", "mind blowing"
+
+Rules:
+- EXACTLY 3 broad tags (1-2 words): high search volume, topic-relevant
+- EXACTLY 7-9 specific tags (3-4 words): long-tail, age/problem-specific
+- EXACTLY 1 trending tag: 2026 format
+- EXACTLY 1 #Shorts tag: always include
+- Order: Highest search volume first
+- Include age-relevant terms where natural: "after 40", "men's health", "adult brain"
+- Include: "youtube shorts", "brain facts", "health shorts"
+
+Topic: {topic}
+Keywords: {keywords}
+
+Return format: One tag per line, no numbers, no bullets.
+"""
+
+
+# ═══════════════════════════════════════════════════════════
+# MODERN HOOK TEMPLATES (2026) — Ready to Use (EXPANDED)
+# ═══════════════════════════════════════════════════════════
+MODERN_HOOK_TEMPLATES = [
+    # Type 1: "Already" hooks (urgency)
+    "Your brain is ALREADY forgetting {topic} right now...",
+    "Your memory has BEEN changing with {topic} for years...",
+    "Your brain is QUIETLY deleting {topic} as you read this...",
+    "Your brain is actively {topic} right now without you knowing...",
     
-    # ✅ FIX: Disk par save hone wali used_topics file
-    USED_TOPICS_FILE = "state/used_topics.json"
+    # Type 2: "Nobody tells you" hooks (insider info)
+    "Nobody tells you what {topic} actually does to your brain...",
+    "Nobody explains why {topic} happens to you every day...",
+    "Nobody warns you about what your brain does with {topic}...",
+    "Nobody mentions what {topic} really means for you...",
     
-    def __init__(self):
-        # Initialize Google Trends
-        self.pytrends = None
-        if TrendReq:
-            try:
-                self.pytrends = TrendReq(hl='en-US', tz=360, timeout=(10, 25))
-                print("✅ Google Trends initialized")
-            except Exception as e:
-                print(f"⚠️ Google Trends init failed: {e}")
-        
-        # ✅ FIX: used_topics ko disk se load karo (session restart par bhi yaad rahe)
-        self.used_topics = self._load_used_topics()
-        
-        # ============================================================
-        # REFINED: ONLY Memory & Brain Fog Keywords
-        # ============================================================
-        self.memory_keywords = [
-            "why do i forget names",
-            "why do i forget things easily",
-            "why can't i remember anything",
-            "why is my memory getting worse",
-            "why do i walk into a room and forget",
-            "why do i forget what i was saying",
-            "why can't i remember names",
-            "why do i forget words mid sentence",
-            "why is my short term memory bad",
-            "why do i forget things after 35",
-            "why do i forget things after 40",
-            "why can't i remember what i read",
-            "why do i forget my train of thought",
-            
-            # Brain Fog
-            "what causes brain fog in men",
-            "why do i feel spaced out",
-            "why can't i focus anymore",
-            "why do i feel mentally slow",
-            "why is my brain foggy all the time",
-            "what causes brain fog after eating",
-            "why do i have brain fog in the morning",
-            "why does my brain feel foggy",
-            "what causes mental fog",
-            "why can't i concentrate anymore",
-            
-            # Memory Specific
-            "why do i forget where i put things",
-            "why do i forget appointments",
-            "why do i forget dates",
-            "why do i forget conversations",
-            "why do i forget people's names",
-        ]
-        
-        # ============================================================
-        # VIRAL PATTERNS
-        # ============================================================
-        self.viral_patterns = {
-            'memory_insight': [
-                "why your brain deletes memories after 35",
-                "nobody tells men what memory loss actually feels like",
-                "your brain is quietly forgetting things right now",
-                "the real reason you forget names after 40",
-                "doctors don't explain memory loss to men",
-            ],
-            'brain_fog': [
-                "what actually causes brain fog in adults",
-                "why your brain feels foggy after 35",
-                "the surprising reason you can't focus",
-                "why you feel mentally exhausted all the time",
-                "what your brain does when you have brain fog",
-            ],
-            'memory_science': [
-                "the science behind why you forget things",
-                "why your brain filters out memories you need",
-                "how your memory actually works after 35",
-                "why short term memory fails as you age",
-                "the brain's secret to forgetting",
-            ],
-            'personal_stake': [
-                "this is happening to your brain right now",
-                "your memory is changing without you knowing",
-                "you experienced this today and didn't realize",
-                "your brain has been doing this for years",
-                "this explains why you forget names",
-            ],
-            # ✅ NEW: Body Science Patterns
-            'body_mystery': [
-                "your body is quietly sending you signals you ignore",
-                "this happens to your body every single day",
-                "nobody explains what your body does after 40",
-                "the real reason your body feels different now",
-                "your body has been doing this for years without you knowing",
-            ],
-            'body_science': [
-                "the science behind why your body works this way",
-                "what actually happens inside your body after 35",
-                "how your body changes without you realizing",
-                "why your body reacts this way and what it means",
-                "the hidden signals your body sends when something shifts",
-            ],
-        }
-        # SUSPENSE SCORES
-        # ============================================================
-        self.suspense_scores = {
-            'memory': 95, 'forget': 94, 'remember': 90, 'recall': 88,
-            'brain fog': 93, 'foggy': 92, 'spaced': 90, 'mental': 85,
-            'focus': 89, 'concentrate': 88, 'attention': 87,
-            'name': 92, 'room': 91, 'word': 90, 'thought': 89,
-            'short term': 94, 'cognitive': 86, 'decline': 85,
-            'after 35': 95, 'after 40': 94, 'men': 90,
-            'brain': 88, 'mind': 87, 'thinking': 85,
-            # ✅ NEW: Body Science keywords
-            'gut': 92, 'stomach': 89, 'digestion': 88, 'bloated': 87,
-            'heart': 93, 'tired': 94, 'energy': 92, 'fatigue': 91,
-            'muscle': 89, 'joint': 88, 'back': 87, 'knee': 87,
-            'skin': 85, 'inflammation': 90, 'immune': 88, 'metabolism': 91,
-            'belly fat': 93, 'weight': 89, 'dizzy': 90, 'twitches': 91,
-            'ringing': 89, 'circulation': 88, 'blood pressure': 92,
-        }
-        
-        # ============================================================
-        # EXTENSIVE FALLBACK TOPICS (100+ Unique Topics)
-        # ============================================================
-        self.fallback_topics = [
-            # ── MEMORY — FORGETTING ─────────────────────────────
-            {"query": "Why you forget names right after hearing them", "keyword": "memory", "growth": 520, "suspense": 95},
-            {"query": "Why you walk into a room and forget why", "keyword": "memory", "growth": 500, "suspense": 93},
-            {"query": "Why you forget what you were about to do", "keyword": "memory", "growth": 490, "suspense": 92},
-            {"query": "Why you keep losing your train of thought", "keyword": "memory", "growth": 485, "suspense": 91},
-            {"query": "Why short term memory gets worse after 35", "keyword": "memory", "growth": 480, "suspense": 94},
-            {"query": "Why your memory gets worse after 40", "keyword": "memory", "growth": 475, "suspense": 93},
-            {"query": "Why you forget things you just read", "keyword": "memory", "growth": 470, "suspense": 90},
-            {"query": "Why you forget words while speaking", "keyword": "memory", "growth": 465, "suspense": 89},
-            {"query": "Why you forget what you were saying mid-sentence", "keyword": "memory", "growth": 460, "suspense": 88},
-            {"query": "Why men forget where they put things", "keyword": "memory", "growth": 455, "suspense": 87},
-            {"query": "Why you forget appointments even when you wrote them down", "keyword": "memory", "growth": 450, "suspense": 86},
-            {"query": "Why you forget phone numbers you once knew by heart", "keyword": "memory", "growth": 448, "suspense": 85},
-            {"query": "Why you forget people's faces after meeting them", "keyword": "memory", "growth": 445, "suspense": 88},
-            {"query": "Why you forget what you were just thinking", "keyword": "memory", "growth": 443, "suspense": 87},
-            {"query": "Why familiar words suddenly feel unfamiliar", "keyword": "memory", "growth": 440, "suspense": 90},
-            {"query": "Why you forget conversations you just had", "keyword": "memory", "growth": 438, "suspense": 88},
-            {"query": "Why you re-read the same paragraph and still forget it", "keyword": "memory", "growth": 435, "suspense": 86},
-            {"query": "Why your brain blanks out under pressure", "keyword": "memory", "growth": 430, "suspense": 91},
-            {"query": "Why you can remember old memories but forget new ones", "keyword": "memory", "growth": 425, "suspense": 92},
-            {"query": "Why stress makes you forget things faster", "keyword": "memory", "growth": 422, "suspense": 90},
-            {"query": "Why you forget dreams within seconds of waking", "keyword": "memory", "growth": 420, "suspense": 88},
-            {"query": "Why multitasking destroys your memory after 40", "keyword": "memory", "growth": 418, "suspense": 87},
-            {"query": "Why alcohol erases memories even after small amounts", "keyword": "memory", "growth": 415, "suspense": 89},
-            {"query": "Why you remember embarrassing moments forever", "keyword": "memory", "growth": 412, "suspense": 91},
-            {"query": "Why negative memories stick stronger than good ones", "keyword": "memory", "growth": 410, "suspense": 90},
-            {"query": "Why your memory is sharper in the morning", "keyword": "memory", "growth": 408, "suspense": 86},
-            {"query": "Why you can recall song lyrics but forget a name", "keyword": "memory", "growth": 405, "suspense": 93},
-            {"query": "Why your brain deletes memories while you sleep", "keyword": "memory", "growth": 450, "suspense": 88},
-            {"query": "Why men forget things more as they age", "keyword": "memory", "growth": 445, "suspense": 87},
-            {"query": "Why men experience cognitive decline after 35", "keyword": "memory", "growth": 460, "suspense": 87},
-            
-            # ── BRAIN FOG ──────────────────────────────────────────
-            {"query": "What actually causes brain fog in men", "keyword": "brain fog", "growth": 490, "suspense": 93},
-            {"query": "Why you feel mentally foggy after 35", "keyword": "brain fog", "growth": 480, "suspense": 91},
-            {"query": "Why you feel spaced out and cannot focus", "keyword": "brain fog", "growth": 470, "suspense": 89},
-            {"query": "What causes brain fog and memory loss together", "keyword": "brain fog", "growth": 465, "suspense": 90},
-            {"query": "Why your brain fog gets worse in the afternoon", "keyword": "brain fog", "growth": 440, "suspense": 86},
-            {"query": "Why your thinking feels slower than it used to", "keyword": "brain fog", "growth": 455, "suspense": 88},
-            {"query": "Why you feel mentally exhausted without doing much", "keyword": "brain fog", "growth": 452, "suspense": 87},
-            {"query": "Why your brain feels like it is running in slow motion", "keyword": "brain fog", "growth": 448, "suspense": 90},
-            {"query": "Why you feel disconnected from your own thoughts", "keyword": "brain fog", "growth": 445, "suspense": 89},
-            {"query": "Why brain fog gets worse after eating", "keyword": "brain fog", "growth": 442, "suspense": 88},
-            {"query": "Why coffee stops working for brain fog after 40", "keyword": "brain fog", "growth": 438, "suspense": 91},
-            {"query": "Why your mind goes blank in important meetings", "keyword": "brain fog", "growth": 435, "suspense": 92},
-            {"query": "Why brain fog is a sign your body is inflamed", "keyword": "brain fog", "growth": 430, "suspense": 90},
-            {"query": "Why dehydration causes immediate brain fog", "keyword": "brain fog", "growth": 428, "suspense": 88},
-            {"query": "Why sugar crashes cause mental fog in men over 35", "keyword": "brain fog", "growth": 425, "suspense": 89},
-            {"query": "Why screen time makes brain fog worse", "keyword": "brain fog", "growth": 422, "suspense": 87},
-            {"query": "Why anxiety and brain fog always come together", "keyword": "brain fog", "growth": 420, "suspense": 88},
-            {"query": "Why poor gut health causes brain fog", "keyword": "brain fog", "growth": 418, "suspense": 89},
-            
-            # ── SLEEP & BRAIN ──────────────────────────────────────
-            {"query": "Why men wake up at 3am and cannot go back to sleep", "keyword": "sleep", "growth": 495, "suspense": 94},
-            {"query": "Why poor sleep destroys your memory the next day", "keyword": "sleep", "growth": 485, "suspense": 92},
-            {"query": "Why you wake up feeling more tired than when you slept", "keyword": "sleep", "growth": 480, "suspense": 91},
-            {"query": "Why your brain needs deep sleep to clear toxic waste", "keyword": "sleep", "growth": 475, "suspense": 93},
-            {"query": "Why one bad night of sleep makes you 40 percent less sharp", "keyword": "sleep", "growth": 470, "suspense": 95},
-            {"query": "Why men sleep lighter as they get older", "keyword": "sleep", "growth": 465, "suspense": 89},
-            {"query": "Why you dream less as you age and what it means", "keyword": "sleep", "growth": 460, "suspense": 88},
-            {"query": "Why you cannot nap even when exhausted", "keyword": "sleep", "growth": 455, "suspense": 87},
-            {"query": "Why your brain replays the day while you sleep", "keyword": "sleep", "growth": 450, "suspense": 90},
-            {"query": "Why alcohol ruins your sleep quality even if you fall asleep fast", "keyword": "sleep", "growth": 445, "suspense": 91},
-            {"query": "Why screen light before bed damages your memory", "keyword": "sleep", "growth": 435, "suspense": 88},
-            {"query": "Why snoring is quietly destroying your brain", "keyword": "sleep", "growth": 430, "suspense": 92},
-            {"query": "Why sleep deprivation looks exactly like early dementia", "keyword": "sleep", "growth": 428, "suspense": 94},
-            {"query": "Why your body temperature controls how deep you sleep", "keyword": "sleep", "growth": 425, "suspense": 87},
-            {"query": "Why sleeping less than 6 hours accelerates brain aging", "keyword": "sleep", "growth": 422, "suspense": 90},
-            
-            # ── FOCUS ──────────────────────────────────────────────
-            {"query": "Why men cannot focus for more than 20 minutes after 40", "keyword": "focus", "growth": 488, "suspense": 92},
-            {"query": "Why your attention span gets shorter every year", "keyword": "focus", "growth": 482, "suspense": 91},
-            {"query": "Why you lose focus the moment something gets difficult", "keyword": "focus", "growth": 478, "suspense": 90},
-            {"query": "Why your brain craves distraction when you need to focus", "keyword": "focus", "growth": 475, "suspense": 91},
-            {"query": "Why dopamine addiction makes focusing impossible", "keyword": "focus", "growth": 470, "suspense": 92},
-            {"query": "Why you can hyper focus on things you enjoy but not work", "keyword": "focus", "growth": 465, "suspense": 90},
-            {"query": "Why background noise destroys your concentration after 35", "keyword": "focus", "growth": 460, "suspense": 88},
-            {"query": "Why your brain takes 23 minutes to refocus after interruption", "keyword": "focus", "growth": 455, "suspense": 91},
-            {"query": "Why afternoon is the worst time for deep thinking", "keyword": "focus", "growth": 450, "suspense": 87},
-            {"query": "Why your focus collapses when you are slightly hungry", "keyword": "focus", "growth": 445, "suspense": 89},
-            {"query": "Why chronic stress permanently reduces your focus", "keyword": "focus", "growth": 440, "suspense": 90},
-            {"query": "Why exercise boosts focus better than caffeine", "keyword": "focus", "growth": 435, "suspense": 88},
-            {"query": "Why your phone is rewiring your focus circuits", "keyword": "focus", "growth": 430, "suspense": 92},
-            {"query": "Why silence is the most powerful focus tool your brain has", "keyword": "focus", "growth": 420, "suspense": 87},
-            
-            # ── AGING BRAIN ─────────────────────────────────────────
-            {"query": "Why your reaction time slows down after 40", "keyword": "aging", "growth": 472, "suspense": 89},
-            {"query": "Why your brain starts shrinking at 35 and what stops it", "keyword": "aging", "growth": 468, "suspense": 93},
-            {"query": "Why learning new things gets harder after 40", "keyword": "aging", "growth": 462, "suspense": 90},
-            {"query": "Why your vocabulary feels smaller than it used to", "keyword": "aging", "growth": 458, "suspense": 88},
-            {"query": "Why processing speed drops in your 40s", "keyword": "aging", "growth": 455, "suspense": 87},
-            {"query": "Why men become more forgetful in their 40s than women", "keyword": "aging", "growth": 450, "suspense": 89},
-            {"query": "Why your brain needs more recovery time after 40", "keyword": "aging", "growth": 445, "suspense": 86},
-            {"query": "Why men lose 1 percent of brain volume every year after 40", "keyword": "aging", "growth": 440, "suspense": 92},
-            {"query": "Why testosterone drop affects memory in men over 40", "keyword": "aging", "growth": 430, "suspense": 91},
-            {"query": "Why the brain is most vulnerable to aging between 45 and 55", "keyword": "aging", "growth": 428, "suspense": 90},
-            {"query": "Why exercise is the only proven way to slow brain aging", "keyword": "aging", "growth": 425, "suspense": 89},
-            {"query": "Why social isolation accelerates brain aging in men", "keyword": "aging", "growth": 422, "suspense": 88},
-            
-            # ── STRESS ──────────────────────────────────────────────
-            {"query": "Why chronic stress physically shrinks your brain", "keyword": "stress", "growth": 485, "suspense": 93},
-            {"query": "Why cortisol destroys memory in men over 35", "keyword": "stress", "growth": 478, "suspense": 92},
-            {"query": "Why your mind races at night but goes blank during the day", "keyword": "stress", "growth": 472, "suspense": 91},
-            {"query": "Why anxiety makes your memory worse", "keyword": "stress", "growth": 468, "suspense": 90},
-            {"query": "Why high achievers are most at risk of brain burnout", "keyword": "stress", "growth": 462, "suspense": 92},
-            {"query": "Why financial stress causes the same brain damage as trauma", "keyword": "stress", "growth": 458, "suspense": 93},
-            {"query": "Why men bottle up stress and what it does to the brain", "keyword": "stress", "growth": 455, "suspense": 91},
-            {"query": "Why work stress after 40 hits different than in your 30s", "keyword": "stress", "growth": 450, "suspense": 89},
-            
-            # ── ✅ NEW: MYSTERY CRISPY BODY SCIENCE ─────────────────
-            # Gut & Digestion
-            {"query": "Why your gut feeling is actually your second brain", "keyword": "body", "growth": 510, "suspense": 94},
-            {"query": "Why your stomach hurts for no reason after 35", "keyword": "body", "growth": 490, "suspense": 91},
-            {"query": "Why you feel bloated even when you eat the right things", "keyword": "body", "growth": 480, "suspense": 89},
-            {"query": "Why your digestion slows down as you get older", "keyword": "body", "growth": 470, "suspense": 88},
-            # Heart & Circulation
-            {"query": "Why your heart skips a beat for no reason", "keyword": "body", "growth": 505, "suspense": 95},
-            {"query": "Why your hands go cold even when the room is warm", "keyword": "body", "growth": 475, "suspense": 90},
-            {"query": "Why your blood pressure rises without warning after 40", "keyword": "body", "growth": 465, "suspense": 91},
-            # Energy & Fatigue
-            {"query": "Why you feel tired even after a full night's rest", "keyword": "body", "growth": 520, "suspense": 96},
-            {"query": "Why your energy crashes at 3pm every single day", "keyword": "body", "growth": 510, "suspense": 94},
-            {"query": "Why your body feels heavy when you wake up", "keyword": "body", "growth": 495, "suspense": 92},
-            {"query": "Why men lose energy faster than they gain it back after 40", "keyword": "body", "growth": 485, "suspense": 91},
-            # Muscle & Joint
-            {"query": "Why your knees hurt when you stand up after sitting", "keyword": "body", "growth": 488, "suspense": 90},
-            {"query": "Why your muscles take longer to recover than they used to", "keyword": "body", "growth": 478, "suspense": 89},
-            {"query": "Why your back hurts even when you didn't do anything", "keyword": "body", "growth": 472, "suspense": 88},
-            # Skin & Aging Signals
-            {"query": "Why your skin changes texture after 35 without warning", "keyword": "body", "growth": 465, "suspense": 87},
-            {"query": "Why dark circles appear even when you sleep enough", "keyword": "body", "growth": 460, "suspense": 86},
-            # Nervous System Mysteries
-            {"query": "Why you get random twitches in your eye or leg", "keyword": "body", "growth": 500, "suspense": 93},
-            {"query": "Why your body jerks right before you fall asleep", "keyword": "body", "growth": 495, "suspense": 94},
-            {"query": "Why your ears ring for no reason", "keyword": "body", "growth": 485, "suspense": 92},
-            {"query": "Why you feel dizzy for a second when you stand up", "keyword": "body", "growth": 478, "suspense": 91},
-            # Immune & Inflammation
-            {"query": "Why you get sick more often after you turn 40", "keyword": "body", "growth": 470, "suspense": 89},
-            {"query": "Why inflammation is silently damaging your body right now", "keyword": "body", "growth": 465, "suspense": 90},
-            # Metabolism & Weight
-            {"query": "Why your metabolism slows even when you eat less", "keyword": "body", "growth": 510, "suspense": 93},
-            {"query": "Why belly fat appears after 40 no matter what you do", "keyword": "body", "growth": 505, "suspense": 92},
-        ]
-
-    # ============================================================
-    # FETCH TRENDING TOPICS
-    # ============================================================
+    # Type 3: "This is why" hooks (personal)
+    "This is why YOU keep experiencing {topic}...",
+    "This is what YOUR brain does when {topic} happens...",
+    "This is why YOUR memory gets worse with {topic}...",
+    "This explains why {topic} happens to you...",
     
-    def fetch_trending_topics(self, timeframe: str = "now 1-d") -> List[Dict]:
-        """Fetch trending topics from Google Trends with rate limit handling"""
-        trending = []
-        
-        if not self.pytrends:
-            print("⚠️ Google Trends not available, using fallback")
-            return self._get_fallback_topics()
-        
-        # Only fetch 3 keywords per run to avoid rate limits
-        keywords = self.memory_keywords.copy()
-        random.shuffle(keywords)
-        keywords_to_fetch = keywords[:3]
-        
-        print(f"   🔍 Fetching {len(keywords_to_fetch)} keywords from Google Trends...")
-        
-        for keyword in keywords_to_fetch:
-            try:
-                print(f"   Fetching trends for: {keyword}")
-                time.sleep(random.uniform(2, 4))
-                
-                self.pytrends.build_payload(
-                    [keyword],
-                    cat=14,
-                    timeframe=timeframe,
-                    geo='US'
-                )
-                
-                related = self.pytrends.related_queries()
-                
-                if related and keyword in related:
-                    rising = related[keyword].get('rising')
-                    if rising is not None and not rising.empty:
-                        for _, row in rising.head(3).iterrows():
-                            query = str(row['query'])
-                            cleaned = self._clean_topic(query)
-                            
-                            if cleaned in self.used_topics:
-                                continue
-                            
-                            suspense = self._calculate_suspense_score(cleaned)
-                            viral_score = int(row.get('value', 50))
-                            
-                            trending.append({
-                                'query': cleaned,
-                                'keyword': keyword,
-                                'growth': float(row.get('value', 0)),
-                                'source': 'google_trends',
-                                'timestamp': datetime.now().isoformat(),
-                                'viral_score': min(100, viral_score + 20),
-                                'suspense_score': suspense,
-                                'pattern': self._select_viral_pattern(cleaned, suspense),
-                            })
-                            
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "rate" in error_str.lower():
-                    print(f"   ⚠️ Rate limited, waiting 60s...")
-                    time.sleep(60)
-                else:
-                    print(f"   ⚠️ Error fetching {keyword}: {e}")
-                continue
-        
-        if not trending:
-            print("⚠️ No trending topics found, using fallback")
-            return self._get_fallback_topics()
-        
-        return trending
-
-    # ============================================================
-    # CLEAN TOPICS
-    # ============================================================
+    # Type 4: "The reason" hooks (curiosity)
+    "The reason you keep experiencing {topic} is SIMPLER than you think...",
+    "The truth about {topic} is SURPRISING...",
+    "The science behind {topic} is FASCINATING...",
+    "The real reason behind {topic} is UNEXPECTED...",
     
-    def _clean_topic(self, query: str) -> str:
-        """Clean and format topic"""
-        if not query:
-            return ""
-        
-        query = re.sub(r'^\d+\s+', '', query)
-        query = re.sub(r'\s+(reasons|ways|things|facts|signs|tricks|hacks|tips)\s+', ' ', query)
-        
-        memory_terms = ['memory', 'forget', 'remember', 'recall', 'brain fog', 'fog', 'mental']
-        if not any(term in query.lower() for term in memory_terms):
-            query = f"why your memory {query}"
-        
-        return query.strip().capitalize()
-
-    # ============================================================
-    # CALCULATE SCORES
-    # ============================================================
+    # Type 5: "You're not broken" hooks (relief)
+    "Your brain isn't broken... it's just CHANGING with {topic}...",
+    "You're not losing your mind... you're just EXPERIENCING {topic}...",
+    "You're not getting dementia... your brain is just DOING {topic}...",
     
-    def _calculate_suspense_score(self, query: str) -> int:
-        """Calculate how relevant this topic is to memory/brain fog"""
-        query_lower = query.lower()
-        score = 50
-        
-        for keyword, value in self.suspense_scores.items():
-            if keyword in query_lower:
-                score = max(score, value)
-        
-        age_words = ['after 35', 'after 40', 'men', 'adult', 'older', 'age']
-        for word in age_words:
-            if word in query_lower:
-                score += 5
-        
-        personal_words = ['you', 'your', 'why do i', 'why am i', 'why cant']
-        for word in personal_words:
-            if word in query_lower:
-                score += 3
-        
-        return min(100, score)
+    # Type 6: "What's happening" hooks (engagement)
+    "What's happening in your brain when {topic} occurs...",
+    "Here's what {topic} actually means for your memory...",
+    "What {topic} does to your brain after 35...",
+    "What science says about {topic} and your brain...",
+]
 
-    def _select_viral_pattern(self, query: str, suspense_score: int) -> str:
-        """Select best viral pattern for the topic"""
-        query_lower = query.lower()
-        
-        if any(w in query_lower for w in ['brain fog', 'foggy', 'spaced', 'mental']):
-            return random.choice(self.viral_patterns['brain_fog'])
-        
-        if any(w in query_lower for w in ['memory', 'forget', 'remember', 'recall']):
-            return random.choice(self.viral_patterns['memory_insight'])
-        
-        # ✅ NEW: Body science pattern selection
-        body_words = ['gut', 'stomach', 'heart', 'tired', 'energy', 'muscle',
-                      'joint', 'back', 'knee', 'skin', 'inflammation', 'metabolism',
-                      'belly', 'dizzy', 'twitch', 'ringing', 'blood', 'circulation',
-                      'body', 'immune', 'fatigue', 'bloated', 'digestion']
-        if any(w in query_lower for w in body_words):
-            pattern_key = random.choice(['body_mystery', 'body_science'])
-            return random.choice(self.viral_patterns[pattern_key])
-        
-        if suspense_score > 85:
-            return random.choice(self.viral_patterns['memory_science'])
-        
-        if any(w in query_lower for w in ['you', 'your', 'my']):
-            return random.choice(self.viral_patterns['personal_stake'])
-        
-        return random.choice(self.viral_patterns['memory_insight'])
 
-    # ============================================================
-    # GET DAILY TOPICS
-    # ============================================================
+# ═══════════════════════════════════════════════════════════
+# HELPER: Format Prompt with Topic
+# ═══════════════════════════════════════════════════════════
+def format_prompt(template: str, **kwargs) -> str:
+    """
+    Format prompt with given variables
+    Automatically includes NEGATIVE_CONSTRAINTS if present in template
+    """
+    if '{NEGATIVE_CONSTRAINTS}' in template:
+        kwargs.setdefault('NEGATIVE_CONSTRAINTS', NEGATIVE_CONSTRAINTS)
     
-    def _load_used_topics(self) -> set:
-        """✅ FIX: Disk se used topics load karo (restart-safe)"""
-        try:
-            import json, os
-            if os.path.exists(self.USED_TOPICS_FILE):
-                with open(self.USED_TOPICS_FILE, 'r') as f:
-                    data = json.load(f)
-                topics = set(data.get('topics', []))
-                print(f"📂 Loaded {len(topics)} used topics from disk")
-                return topics
-        except Exception as e:
-            print(f"⚠️ Could not load used topics: {e}")
-        return set()
+    return template.format(**kwargs)
 
-    def _save_used_topics(self):
-        """✅ FIX: Used topics ko disk par save karo"""
-        try:
-            import json, os
-            os.makedirs(os.path.dirname(self.USED_TOPICS_FILE), exist_ok=True)
-            with open(self.USED_TOPICS_FILE, 'w') as f:
-                json.dump({'topics': list(self.used_topics)}, f)
-        except Exception as e:
-            print(f"⚠️ Could not save used topics: {e}")
 
-    def get_daily_topics(self, count: int = 1) -> List[Dict]:
-        """Get daily topics with variety and fallback"""
-        random.seed()
-        
-        # ✅ FIX: 150 topics ke baad reset (zyada variety)
-        if len(self.used_topics) > 150:
-            self.used_topics.clear()
-            self._save_used_topics()
-            print("🔄 Cleared used topics cache (limit reached)")
-        
-        topics = []
-        
-        # Try Google Trends (reduced calls)
-        try:
-            trending = self.fetch_trending_topics("now 1-d")
-            if trending:
-                topics = trending
-        except Exception as e:
-            print(f"⚠️ Google Trends failed: {e}")
-        
-        # If no topics, use fallback
-        if not topics:
-            print("⚠️ Using fallback topics")
-            topics = self._get_fallback_topics()
-        
-        # Sort by viral score
-        topics.sort(key=lambda x: (x.get('viral_score', 0) + x.get('suspense_score', 50)), reverse=True)
-        unique = list({t['query']: t for t in topics}.values())
-        
-        # Filter used topics
-        fresh_topics = [t for t in unique if t['query'] not in self.used_topics]
-        
-        if not fresh_topics and self.used_topics:
-            self.used_topics.clear()
-            self._save_used_topics()
-            fresh_topics = unique[:count]
-        
-        result_topics = fresh_topics[:count]
-        
-        # Mark as used aur disk par save karo
-        for t in result_topics:
-            self.used_topics.add(t['query'])
-        self._save_used_topics()  # ✅ FIX: Disk par save
-        
-        random.shuffle(result_topics)
-        
-        return result_topics
-
-    # ============================================================
-    # FALLBACK TOPICS
-    # ============================================================
+def generate_modern_hooks(topic: str, count: int = 5) -> List[str]:
+    """Generate modern 2026 hooks for a topic"""
+    hooks = []
+    templates = random.sample(MODERN_HOOK_TEMPLATES, min(count, len(MODERN_HOOK_TEMPLATES)))
     
-    def _get_fallback_topics(self) -> List[Dict]:
-        """Get fallback topics with variety"""
-        fallbacks = self.fallback_topics.copy()
-        random.shuffle(fallbacks)
-        
-        fresh_fallbacks = [t for t in fallbacks if t['query'] not in self.used_topics]
-        
-        if not fresh_fallbacks and self.used_topics:
-            self.used_topics.clear()
-            fresh_fallbacks = fallbacks
-        
-        for t in fresh_fallbacks:
-            t['pattern'] = self._select_viral_pattern(t['query'], t.get('suspense', 70))
-            t['source'] = 'fallback'
-            t['viral_score'] = t.get('viral_score', 80)
-        
-        return fresh_fallbacks
-
-    # ============================================================
-    # GET TOPIC METADATA
-    # ============================================================
+    for template in templates:
+        hook = template.format(topic=topic)
+        hooks.append(hook)
     
-    def get_topic_metadata(self, topic_data: Dict) -> Dict:
-        """Return enriched metadata for a topic"""
-        query = topic_data.get('query', '')
-        suspense = self._calculate_suspense_score(query)
-        pattern = self._select_viral_pattern(query, suspense)
-        
-        return {
-            'query': query,
-            'suspense_score': suspense,
-            'viral_pattern': pattern,
-            'keywords': [k for k in self.suspense_scores.keys() if k in query.lower()][:5],
-            'estimated_views': '10K-100K',
-            'difficulty': 'low',
-            'timestamp': datetime.now().isoformat(),
-        }
-
-    def clear_used_topics(self):
-        """Clear used topics cache (memory + disk)"""
-        self.used_topics.clear()
-        self._save_used_topics()  # ✅ FIX: Disk bhi clear karo
-        print("🧹 Cleared used topics cache (memory + disk)")
-
-    def get_stats(self) -> Dict:
-        """Get topic engine statistics"""
-        return {
-            'used_topics_count': len(self.used_topics),
-            'fallback_topics_count': len(self.fallback_topics),
-            'memory_keywords_count': len(self.memory_keywords),
-            'trending_available': self.pytrends is not None,
-        }
+    return hooks
 
 
-# ============================================================
-# TEST
-# ============================================================
+# ═══════════════════════════════════════════════════════════
+# TEST THE PROMPTS
+# ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    print("🚀 TESTING TOPIC ENGINE\n" + "="*60)
+    print("🚀 TESTING PROMPTS\n" + "="*60)
     
-    engine = ViralTopicEngine()
+    # Test title generation
+    print("\n📝 TITLE PROMPT:")
+    title_prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic="forgetting names")
+    print(title_prompt[:500] + "...")
     
-    print("\n📊 Fetching 5 topics...")
-    topics = engine.get_daily_topics(count=5)
+    # Test script generation
+    print("\n🎬 SCRIPT PROMPT:")
+    script_prompt = format_prompt(
+        VIRAL_SCRIPT_GENERATOR,
+        topic="forgetting names",
+        angle="Why men forget names after 40",
+        shock_angle="Your brain is pruning memories you'll never get back"
+    )
+    print(script_prompt[:500] + "...")
     
-    print(f"\n✅ Found {len(topics)} topics:\n")
-    
-    for i, topic in enumerate(topics, 1):
-        print(f"{i}. {topic.get('query')}")
-        print(f"   Viral Score: {topic.get('viral_score', 0)}")
-        print(f"   Suspense Score: {topic.get('suspense_score', 0)}")
-        print(f"   Pattern: {topic.get('pattern', 'unknown')}")
-        print(f"   Source: {topic.get('source', 'unknown')}")
-        print()
-    
-    print("\n📊 STATS:")
-    print(engine.get_stats())
+    # Test modern hooks
+    print("\n🎯 MODERN HOOKS (25+ templates):")
+    hooks = generate_modern_hooks("forgetting names", 5)
+    for i, hook in enumerate(hooks, 1):
+        print(f"   {i}. {hook}")
     
     print("\n" + "="*60)
-    print("✅ Topic Engine ready!")
+    print("✅ All prompts loaded successfully!")
