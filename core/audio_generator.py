@@ -65,11 +65,11 @@ class AudioGenerator:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
 
-    async def _generate_word_timings_fallback(self, audio_path: str, text: str) -> List[Dict]:
+    async def _generate_word_timings_fallback(self, audio_path: str, text: str, dramatic_offset: float = 0.0) -> List[Dict]:
         """
-        FIXED v2: Syllable-weighted timing engine.
-        Groq Troy gives no word boundaries, so we estimate from actual audio
-        duration using syllable counts — much better caption sync than char-length.
+        FIXED v3: Syllable-weighted timing engine with dramatic_offset support.
+        dramatic_offset: [dramatic] tag ki wajah se audio start delay (seconds)
+        Captions voice ke saath start aur end par match karti hain
         """
         dur = await self._get_audio_duration_async(audio_path)
         words = text.split()
@@ -90,8 +90,11 @@ class AudioGenerator:
             w = syl * 1.0 + (0.15 if len(word) > 7 else 0)
             weights.append(max(0.5, w))
 
-        scale = dur / sum(weights)
-        timings, cur = [], 0.0
+        # ✅ FIX: effective duration (minus dramatic tag delay)
+        effective_dur = max(1.0, dur - dramatic_offset)
+        scale = effective_dur / sum(weights)
+        # ✅ FIX: captions dramatic_offset ke baad shuru hongi (voice ke saath)
+        timings, cur = [], dramatic_offset
 
         for word, weight in zip(words, weights):
             clean = word.strip('.,!?;:\"()[]{}"\'')
@@ -126,10 +129,15 @@ class AudioGenerator:
         raw_combined_text = " ".join(text_pieces)
         clean_final_text = self._sanitize_plain_text(raw_combined_text)
         
+        # ✅ FIX: TTS ke liye [dramatic] prefix add karo, lekin
+        # caption timings SIRF original text par calculate hongi
+        # [dramatic] tag captions mein nahi aana chahiye
+        caption_text = clean_final_text  # Clean text for caption sync
+        
         if not clean_final_text.startswith("["):
             clean_final_text = f"[dramatic] {clean_final_text}"
             
-        all_words = len(clean_final_text.split())
+        all_words = len(caption_text.split())  # Caption word count (no prefix)
 
         if all_words <= 1:
             raise ValueError("❌ No valid script text found to send to Groq TTS.")
@@ -200,7 +208,11 @@ class AudioGenerator:
                 pass
 
         total_duration = await self._get_audio_duration_async(final_path_mp3)
-        all_word_timings = await self._generate_word_timings_fallback(final_path_mp3, clean_final_text)
+        # ✅ FIX: caption_text use karo (without [dramatic] prefix)
+        # Pehle ~0.3s ka offset skip karo jo [dramatic] tag leta hai
+        all_word_timings = await self._generate_word_timings_fallback(
+            final_path_mp3, caption_text, dramatic_offset=0.3
+        )
 
         print(f"    ✅ Voice Track Verified: {total_duration:.1f}s | Captions synced.")
 
