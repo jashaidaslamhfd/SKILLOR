@@ -86,10 +86,14 @@ class HookEngine:
         self.modern_patterns = [
             r'(your|you\'re|you are).*?(already|right now|been|quietly|actually)',
             r'nobody tells you',
+            r'nobody ever',
             r'this is why.*?you',
             r'the reason.*?is (simpler|surprising|fascinating)',
-            r'you\'re not.*?your brain is just',
-            r'your brain is (already|quietly|actually)',
+            r'you\'re not.*?your (brain|body) is just',
+            r'your (brain|body) is (already|quietly|actually|doing)',
+            r'this happens to your (brain|body)',
+            r'you\'ve (felt|experienced|done) this',
+            r'every (single )?(day|time|night)',
         ]
         
         # Old patterns (will cause SWIPE) - with IGNORECASE
@@ -371,9 +375,11 @@ RULES for 2026 hooks:
 4. MUST be 8-10 words
 5. MUST end with "..."
 
-EXAMPLES:
-- "Your brain is ALREADY forgetting names you just heard..."
-- "Nobody tells you what actually happens to memory..."
+EXAMPLES (universal, all ages):
+- "Your body is ALREADY doing something you never knew about..."
+- "Nobody ever explains why your body does this to you..."
+- "This is why YOU keep experiencing this every single day..."
+- "You've felt this your whole life... here's why..."
 
 Return ONLY the rewritten hook. No prefix, no explanation.
 """
@@ -393,11 +399,13 @@ Return ONLY the rewritten hook. No prefix, no explanation.
     def _generate_fallback_hook(self, topic: str) -> str:
         """Generate fallback hook - with variety"""
         fallbacks = [
-            f"Your brain is ALREADY changing how it handles {topic}...",
-            f"Nobody tells you what {topic} actually does to your brain...",
+            f"Your body is doing something RIGHT NOW about {topic}...",
+            f"Nobody ever explains why your body does {topic}...",
             f"This is why YOU keep experiencing {topic}...",
-            f"The reason you {topic} is SIMPLER than you think...",
-            f"Your brain isn't broken... it's just CHANGING with {topic}...",
+            f"The real reason behind {topic} is SIMPLER than you think...",
+            f"Your body isn't broken... it's just DOING {topic}...",
+            f"This happens to your body every day with {topic}...",
+            f"You've experienced {topic} your whole life... here's why...",
         ]
         # FIX: Random selection for variety
         return random.choice(fallbacks)
@@ -438,19 +446,23 @@ Return ONLY the rewritten hook. No prefix, no explanation.
         prompt = f"""
 Write 5 DIFFERENT modern hooks for this topic: {topic}
 
+AUDIENCE: ALL AGES (13-65+) — universal, anyone should relate.
+
 RULES:
 1. MUST be statements (NOT questions)
 2. MUST use "you/your"
-3. MUST use urgency words: "already", "right now", "been"
+3. MUST use urgency: "already", "right now", "been", "every day"
 4. MUST be 8-10 words
 5. MUST end with "..."
+6. NO age references (no "after 35", "after 40")
+7. NO gender references (no "men", "women")
 
-Make each hook DIFFERENT from the others. Use different opening words:
-- "Your brain is ALREADY..."
-- "Nobody tells you..."
-- "This is why YOU..."
-- "The reason you..."
-- "You're not..."
+Use these openers:
+- "Your body is ALREADY..."
+- "Nobody ever explains why your body..."
+- "This is why YOU keep experiencing..."
+- "The real reason behind..."
+- "You've felt this your whole life..."
 
 Return ONLY 5 hooks, one per line. No numbers.
 """
@@ -626,7 +638,7 @@ if __name__ == "__main__":
     
     # Generate multiple hooks to show variety
     print("Generating hooks for same topic - showing variety:\n")
-    topics = ["forgetting names", "brain fog", "memory loss"]
+    topics = ["why your body jerks before sleep", "why a song gets stuck in your head", "why you feel deja vu"]
     
     for topic in topics:
         print(f"\n📝 Topic: {topic}")
