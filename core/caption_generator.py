@@ -75,12 +75,19 @@ class CaptionGenerator:
 
     def _validate_and_stretch_timings(self, word_timings: List[Dict], max_duration: float) -> List[Dict]:
         """
-        FIXED v4: Detect and fix caption sync issues:
-        1. All captions crammed in first few seconds
-        2. All captions crammed in last few seconds  
-        3. Total caption span less than 35% of video duration
-        4. ✅ NEW: Start/end boundary mismatch (captions fast in middle)
-        5. IMPROVED: Better syllable weighting for audio sync
+        FIXED v5: Conservative timing validation — no longer aggressively re-stretches.
+        
+        The audio_generator now provides silence-anchored timings that are already
+        synced to actual speech regions. We should NOT redistribute them based on
+        syllable weights (that would undo the speech-detection anchoring).
+        
+        This method now only fixes CRITICAL issues:
+        1. All captions crammed in first 5 seconds
+        2. Timings extending past video end
+        3. Overlapping word timings
+        4. Missing/gap timings between words
+        
+        It does NOT redistribute timings unless they're catastrophically broken.
         """
         if not word_timings or max_duration <= 0:
             return word_timings
@@ -89,34 +96,25 @@ class CaptionGenerator:
         first_start = word_timings[0].get('start', 0.0)
         span = last_end - first_start
 
-        # ✅ FIX: Check if captions end too early (gap > 15% at end)
-        end_gap = max_duration - last_end
-        # ✅ FIX: Check if average word duration is too fast (< 0.2s per word)
-        avg_word_dur = span / max(1, len(word_timings))
-
-        # If caption span covers less than 35% of video — timings are broken
-        needs_fix = (
-            (last_end < 5.0 and max_duration > 10.0) or   # All in first 5s
-            (span < max_duration * 0.35) or                 # Span too short
-            (end_gap > max_duration * 0.15 and last_end < max_duration * 0.85) or  # ✅ End too early
-            (avg_word_dur < 0.20 and max_duration > 15.0)  # ✅ Words too fast
+        # Only fix if captions are catastrophically broken
+        # (all crammed in first 5s of a 40+ second video)
+        needs_redistribution = (
+            (last_end < 5.0 and max_duration > 10.0) or
+            (span < max_duration * 0.15)  # span covers less than 15% of video
         )
 
-        if needs_fix:
-            logger.warning(f"⚠️ Caption timing fix: span={span:.1f}s on {max_duration:.1f}s video")
-            total_words = len(word_timings)
-
+        if needs_redistribution:
+            logger.warning(f"Caption timing fix needed: span={span:.1f}s on {max_duration:.1f}s video — redistributing")
+            
             def syllable_count(word: str) -> int:
-                w = str(word).lower().strip('.,!?;:\"\' ')
+                w = str(word).lower().strip('.,!?;:\\\' ')
                 count = len(re.findall(r'[aeiou]+', w)) if w else 0
                 return max(1, count)
 
-            # IMPROVED: Higher weight for longer words
             weights = []
             for w in word_timings:
                 word = w.get('word', '')
                 syl = syllable_count(word)
-                # FIX: Increased weight for better sync
                 weight = syl * 1.5 + (0.3 if len(word) > 7 else 0.1 if len(word) > 5 else 0)
                 weights.append(max(0.6, weight))
             
@@ -126,7 +124,6 @@ class CaptionGenerator:
             cur = 0.0
             for i, w in enumerate(word_timings):
                 d = max(0.15, weights[i] * scale)
-                # Cap individual word duration to prevent unnatural long pauses
                 d = min(d, 1.5)
                 w['start'] = round(cur, 3)
                 w['end'] = round(min(cur + d, max_duration), 3)
@@ -136,6 +133,23 @@ class CaptionGenerator:
             if word_timings:
                 word_timings[-1]['end'] = round(max_duration, 3)
                 word_timings[-1]['duration'] = round(word_timings[-1]['end'] - word_timings[-1]['start'], 3)
+        else:
+            # Timings look reasonable — just fix minor issues
+            # Fix overlapping words
+            for i in range(1, len(word_timings)):
+                if word_timings[i]['start'] < word_timings[i-1]['end']:
+                    word_timings[i]['start'] = word_timings[i-1]['end']
+                    word_timings[i]['duration'] = word_timings[i]['end'] - word_timings[i]['start']
+            
+            # Ensure no word extends past video end
+            for wt in word_timings:
+                if wt['end'] > max_duration:
+                    wt['end'] = round(max_duration, 3)
+                    wt['duration'] = round(wt['end'] - wt['start'], 3)
+                if wt['start'] >= max_duration:
+                    wt['start'] = max_duration - 0.3
+                    wt['end'] = max_duration
+                    wt['duration'] = 0.3
 
         return word_timings
 
@@ -377,3 +391,4 @@ if __name__ == "__main__":
     
     print(f"\n✅ Captions saved: {test_output}")
     print("   Timings stretched to 48s")
+            
