@@ -273,27 +273,15 @@ class YouTubeUploader:
                 'title': title,
                 'description': description,
                 'tags': tags,
-                'categoryId': str(getattr(SEO_CONFIG, 'CATEGORY_ID', '27')),  # FIX C4: Fallback changed from '22' (People & Blogs) to '27' (Education) to match SEO_CONFIG
-                'defaultLanguage': 'en',  # FIX: Primary language = English for USA targeting
-                # defaultAudioLanguage helps YouTube match to English-speaking audience
-                'defaultAudioLanguage': 'en-US',  # FIX: American English audio for USA algorithm targeting
+                'categoryId': str(getattr(SEO_CONFIG, 'CATEGORY_ID', '27')),
+                'defaultLanguage': 'en',
+                'defaultAudioLanguage': 'en',
             },
             'status': {
                 'privacyStatus': privacy_status,
                 'selfDeclaredMadeForKids': getattr(SEO_CONFIG, 'MADE_FOR_KIDS', False),
+                'madeForKids': getattr(SEO_CONFIG, 'MADE_FOR_KIDS', False),
             },
-            # FIX: Geo-targeting hints for USA audience
-            # recordingDetails.location tells YouTube where the content is FROM
-            # This biases the recommendation algorithm toward US viewers
-            'recordingDetails': {
-                'location': {
-                    'latitude': 37.0902,    # Geographic center of USA
-                    'longitude': -95.7129,
-                    'altitude': 0,
-                },
-                'locationDescription': 'United States',
-                'recordingDate': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-            }
         }
 
         # Create upload request
@@ -457,3 +445,4 @@ def setup_github_actions_cache():
             print(f"  ⚠️ Could not load cache: {e}")
     
     return False
+                
