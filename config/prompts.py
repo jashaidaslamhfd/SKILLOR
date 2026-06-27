@@ -112,15 +112,23 @@ WINNING TITLE TYPES:
 ✅ "What [X] actually does to your body"
 
 TITLE RULES:
-- 6-8 words MAX + 1 emoji
-- NO age or gender references
+- 5-8 words MAX + 1 emoji at the end
+- NO age or gender references ("after 35", "men", "women")
 - MUST be a statement (not question)
 - MUST create curiosity gap
 - MUST feel universal — any age should think "this is me"
+- NO repeating words in the same title
+- NO incomplete sentences or cut-off words
+- Each title must be COMPLETE and make sense on its own
 
 TOPIC: {topic}
 
-Return 5 COMPLETELY DIFFERENT titles, one per line. No numbers. No bullets.
+IMPORTANT:
+- Return EXACTLY 5 titles
+- One title per line
+- No numbers, no bullets, no dashes
+- No explanations or headers
+- Just the 5 titles, nothing else
 """
 
 # ═══════════════════════════════════════════════════════════
