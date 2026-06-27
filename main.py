@@ -78,7 +78,7 @@ class YouTubeAutomation:
 ║   🎯 Niche: Brain & Body Science Facts (Universal)        ║
 ║   📱 Format: YouTube Shorts (1080x1920, 42-55s)            ║
 ║   🤖 AI: Groq LLM + Self-Correcting Hooks                  ║
-║   🎙️ Voice: en-US-GuyNeural (Deep, Mature)                ║
+║   🎙️ Voice: Groq Orpheus (troy)                            ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
         """
@@ -208,7 +208,6 @@ class YouTubeAutomation:
             results = await self.orchestrator.run_pipeline(
                 count=count,
                 specific_topic=specific_topic,
-                upload=True,
                 skip_upload=skip_upload
             )
             
@@ -379,3 +378,4 @@ if __name__ == "__main__":
         print(f"\n❌ Fatal error: {e}")
         traceback.print_exc()
         sys.exit(1)
+        
