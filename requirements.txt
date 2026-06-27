@@ -1,0 +1,133 @@
+# ============================================================
+# YouTube Automation System - Production Requirements (FIXED)
+# ============================================================
+# Python 3.11+ Recommended (Fully Supports Google API Core Lifecycles)
+# 
+# Installation:
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# System Requirements (install separately):
+#   - FFmpeg (required for video/audio processing)
+#   - Git (for version control)
+# ============================================================
+
+# ============================================================
+# CORE DEPENDENCIES (With Version Pins)
+# ============================================================
+
+# HTTP Requests & Async
+requests>=2.32.0,<3.0.0
+aiohttp>=3.10.5,<4.0.0  # Instagram async upload
+
+# ============================================================
+# AI & LLM (CRITICAL RE-PIN FOR PYPI STABILITY)
+# ============================================================
+
+# Groq API - AI Script Generation (Fixed crash: version range matches PyPI releases)
+groq>=1.1.0,<2.0.0
+
+# OpenAI - Fallback (NOT NEEDED — Groq API is used exclusively)
+# openai>=1.1.0,<2.0.0
+
+# ============================================================
+# TEXT-TO-SPEECH & AUDIO
+# ============================================================
+
+# Edge TTS - NOT USED (Groq Orpheus TTS is used instead)
+# edge-tts>=6.1.3,<7.0.0
+
+# Audio/Video Processing (FFmpeg wrapper)
+ffmpeg-python>=0.2.0,<1.0.0
+
+# ============================================================
+# IMAGE PROCESSING
+# ============================================================
+
+# Image Processing (Thumbnails, Captions)
+Pillow>=10.4.0,<11.0.0
+
+# ============================================================
+# CLOUD & STORAGE
+# ============================================================
+
+# Cloudinary - Instagram video URL hosting (Fixed version bounds)
+cloudinary>=1.36.0,<2.0.0
+
+# ============================================================
+# YOUTUBE API
+# ============================================================
+
+# Google APIs for YouTube Upload (Secured against Python 3.11 support warnings)
+google-api-python-client>=2.100.0,<3.0.0
+google-auth-httplib2>=0.2.0,<1.0.0
+google-auth-oauthlib>=1.2.0,<2.0.0
+
+# ============================================================
+# TRENDING TOPICS
+# ============================================================
+
+# Google Trends - Topic Discovery
+pytrends>=4.9.0,<5.0.0
+
+# HTML/XML Parsing (Required by pytrends - Upgraded for security compliance)
+lxml>=5.2.0,<6.0.0
+
+# ============================================================
+# UTILITIES
+# ============================================================
+
+# Environment Variables
+python-dotenv>=1.0.1,<2.0.0
+
+# Data Handling — numpy NOT REQUIRED (no array/math operations used)
+# numpy>=1.26.4,<2.0.0
+
+# Timezone Handling — NOT USED (Python 3.11+ has zoneinfo built-in)
+# pytz>=2024.1
+
+# Scheduling — NOT USED (GitHub Actions handles scheduling)
+# apscheduler>=3.10.4,<4.0.0
+
+# Decorators — NOT USED (Python has built-in @decorator support)
+# decorator>=5.1.1,<6.0.0
+
+# ============================================================
+# OPTIONAL (Recommended for Production)
+# ============================================================
+
+# Retry Logic — NOT USED (custom retry logic in each module)
+# tenacity>=8.3.0,<9.0.0
+
+# Rate Limiting — NOT USED (custom rate limiting in each module)
+# ratelimit>=2.2.1,<3.0.0
+
+# Date/Time Handling
+python-dateutil>=2.9.0,<3.0.0
+
+# JSON Handling — ujson NOT REQUIRED (standard json module is sufficient)
+# ujson>=5.10.0,<6.0.0
+
+# ============================================================
+# DEVELOPMENT (Optional - Not Required for Production)
+# ============================================================
+
+# Interactive Debugging
+# ipython>=8.24.0,<9.0.0
+
+# Code Quality
+# black>=24.4.2,<25.0.0
+# flake8>=7.0.0,<8.0.0
+# mypy>=1.10.0,<2.0.0
+
+# ============================================================
+# QUICK INSTALL COMMAND
+# ============================================================
+# For GitHub Actions / Production:
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# For Development with extra tools:
+#   pip install -r requirements.txt
+#   pip install ipython black flake8 mypy
+# ============================================================
