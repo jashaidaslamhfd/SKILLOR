@@ -37,54 +37,44 @@ class ContentGenerator:
         # FIX: SHOCK FACT FALLBACKS - 30+ UNIQUE FACTS
         # ============================================================
         self.shock_fact_fallbacks = [
-            # Memory Facts
+            # Universal Brain Facts
             "Your brain can store 2.5 petabytes of information... that's 3 million hours of TV.",
             "You forget 50% of what you learn within an hour... and 90% within a week.",
-            "Your brain's storage capacity is virtually unlimited... but your recall is not.",
-            "Every time you remember something, your brain rewrites that memory.",
-            "Your brain reorganizes itself every time you learn something new.",
-            
-            # Brain Facts
-            "Your brain uses 20% of your body's oxygen and calories.",
-            "Your brain is 60% fat and 73% water... staying hydrated matters.",
-            "Your brain has 86 billion neurons... and each connects to 10,000 others.",
+            "Every time you remember something, your brain actually rewrites that memory.",
+            "Your brain reorganizes itself every single time you learn something new.",
+            "Your brain has 86 billion neurons... and each one connects to 10,000 others.",
             "Your brain generates 23 watts of power while awake... enough to light a bulb.",
             "Your brain processes information at speeds up to 120 meters per second.",
-            
-            # Aging Brain Facts
-            "Your brain shrinks by about 1% every year after age 40.",
-            "After 35, your brain's processing speed slows by 15% every decade.",
-            "Your brain's white matter peaks at age 45... then declines.",
-            "Your brain loses 1 gram of mass every year after 40.",
-            "By age 50, your brain has lost 10% of its peak volume.",
-            
-            # Sleep & Brain Facts
-            "Your brain cleans itself only while you sleep... 60% less cleaning if sleep deprived.",
-            "One bad night's sleep reduces your cognitive performance by 40%.",
-            "Your brain needs 7-8 hours of sleep to flush out toxic waste.",
-            "Sleep deprivation accelerates brain aging by 3-5 years.",
-            "Your brain creates 2 million new connections every night while you sleep.",
-            
-            # Stress Facts
-            "Chronic stress kills brain cells in the hippocampus... your memory center.",
-            "Stress can shrink your brain's prefrontal cortex... affecting decision making.",
-            "High cortisol levels age your brain by 6-8 years.",
-            "Stress reduces brain volume in areas responsible for memory.",
-            "Every stressful event releases cortisol... and damages your memory.",
-            
-            # Focus & Attention Facts
-            "Your brain can only focus on one complex task at a time.",
-            "It takes 23 minutes to fully refocus after a single interruption.",
-            "Your attention span has dropped by 33% in the last 20 years.",
-            "Multi-tasking reduces productivity by up to 40%.",
-            "Your brain's peak focus time is only 90 minutes.",
-            
-            # Memory & Learning Facts
-            "Your brain can form new memories in just 0.1 seconds.",
+            "Your brain can form a new memory in just 0.1 seconds.",
             "Emotional memories are 3 times stronger than neutral ones.",
-            "Your brain prioritizes negative experiences for survival.",
-            "Learning new skills creates 10 times more neural connections.",
-            "Your brain rewires itself every time you practice something new.",
+            "Your brain prioritizes negative experiences... it's wired for survival.",
+            "Your brain can only truly focus on one complex task at a time.",
+            "It takes 23 minutes to fully refocus after a single interruption.",
+            "Your brain's peak focus window is only 90 minutes at a time.",
+            "Your brain uses 20% of your entire body's energy... just to think.",
+            "Your brain is 73% water... even mild dehydration slows it down.",
+
+            # Universal Body Facts
+            "Your gut has 100 million neurons... almost as many as your entire spinal cord.",
+            "Your heart sends more signals to your brain than your brain sends back.",
+            "Your body replaces 96% of its atoms every single year.",
+            "Your skin replaces itself completely every 2 to 4 weeks.",
+            "Your body produces a completely new skeleton every 10 years.",
+            "You blink 15 to 20 times a minute... and barely notice any of them.",
+            "Your body has enough iron in it to make a small nail.",
+            "Your nose can detect over 1 trillion different smells.",
+            "Your eyes can distinguish over 10 million different colors.",
+            "Your body produces about 25 million new cells every single second.",
+            "Your heart beats roughly 100,000 times every single day.",
+            "Your blood travels 12,000 miles through your body every day.",
+            "Your lungs have 300 million tiny air sacs called alveoli.",
+            "Your body has more bacterial cells than human cells right now.",
+            "A sneeze travels at up to 100 miles per hour when it leaves your body.",
+            "Your tongue print is as unique as your fingerprint.",
+            "Your body generates enough heat to boil water in 30 minutes.",
+            "The surface area of your lungs is roughly the size of a tennis court.",
+            "Your body has around 37 trillion cells all working at once.",
+            "Your bones are 5 times stronger than steel of the same density.",
         ]
         
         self.used_shock_facts = set()  # Track used facts to prevent repetition
@@ -293,67 +283,156 @@ class ContentGenerator:
         }
 
     def generate_title(self, topic: str) -> str:
-        """Generate title - FIXED"""
+        """Generate title - FIXED v2: No duplicates, no broken text, clean output"""
         prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic=topic)
-        raw = self._call_groq(prompt, max_tokens=100)
+        raw = self._call_groq(prompt, max_tokens=150)
         
         if raw:
-            titles = [t.strip() for t in raw.split('\n') if t.strip()]
-            if titles:
-                title = titles[0]
+            lines = [t.strip() for t in raw.split('\n') if t.strip()]
+            
+            for title in lines:
+                # ✅ FIX 1: Remove numbering like "1.", "2.", "-", "*"
+                title = title.lstrip('0123456789.-*) ').strip()
+                
+                # ✅ FIX 2: Skip lines that are headers or instructions
+                skip_words = ['type', 'hook', 'rule', 'example', 'avoid', 'use:', 'must', 'return']
+                if any(s in title.lower() for s in skip_words):
+                    continue
+                
+                # ✅ FIX 3: Skip lines that are too short or too long
                 words = title.split()
-                if len(words) > 6:
-                    title = ' '.join(words[:6])
+                if len(words) < 3 or len(words) > 12:
+                    continue
+                
+                # ✅ FIX 4: Skip if title contains duplicate words back-to-back
+                # e.g. "Why ignoring Why men..." — "Why" repeated
+                title_words_lower = [w.lower() for w in words]
+                has_duplicate = any(
+                    title_words_lower[i] == title_words_lower[i+1]
+                    for i in range(len(title_words_lower)-1)
+                )
+                if has_duplicate:
+                    continue
+                
+                # ✅ FIX 5: Skip if title has broken/incomplete words (< 3 chars at end that arent emoji)
+                last_word = words[-1]
+                if len(last_word) < 3 and not any(c for c in last_word if ord(c) > 127):
+                    continue
+                
+                # ✅ FIX 6: Ensure emoji at end (add if missing)
+                has_emoji = any(ord(c) > 127 for c in title)
+                if not has_emoji:
+                    topic_emojis = {
+                        'body': '🧬', 'brain': '🧠', 'memory': '🧠',
+                        'forget': '🤔', 'heart': '❤️', 'gut': '💚',
+                        'sleep': '😴', 'energy': '⚡', 'muscle': '💪',
+                        'eye': '👁️', 'ear': '👂', 'skin': '✨',
+                    }
+                    emoji = '🧠'
+                    for key, em in topic_emojis.items():
+                        if key in topic.lower() or key in title.lower():
+                            emoji = em
+                            break
+                    title = title + ' ' + emoji
+                
                 return title
         
+        # ✅ FIX 7: Clean fallbacks — no topic variable in awkward positions
+        topic_short = ' '.join(topic.split()[:4])  # max 4 words from topic
         fallbacks = [
-            f"Your brain is forgetting {topic} right now 🧠",
-            f"Why your {topic} gets worse after 35 🧠",
-            f"Nobody tells men about {topic} after 40 😳",
-            f"Your memory is changing with {topic} right now"
+            f"Nobody explains why your body does this 🧬",
+            f"Your brain has been hiding this from you 🧠",
+            f"This happens to your body every single day 🤔",
+            f"The real reason your body does {topic_short} 👀",
+            f"What your body is quietly doing right now ⚡",
         ]
         return random.choice(fallbacks)
 
     def generate_thumbnail_words(self, topic: str) -> List[str]:
-        """Generate 3 words for thumbnail"""
-        base_words = ['MEMORY', 'BRAIN', 'FOG']
-        topic_words = [w.upper() for w in topic.split() if len(w) > 2]
-        all_words = topic_words + base_words
-        seen = set()
-        unique = []
-        for w in all_words:
-            if w not in seen and len(w) >= 3:
-                seen.add(w)
-                unique.append(w)
+        """Generate 3 high-CTR words for thumbnail — FIXED v2"""
+        topic_lower = topic.lower()
         
-        while len(unique) < 3:
-            for w in base_words:
-                if w not in unique:
-                    unique.append(w)
-                    if len(unique) >= 3:
-                        break
+        # ✅ FIX: Topic-specific word sets — emotionally powerful, short
+        TOPIC_WORD_MAP = {
+            'jerk': ['BODY', 'FALLING', 'WHY'],
+            'goosebump': ['CHILLS', 'YOUR', 'BODY'],
+            'yawn': ['CONTAGIOUS', 'WHY', 'YAWN'],
+            'deja vu': ['DEJA', 'VU', 'BRAIN'],
+            'brain freeze': ['FREEZE', 'BRAIN', 'WHY'],
+            'song stuck': ['STUCK', 'SONG', 'BRAIN'],
+            'tickle': ['TICKLE', 'BRAIN', 'WHY'],
+            'heart': ['HEART', 'SKIP', 'WHY'],
+            'gut': ['GUT', 'BRAIN', 'HIDDEN'],
+            'stomach growl': ['GROWL', 'HUNGER', 'WHY'],
+            'dizzy': ['DIZZY', 'BODY', 'WHY'],
+            'sneeze': ['SNEEZE', 'LIGHT', 'WHY'],
+            'hiccup': ['HICCUP', 'BRAIN', 'WHY'],
+            'twitch': ['TWITCH', 'BODY', 'WHY'],
+            'forget name': ['FORGET', 'NAMES', 'WHY'],
+            'forget': ['FORGET', 'BRAIN', 'WHY'],
+            'memory': ['MEMORY', 'BRAIN', 'HIDDEN'],
+            'brain fog': ['FOGGY', 'BRAIN', 'WHY'],
+            'focus': ['FOCUS', 'BRAIN', 'LOST'],
+            'tired': ['TIRED', 'ALWAYS', 'WHY'],
+            'energy': ['ENERGY', 'CRASH', 'WHY'],
+            'anxious': ['ANXIETY', 'BODY', 'WHY'],
+            'scared': ['FREEZE', 'FEAR', 'WHY'],
+            'emotional': ['EMOTION', 'BODY', 'WHY'],
+            'smell': ['SMELL', 'MEMORY', 'WHY'],
+            'music': ['MUSIC', 'CHILLS', 'WHY'],
+            'time': ['TIME', 'FASTER', 'WHY'],
+            'embarrass': ['REPLAY', 'BRAIN', 'WHY'],
+            'watched': ['WATCHED', 'ALONE', 'BRAIN'],
+            'cold': ['COLD', 'HANDS', 'WHY'],
+            'sweat': ['SWEAT', 'NERVOUS', 'WHY'],
+            'hungry': ['HUNGRY', 'AGAIN', 'WHY'],
+            'bloat': ['BLOAT', 'BODY', 'WHY'],
+        }
         
-        return unique[:3]
+        # Match topic to word set
+        for key, words in TOPIC_WORD_MAP.items():
+            if key in topic_lower:
+                return words
+        
+        # ✅ FIX: Generic fallback — extract meaningful words from topic
+        stop_words = {'why', 'your', 'you', 'the', 'a', 'an', 'is', 'are',
+                     'do', 'does', 'when', 'how', 'what', 'that', 'this',
+                     'for', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'of'}
+        
+        topic_words = [w.upper() for w in topic.split() 
+                      if len(w) > 3 and w.lower() not in stop_words]
+        
+        base = ['BODY', 'BRAIN', 'WHY', 'HIDDEN', 'SECRET', 'REAL']
+        
+        result = topic_words[:2]
+        for b in base:
+            if b not in result:
+                result.append(b)
+            if len(result) >= 3:
+                break
+        
+        return result[:3]
 
     def generate_seo(self, topic: str, script: str) -> Dict:
         """Generate SEO description and tags"""
         description = (
-            f"The truth about {topic} explained. "
-            f"Science behind why this happens to men after 35. "
-            f"Follow for more brain health facts your doctor won't explain. "
-            f"#Shorts #MemoryFacts #BrainHealth"
+            f"The truth about {topic} explained simply. "
+            f"Body and brain science nobody teaches you. "
+            f"Follow for more science your body never explained. "
+            f"#Shorts #BodyScience #BrainFacts"
         )
         
         tags = [
-            "memory", "brain fog", "forget", "men over 35",
-            "memory loss", "brain health", "why do i forget",
-            "youtube shorts", "brain facts", "health shorts"
+            "body science", "brain facts", "why does my body",
+            "explained simply", "body mysteries", "brain science",
+            "why do i feel", "youtube shorts", "health facts",
+            "body facts", "science shorts", "did you know"
         ]
         
         return {
             'description': description[:250],
             'tags': tags[:15],
-            'keywords': f"memory,brain fog,forget,men over 35,brain health"
+            'keywords': f"body science,brain facts,why does my body,explained,health"
         }
 
     def reset_used_shock_facts(self):
