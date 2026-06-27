@@ -1,0 +1,218 @@
+name: YouTube Automation System
+
+on:
+  # Schedule: Optimized for USA peak engagement (Eastern Time)
+  # 7AM ET = 12:00 UTC (morning scroll), 12PM ET = 16:00 UTC (lunch break), 
+  # 7PM ET = 23:00 UTC (after dinner peak)
+  schedule:
+    - cron: '0 12 * * *'  # USA 7AM ET - morning scroll
+    - cron: '0 16 * * *'  # USA 12PM ET - lunch break  
+    - cron: '0 23 * * *'  # USA 7PM ET - after dinner peak
+  
+  # Manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Number of videos to generate'
+        required: false
+        default: '1'
+        type: string
+      topic:
+        description: 'Specific topic (optional)'
+        required: false
+        type: string
+      skip_upload:
+        description: 'Skip upload to platforms'
+        required: false
+        default: 'false'
+        type: boolean
+
+# Permissions
+permissions:
+  contents: read
+  actions: write
+  checks: write
+
+jobs:
+  automation:
+    name: Run YouTube Automation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # Prevent infinite runs
+    
+    steps:
+      # ============================================================
+      # Step 1: Checkout Code
+      # ============================================================
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # ============================================================
+      # Step 2: Setup Python (UPGRADED to 3.11 to fix Google API FutureWarning)
+      # ============================================================
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      # ============================================================
+      # Step 3: Install Dependencies
+      # ============================================================
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install cloudinary  # Ensure cloudinary is installed
+      
+      # ============================================================
+      # Step 4: Install FFmpeg
+      # ============================================================
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      
+      # ============================================================
+      # Step 5: Cache YouTube Token (UPGRADED to v4 to eliminate Node 20 Deprecation)
+      # ============================================================
+      - name: Cache YouTube Token
+        id: youtube-cache
+        uses: actions/cache@v4
+        with:
+          path: token_cache.json
+          key: youtube-token-${{ runner.os }}-v1
+          restore-keys: |
+            youtube-token-${{ runner.os }}-v
+      
+      - name: Display cache status
+        run: |
+          if [ -f token_cache.json ]; then
+            echo "✅ YouTube token cache restored"
+          else
+            echo "⏳ No cached token found, will create new one"
+          fi
+
+      # ── FIX: Cache state/ folder so used_topics.txt and used_clips.txt
+      #         survive across GitHub Actions runs (fresh machine each time)
+      # FIX C6: State cache key now date-based instead of run_number.
+      # github.run_number increments every run and never restores cache.
+      # Date-based key restores from today's earlier runs.
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: state/
+          key: skillor-state-${{ runner.os }}-${{ github.event.repository.updated_at || 'default' }}
+          restore-keys: |
+            skillor-state-${{ runner.os }}-
+
+      - name: Ensure state directory exists
+        run: mkdir -p state
+      
+      # ============================================================
+      # Step 6: Run Automation
+      # ============================================================
+      - name: Run YouTube Automation
+        id: automation
+        env:
+          # YouTube OAuth
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+          
+          # Groq API
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          
+          # Stock Footage
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          
+          # Facebook
+          FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          
+          # Instagram
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          
+          # Cloudinary
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          
+          # Python settings
+          PYTHONUNBUFFERED: '1'
+          
+        run: |
+          # Set default values from workflow inputs
+          COUNT="${{ github.event.inputs.count || '1' }}"
+          TOPIC="${{ github.event.inputs.topic || '' }}"
+          SKIP_UPLOAD="${{ github.event.inputs.skip_upload || 'false' }}"
+          
+          # Build command
+          # FIX C5: Changed entry point from orchestrator.py to main.py
+          # main.py is the proper entry point with argparse, health check, and logging
+          CMD="python main.py --count $COUNT"
+          
+          if [ -n "$TOPIC" ]; then
+            CMD="$CMD --topic \"$TOPIC\""
+          fi
+          
+          if [ "$SKIP_UPLOAD" = "true" ]; then
+            CMD="$CMD --skip-upload"
+          fi
+          
+          echo "📤 Running: $CMD"
+          eval $CMD
+      
+      # ============================================================
+      # Step 7: Upload Artifacts
+      # ============================================================
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7
+      
+      - name: Upload video
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-video-${{ github.run_id }}
+          path: output/latest_video.mp4
+          retention-days: 7
+      
+      - name: Upload thumbnail
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-thumbnail-${{ github.run_id }}
+          path: output/latest_thumb.jpg
+          retention-days: 7
+      
+      - name: Upload token cache
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: token-cache-${{ github.run_id }}
+          path: token_cache.json
+          retention-days: 7
+      
+      # ============================================================
+      # Step 8: Notifications
+      # ============================================================
+      - name: Send failure notification
+        if: failure()
+        run: |
+          echo "❌ YouTube Automation Failed!"
+          echo "Run: ${{ github.run_id }}"
+          echo "Time: $(date)"
+          echo "Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      
+      - name: Send success notification
+        if: success()
+        run: |
+          echo "✅ YouTube Automation Completed Successfully!"
+          echo "Run: ${{ github.run_id }}"
+          echo "Time: $(date)"
