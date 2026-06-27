@@ -65,11 +65,88 @@ class AudioGenerator:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
 
+    async def _detect_speech_regions(self, audio_path: str) -> List[Dict]:
+        """
+        Use FFmpeg silencedetect to find actual speech start/end boundaries.
+        Returns list of {'start': float, 'end': float} speech regions.
+        This is the ground truth of when the voice is actually speaking.
+        """
+        try:
+            cmd = [
+                'ffmpeg', '-i', audio_path,
+                '-af', 'silencedetect=noise=-30dB:d=0.3',
+                '-f', 'null', '-'
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            output = (stderr or b'').decode('utf-8', errors='replace')
+
+            speech_starts = []
+            speech_ends = []
+
+            for line in output.split('\n'):
+                m = re.search(r'silence_end:\s*([\d.]+)', line)
+                if m:
+                    speech_starts.append(float(m.group(1)))
+                m = re.search(r'silence_start:\s*([\d.]+)', line)
+                if m:
+                    speech_ends.append(float(m.group(1)))
+
+            dur = await self._get_audio_duration_async(audio_path)
+            regions = []
+
+            if not speech_starts and not speech_ends:
+                return [{'start': 0.0, 'end': dur}]
+
+            if speech_ends and (not speech_starts or speech_starts[0] > speech_ends[0]):
+                speech_starts.insert(0, 0.0)
+
+            if speech_starts and (not speech_ends or speech_starts[-1] > speech_ends[-1]):
+                speech_ends.append(dur)
+
+            for i in range(min(len(speech_starts), len(speech_ends))):
+                s = speech_starts[i]
+                e = speech_ends[i] if i < len(speech_ends) else dur
+                if e > s:
+                    regions.append({'start': s, 'end': e})
+
+            if not regions:
+                return [{'start': 0.0, 'end': dur}]
+
+            merged = [regions[0]]
+            for r in regions[1:]:
+                if r['start'] - merged[-1]['end'] < 0.5:
+                    merged[-1]['end'] = max(merged[-1]['end'], r['end'])
+                else:
+                    merged.append(r)
+
+            total_speech = sum(r['end'] - r['start'] for r in merged)
+            logger.info(f"Speech detection: {len(merged)} regions, "
+                       f"{total_speech:.1f}s speech in {dur:.1f}s audio")
+
+            return merged
+
+        except Exception as e:
+            logger.warning(f"Speech detection failed: {e}, using full audio")
+            dur = await self._get_audio_duration_async(audio_path)
+            return [{'start': 0.0, 'end': dur}]
+
     async def _generate_word_timings_fallback(self, audio_path: str, text: str, dramatic_offset: float = 0.0) -> List[Dict]:
         """
-        FIXED v3: Syllable-weighted timing engine with dramatic_offset support.
-        dramatic_offset: [dramatic] tag ki wajah se audio start delay (seconds)
-        Captions voice ke saath start aur end par match karti hain
+        FIXED v5: Silence-detection ANCHORED timing engine.
+        
+        Instead of distributing words evenly across the full audio duration,
+        we first detect where speech actually occurs using FFmpeg silencedetect.
+        Then we distribute words proportionally ONLY within speech regions.
+        This creates captions that actually sync with the TTS audio output.
+        
+        Pipeline:
+        1. Detect speech regions (silencedetect)
+        2. Calculate syllable weights per word
+        3. Distribute words across speech regions proportionally
+        4. Words during silence gaps get pushed to next speech boundary
         """
         dur = await self._get_audio_duration_async(audio_path)
         words = text.split()
@@ -77,45 +154,97 @@ class AudioGenerator:
             return []
 
         def syllable_count(word: str) -> int:
-            w = word.lower().strip('.,!?;:\"\' ')
+            w = word.lower().strip('.,!?;:\'\' ')
             if not w:
                 return 1
             count = len(re.findall(r'[aeiou]+', w))
             return max(1, count)
 
-        # Syllable-weighted: longer words get more screen time
+        # Step 1: Detect actual speech regions
+        speech_regions = await self._detect_speech_regions(audio_path)
+
+        # Step 2: Calculate syllable weights
         weights = []
         for word in words:
             syl = syllable_count(word)
             w = syl * 1.0 + (0.15 if len(word) > 7 else 0)
             weights.append(max(0.5, w))
 
-        # ✅ FIX: effective duration (minus dramatic tag delay)
-        effective_dur = max(1.0, dur - dramatic_offset)
-        scale = effective_dur / sum(weights)
-        # ✅ FIX: captions dramatic_offset ke baad shuru hongi (voice ke saath)
-        timings, cur = [], dramatic_offset
+        total_weight = sum(weights)
 
-        for word, weight in zip(words, weights):
-            clean = word.strip('.,!?;:\"()[]{}"\'')
-            d = max(0.12, min(1.2, weight * scale))
+        # Step 3: Calculate total speech duration
+        total_speech_dur = sum(r['end'] - r['start'] for r in speech_regions)
+
+        if total_speech_dur <= 0:
+            total_speech_dur = dur
+            speech_regions = [{'start': 0.0, 'end': dur}]
+
+        # Step 4: Distribute words across speech regions proportionally
+        scale = total_speech_dur / total_weight
+        word_durations = [max(0.12, min(1.2, w * scale)) for w in weights]
+
+        # Step 5: Assign each word to a speech region based on cumulative position
+        timings = []
+        cumulative_weight = 0.0
+
+        for i, word in enumerate(words):
+            clean = word.strip('.,!?;:\\\"()[]{}"\'')
+            d = word_durations[i]
+
+            # Where should this word fall proportionally in the speech timeline?
+            cumulative_weight += weights[i]
+            word_position = (cumulative_weight - weights[i] / 2) / total_weight
+
+            # Map this position to actual speech timeline
+            elapsed_speech = 0.0
+            target_region = speech_regions[-1]
+
+            for r in speech_regions:
+                region_dur = r['end'] - r['start']
+                if elapsed_speech + region_dur > word_position * total_speech_dur:
+                    target_region = r
+                    break
+                elapsed_speech += region_dur
+
+            # Position within the target region
+            remaining_pos = word_position * total_speech_dur - elapsed_speech
+            region_dur = target_region['end'] - target_region['start']
+            pos_in_region = max(0.0, min(remaining_pos, region_dur - d))
+
+            word_start = target_region['start'] + pos_in_region
+            word_end = min(word_start + d, target_region['end'])
+
+            word_start = max(0.0, word_start)
+            word_end = min(word_end, dur)
+
+            if word_end - word_start < 0.12:
+                word_end = min(word_start + 0.12, dur)
+
             timings.append({
                 'word':     clean,
-                'start':    round(cur, 3),
-                'end':      round(min(cur + d, dur), 3),
-                'duration': round(d, 3)
+                'start':    round(word_start, 3),
+                'end':      round(word_end, 3),
+                'duration': round(word_end - word_start, 3)
             })
-            cur += d
 
+        # Step 6: Validate and fix timing overlaps
+        for i in range(1, len(timings)):
+            if timings[i]['start'] < timings[i-1]['end']:
+                timings[i]['start'] = timings[i-1]['end']
+                timings[i]['duration'] = timings[i]['end'] - timings[i]['start']
+                if timings[i]['duration'] < 0.12:
+                    timings[i]['end'] = timings[i]['start'] + 0.12
+                    timings[i]['duration'] = 0.12
+
+        # Step 7: Ensure last word ends at audio duration
         if timings:
             timings[-1]['end'] = round(dur, 3)
             timings[-1]['duration'] = round(timings[-1]['end'] - timings[-1]['start'], 3)
 
-        return timings
+        logger.info(f"Silence-anchored timings: {len(timings)} words across "
+                    f"{len(speech_regions)} speech regions")
 
-    # ============================================================
-    # MAIN ENGINE - GROQ TTS REQUEST (UPDATED WRITE_TO_FILE)
-    # ============================================================
+        return timings
 
     async def generate_with_effects(self, script_segments: List[Dict],
                                     output_dir: str, topic: str = "") -> Dict:
@@ -251,3 +380,4 @@ if __name__ == "__main__":
         print(f"   Timings: {len(result['word_timings'])}")
     
     asyncio.run(test())
+                    
