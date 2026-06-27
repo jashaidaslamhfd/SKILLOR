@@ -1,8 +1,8 @@
 """
-Settings — REFINED: Memory & Brain Fog Science for Men 35+ (GROQ SPEECH READY)
-AUDIENCE: USA/UK Males 35-54
-NICHE: Memory Loss & Brain Fog (Micro-Niche)
-GOAL: Low Competition, High Demand
+Settings — Body + Brain Science (Mystery Crispy Style)
+AUDIENCE: ALL AGES (13-65+) | Global English
+NICHE: Body + Brain Science Mysteries (Universal)
+GOAL: Viral, High Retention, All Age Appeal
 
 FIXES:
 1. ✅ Voice Engine Upgraded: Changed from Edge-TTS to Groq 'troy' persona.
@@ -33,7 +33,7 @@ class VideoConfig:
     CRF: int = 23
     PRESET: str = "medium"
 
-    # Segment durations — AUDIENCE MATCHED
+    # Segment durations — optimized for all-age retention
     HOOK_DURATION: float = 3.5
     SHOCK_DURATION: float = 3.0
     SUSPENSE_DURATION: float = 5.0
@@ -41,7 +41,7 @@ class VideoConfig:
     CTR_DURATION: float = 4.0
     PAUSE_DURATION: float = 0.5
 
-    # Cut intervals — CALM not choppy (35-54 hate rapid cuts)
+    # Cut intervals — steady pacing for retention
     FAST_CUT_INTERVAL: float = 3.5
     CUT_MIN_DURATION: float = 3.0
     CUT_MAX_DURATION: float = 6.0
@@ -55,7 +55,7 @@ class VideoConfig:
 
 
 # ============================================================
-# AUDIO CONFIG — Voice Matched to 35-54 Male Audience (GROQ)
+# AUDIO CONFIG — Voice (GROQ Orpheus Troy)
 # ============================================================
 @dataclass
 class AudioConfig:
@@ -80,7 +80,7 @@ class AudioConfig:
 
 
 # ============================================================
-# CAPTION CONFIG — Readable for 35-54 Audience on Mobile
+# CAPTION CONFIG — Readable for all ages on Mobile
 # ============================================================
 @dataclass
 class CaptionConfig:
@@ -124,7 +124,7 @@ class SEOConfig:
     DESCRIPTION_LENGTH: int = 130
     TAGS_COUNT: int = 12
 
-    # Category 27 = Education — Credibility for 35-54 audience
+    # Category 27 = Education — Credibility for all ages
     CATEGORY_ID: str = "27"
 
     MADE_FOR_KIDS: bool = False
@@ -182,7 +182,7 @@ class ThumbnailConfig:
 
 
 # ============================================================
-# PLATFORM CONFIG — Posting Times for 35-54 Schedule
+# PLATFORM CONFIG — Posting Times (Peak engagement hours)
 # ============================================================
 @dataclass
 class PlatformConfig:
@@ -223,11 +223,11 @@ class PlatformConfig:
 
 
 # ============================================================
-# NICHE CONFIG — REFINED: Memory & Brain Fog Only
+# NICHE CONFIG — Body + Brain Science (All Ages, Universal)
 # ============================================================
 @dataclass
 class NicheConfig:
-    # REFINED: ONLY Memory & Brain Fog topics
+    # Universal body + brain science topics
     TOPICS: List[str] = field(default_factory=list)
     SUB_NICHES: List[str] = field(default_factory=list)
     KEYWORDS: List[str] = field(default_factory=list)
@@ -237,64 +237,69 @@ class NicheConfig:
         # MEMORY TOPICS
         # ============================================================
         self.TOPICS = [
-            # Name Memory
-            "why you forget names after 35",
+            # Universal Body Mysteries
+            "why your body jerks before you fall asleep",
+            "why you get goosebumps from music",
+            "why you yawn when someone else yawns",
+            "why your stomach growls when you are not hungry",
+            "why you get brain freeze",
+            "why your eye twitches randomly",
+            "why you sneeze when you look at bright light",
+            "why your heart skips a beat",
+            "why you get dizzy when you stand up fast",
+            "why your ears ring in silence",
+            "why you feel the urge to stretch",
+            "why you get hiccups",
+            "why you feel like you are falling when asleep",
+            "why you get random chills",
+            "why you sweat when nervous",
+            # Universal Brain Mysteries
             "why you forget names right after hearing them",
-            "why you can't remember names you just heard",
-            
-            # Room Memory
             "why you walk into a room and forget why",
-            "why you forget what you were about to do",
-            "why you keep losing your train of thought",
-            
-            # General Memory
-            "why your memory gets worse after 40",
-            "why short term memory gets worse with age",
-            "why you forget things you just read",
-            "why you forget words while speaking",
-            "why your brain deletes memories while you sleep",
-            "why men forget things more as they age",
-            "why you forget what you were saying mid-sentence",
-            
-            # Brain Fog
-            "what causes brain fog in adults",
-            "why brain fog happens after 35",
-            "why you feel mentally foggy all the time",
-            "what causes brain fog and memory loss",
-            "why brain fog gets worse with age",
-            "why you feel spaced out and can't focus",
-            "why your brain feels slow and tired",
+            "why a song gets stuck in your head",
+            "why you cannot tickle yourself",
+            "why you feel deja vu",
+            "why your brain creates faces in random patterns",
+            "why you feel watched when alone",
+            "why you feel time moves faster as you age",
+            "why music gives you chills",
+            "why your brain replays embarrassing memories",
+            "why you cannot remember a word on the tip of your tongue",
+            "why you feel empty when everything is fine",
+            "why you feel anxious for no reason",
+            "why your brain is more creative at night",
+            "why you feel a rush of emotion from a smell",
         ]
 
         # ============================================================
         # SUB-NICHES
         # ============================================================
         self.SUB_NICHES = [
-            "memory loss after 35",
-            "men's brain health after 40",
-            "brain fog in adults",
-            "why men forget things",
-            "memory improvement for men",
-            "cognitive decline in men",
-            "short term memory loss",
+            "body science mysteries",
+            "brain science explained",
+            "why does my body do that",
+            "universal body facts",
+            "how your brain works",
+            "body mysteries explained",
+            "nervous system facts",
+            "gut brain connection",
         ]
 
         # ============================================================
-        # KEYWORDS — Search Terms Used by 35-54 Males
+        # KEYWORDS — Universal Search Terms (All Ages)
         # ============================================================
         self.KEYWORDS = [
-            # Primary
-            "memory", "forget", "brain fog", "remember",
-            "memory loss", "brain health", "cognitive decline",
+            # Primary (universal)
+            "body science", "brain facts", "why does my body",
+            "body mysteries", "brain science", "explained simply",
             
-            # Long-tail (what they actually search)
-            "why can't I remember", "memory tips for men",
-            "men over 35 memory", "brain fog causes",
-            "forgetting names", "short term memory",
+            # Long-tail (universal search behavior)
+            "why do i feel", "what happens when", "why does my brain",
+            "body facts", "why your body", "how your brain works",
             
             # Related
-            "brain science", "men's health", "cognitive function",
-            "memory improvement", "brain exercises",
+            "science shorts", "health facts", "body explained",
+            "brain explained", "did you know body", "nervous system",
         ]
 
 
