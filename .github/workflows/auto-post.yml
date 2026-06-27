@@ -92,11 +92,14 @@ jobs:
 
       # ── FIX: Cache state/ folder so used_topics.txt and used_clips.txt
       #         survive across GitHub Actions runs (fresh machine each time)
+      # FIX C6: State cache key now date-based instead of run_number.
+      # github.run_number increments every run and never restores cache.
+      # Date-based key restores from today's earlier runs.
       - name: Restore state cache
         uses: actions/cache@v4
         with:
           path: state/
-          key: skillor-state-${{ runner.os }}-${{ github.run_number }}
+          key: skillor-state-${{ runner.os }}-${{ github.event.repository.updated_at || 'default' }}
           restore-keys: |
             skillor-state-${{ runner.os }}-
 
@@ -144,7 +147,9 @@ jobs:
           SKIP_UPLOAD="${{ github.event.inputs.skip_upload || 'false' }}"
           
           # Build command
-          CMD="python orchestrator.py --count $COUNT"
+          # FIX C5: Changed entry point from orchestrator.py to main.py
+          # main.py is the proper entry point with argparse, health check, and logging
+          CMD="python main.py --count $COUNT"
           
           if [ -n "$TOPIC" ]; then
             CMD="$CMD --topic \"$TOPIC\""
