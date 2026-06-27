@@ -283,59 +283,103 @@ class ContentGenerator:
         }
 
     def generate_title(self, topic: str) -> str:
-        """Generate title - FIXED v2: No duplicates, no broken text, clean output"""
+        """Generate title - FIXED v3: Strict validation, no broken/duplicate/unnatural titles"""
         prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic=topic)
         raw = self._call_groq(prompt, max_tokens=150)
+        
+        # Bad opener patterns that AI keeps generating
+        BAD_OPENERS = [
+            'why ignoring', 'ignoring why', 'how ignoring',
+            'did you know', 'scientists', 'shocking', 'mind-blowing',
+            'have you ever', 'what if i told',
+        ]
+        
+        # Must start with one of these natural openers
+        GOOD_OPENERS = [
+            'your body', 'your brain', 'nobody explains', 'nobody tells',
+            'why your', 'why you', 'the real reason', 'this happens',
+            'what your body', 'what your brain', 'the science',
+        ]
+        
+        TOPIC_EMOJIS = {
+            'body': '🧬', 'brain': '🧠', 'memory': '🧠',
+            'forget': '🤔', 'heart': '❤️', 'gut': '💚',
+            'sleep': '😴', 'energy': '⚡', 'muscle': '💪',
+            'eye': '👁️', 'ear': '👂', 'skin': '✨',
+            'goosebump': '😮', 'jerk': '😮', 'dizzy': '💫',
+            'yawn': '😮', 'tickle': '😄', 'sneeze': '🤧',
+            'hiccup': '😮', 'twitch': '👀', 'music': '🎵',
+            'smell': '👃', 'chills': '❄️', 'anxious': '💡',
+        }
         
         if raw:
             lines = [t.strip() for t in raw.split('\n') if t.strip()]
             
             for title in lines:
-                # ✅ FIX 1: Remove numbering like "1.", "2.", "-", "*"
-                title = title.lstrip('0123456789.-*) ').strip()
+                # Remove numbering
+                title = title.lstrip('0123456789.-*•) ').strip()
+                # Remove quotes if wrapped
+                title = title.strip('"').strip("'").strip()
                 
-                # ✅ FIX 2: Skip lines that are headers or instructions
-                skip_words = ['type', 'hook', 'rule', 'example', 'avoid', 'use:', 'must', 'return']
+                # Skip instruction lines
+                skip_words = ['type', 'hook', 'rule', 'example', 'avoid',
+                              'use:', 'must', 'return', 'opener', '✅', '❌', '🟢']
                 if any(s in title.lower() for s in skip_words):
                     continue
                 
-                # ✅ FIX 3: Skip lines that are too short or too long
+                title_lower = title.lower()
+                
+                # Skip bad openers
+                if any(title_lower.startswith(bad) for bad in BAD_OPENERS):
+                    continue
+                
+                # Must start with a good opener
+                if not any(title_lower.startswith(good) for good in GOOD_OPENERS):
+                    continue
+                
+                # Word count check (4-9 words, emoji doesnt count)
                 words = title.split()
-                if len(words) < 3 or len(words) > 12:
+                non_emoji_words = [w for w in words if not any(ord(c) > 127 for c in w)]
+                if len(non_emoji_words) < 4 or len(non_emoji_words) > 9:
                     continue
                 
-                # ✅ FIX 4: Skip if title contains duplicate words back-to-back
-                # e.g. "Why ignoring Why men..." — "Why" repeated
-                title_words_lower = [w.lower() for w in words]
-                has_duplicate = any(
-                    title_words_lower[i] == title_words_lower[i+1]
-                    for i in range(len(title_words_lower)-1)
-                )
-                if has_duplicate:
+                # No duplicate words back-to-back
+                wl = [w.lower().strip('.,!?') for w in words]
+                if any(wl[i] == wl[i+1] for i in range(len(wl)-1)):
                     continue
                 
-                # ✅ FIX 5: Skip if title has broken/incomplete words (< 3 chars at end that arent emoji)
-                last_word = words[-1]
-                if len(last_word) < 3 and not any(c for c in last_word if ord(c) > 127):
+                # No duplicate words anywhere in title (catches "Why ignoring Why")
+                word_set = [w for w in wl if len(w) > 2]
+                if len(word_set) != len(set(word_set)):
                     continue
                 
-                # ✅ FIX 6: Ensure emoji at end (add if missing)
+                # Last real word must be complete (3+ chars)
+                last_word = non_emoji_words[-1] if non_emoji_words else ''
+                if len(last_word) < 3:
+                    continue
+                
+                # Add emoji if missing
                 has_emoji = any(ord(c) > 127 for c in title)
                 if not has_emoji:
-                    topic_emojis = {
-                        'body': '🧬', 'brain': '🧠', 'memory': '🧠',
-                        'forget': '🤔', 'heart': '❤️', 'gut': '💚',
-                        'sleep': '😴', 'energy': '⚡', 'muscle': '💪',
-                        'eye': '👁️', 'ear': '👂', 'skin': '✨',
-                    }
                     emoji = '🧠'
-                    for key, em in topic_emojis.items():
-                        if key in topic.lower() or key in title.lower():
+                    for key, em in TOPIC_EMOJIS.items():
+                        if key in topic.lower() or key in title_lower:
                             emoji = em
                             break
                     title = title + ' ' + emoji
                 
                 return title
+        
+        # Clean fallbacks — always safe, always natural
+        topic_short = ' '.join(topic.split()[:3])
+        fallbacks = [
+            "Nobody explains why your body does this 🧬",
+            "Your brain has been hiding this from you 🧠",
+            "This happens to your body every single day 🤔",
+            "Why your body reacts this way explained 👀",
+            "Your body is doing this right now 🧬",
+        ]
+        return random.choice(fallbacks)
         
         # ✅ FIX 7: Clean fallbacks — no topic variable in awkward positions
         topic_short = ' '.join(topic.split()[:4])  # max 4 words from topic
