@@ -758,4 +758,33 @@ class ThumbnailGenerator:
         self._add_platform_border(draw, platform, palette)
         self._add_landscape_cta(draw, mood, platform)
         
-        img = self._enhance
+        img = self._enhance_platform_image(img, mood, platform)
+        img = img.convert("RGB")
+        img.save(output_path, "JPEG", quality=98, optimize=True, subsampling=0)
+        
+        return output_path
+
+
+# ============================================================
+# TEST
+# ============================================================
+if __name__ == "__main__":
+    print("🚀 TESTING THUMBNAIL GENERATOR (USA 2026)\n" + "=" * 60)
+    
+    generator = ThumbnailGenerator()
+    
+    test_words = ["MEMORY", "BRAIN", "FOG"]
+    test_topic = "forgetting names"
+    
+    # Test with mock frame
+    mock_frame = "test_frame.jpg"
+    if not os.path.exists(mock_frame):
+        # Create dummy frame
+        dummy = Image.new("RGB", (1920, 1080), (50, 50, 80))
+        dummy.save(mock_frame)
+    
+    yt_path = "test_thumbnail_youtube.jpg"
+    generator.generate_thumbnail_from_frame(mock_frame, test_words, test_topic, yt_path)
+    print(f"✅ YouTube Thumbnail: {yt_path}")
+    
+    print(f"\n✅ Thumbnail resolution: {generator.width}x{generator.height}")
