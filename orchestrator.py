@@ -480,7 +480,7 @@ Follow for more body science
             f"Double tap if {topic} has ever happened to you! 💛",
             f"Share this with someone who needs to know! 📤",
             'Comment YES if this is SO you 😂',
-            f"Americans - has {topic} happened to you? Comment YES! 🇺🇸',
+            f"Americans - has {topic} happened to you? Comment YES! 🇺🇸",
         ]
         ig_hook = random.choice(ig_hooks)
         
