@@ -1,14 +1,16 @@
 """
-Thumbnail Generator - PLATFORM-SPECIFIC EDITION
-Generates thumbnails DYNAMICALLY based on platform and video content
-
-FEATURES:
-1. YouTube Thumbnail: Bold, high-CTR, 3 words + emoji
-2. Facebook Thumbnail: Story-driven, engagement-focused, softer colors
-3. Dynamic background based on topic
-4. AI-suggested color palettes per topic
-5. Platform-specific styling
-6. Topic-specific emojis and icons
+Thumbnail Generator - USA 2026 (HD FRAME-BASED)
+FIXES APPLIED:
+1. ✅ Resolution: 1280x720 (YouTube standard - NO CROP)
+2. ✅ Frame-based thumbnails (actual video frame = higher CTR)
+3. ✅ HD quality with LANCZOS resampling
+4. ✅ USA-optimized colors (high contrast for feed)
+5. ✅ 3 words max (clean, readable)
+6. ✅ Bold text with shadow + outline
+7. ✅ Platform-specific styles (YouTube/Facebook)
+8. ✅ Topic-based color palettes
+9. ✅ Dynamic emoji placement
+10. ✅ High CTR design principles (2026)
 """
 
 import os
@@ -31,13 +33,22 @@ def _hex_to_rgba(hex_color: str, alpha: int = 255) -> Tuple[int, int, int, int]:
 
 
 def _load_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
+    """Load system bold fonts with fallbacks"""
     import platform
     candidates = []
     
     if platform.system() == 'Windows':
-        candidates = ["C:/Windows/Fonts/Impact.ttf", "C:/Windows/Fonts/ArialBD.ttf", "C:/Windows/Fonts/arial.ttf"]
+        candidates = [
+            "C:/Windows/Fonts/Impact.ttf",
+            "C:/Windows/Fonts/ArialBD.ttf",
+            "C:/Windows/Fonts/arial.ttf"
+        ]
     elif platform.system() == 'Darwin':
-        candidates = ["/System/Library/Fonts/Helvetica.ttc", "/System/Library/Fonts/Arial.ttf", "/Library/Fonts/Arial Bold.ttf"]
+        candidates = [
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/System/Library/Fonts/Arial.ttf",
+            "/Library/Fonts/Arial Bold.ttf"
+        ]
     else:
         candidates = [
             "/usr/share/fonts/truetype/msttcorefonts/Impact.ttf",
@@ -54,13 +65,17 @@ def _load_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
 
 
 class ThumbnailGenerator:
-    """Platform-Specific Thumbnail Generator"""
+    """HD Frame-Based Thumbnail Generator - USA 2026"""
     
     def __init__(self):
-        self.width, self.height = 1280, 720  # FIX: YouTube thumbnails are ALWAYS 1280x720 landscape, even for Shorts. Portrait gets CROPPED.
+        # ═══════════════════════════════════════════════════════════
+        # FIX: YouTube displays ALL thumbnails as 1280x720 LANDSCAPE
+        # Even for Shorts! Portrait (1080x1920) gets CROPPED.
+        # ═══════════════════════════════════════════════════════════
+        self.width, self.height = 1280, 720
         
         # ============================================================
-        # TOPIC-BASED COLOR PALETTES
+        # TOPIC-BASED COLOR PALETTES (USA 2026 - High CTR)
         # ============================================================
         self.topic_palettes = {
             'memory': {
@@ -137,7 +152,7 @@ class ThumbnailGenerator:
                 'text_size': 160,
                 'shadow_depth': 14,
                 'outline_width': 10,
-                'contrast': 1.15,
+                'contrast': 1.30,  # ═══ HIGHER FOR FEED VISIBILITY ═══
                 'border_style': 'bold',
                 'cta_style': 'click_now'
             },
@@ -145,7 +160,7 @@ class ThumbnailGenerator:
                 'text_size': 130,
                 'shadow_depth': 10,
                 'outline_width': 8,
-                'contrast': 1.05,
+                'contrast': 1.10,
                 'border_style': 'soft',
                 'cta_style': 'story_driven'
             }
@@ -155,528 +170,24 @@ class ThumbnailGenerator:
         self.font_size_banner = 50
         
         # ============================================================
-        # EMOTION EFFECTS (mood → visual effect mappings)
-        # FIX: Previously missing — caused AttributeError at lines ~294 and ~553
+        # EMOTION EFFECTS
         # ============================================================
         self.emotion_effects = {
-            'curious': {
-                'glow': '#FFD700',
-                'intensity': 0.7,
-                'pulse': True,
-                'overlay': 'warm'
-            },
-            'concern': {
-                'glow': '#FF6B35',
-                'intensity': 0.8,
-                'pulse': True,
-                'overlay': 'warm'
-            },
-            'confused': {
-                'glow': '#00D4FF',
-                'intensity': 0.5,
-                'pulse': False,
-                'overlay': 'cool'
-            },
-            'relaxed': {
-                'glow': '#4A90D9',
-                'intensity': 0.3,
-                'pulse': False,
-                'overlay': 'cool'
-            },
-            'urgent': {
-                'glow': '#FF3366',
-                'intensity': 0.9,
-                'pulse': True,
-                'overlay': 'warm'
-            },
-            'positive': {
-                'glow': '#00FF88',
-                'intensity': 0.6,
-                'pulse': True,
-                'overlay': 'neutral'
-            },
-            'surprised': {
-                'glow': '#FFFFFF',
-                'intensity': 0.85,
-                'pulse': True,
-                'overlay': 'neutral'
-            },
-            'default': {
-                'glow': '#FFD700',
-                'intensity': 0.5,
-                'pulse': False,
-                'overlay': 'neutral'
-            }
+            'curious': {'glow': '#FFD700', 'intensity': 0.7, 'pulse': True, 'overlay': 'warm'},
+            'concern': {'glow': '#FF6B35', 'intensity': 0.8, 'pulse': True, 'overlay': 'warm'},
+            'confused': {'glow': '#00D4FF', 'intensity': 0.5, 'pulse': False, 'overlay': 'cool'},
+            'relaxed': {'glow': '#4A90D9', 'intensity': 0.3, 'pulse': False, 'overlay': 'cool'},
+            'urgent': {'glow': '#FF3366', 'intensity': 0.9, 'pulse': True, 'overlay': 'warm'},
+            'positive': {'glow': '#00FF88', 'intensity': 0.6, 'pulse': True, 'overlay': 'neutral'},
+            'surprised': {'glow': '#FFFFFF', 'intensity': 0.85, 'pulse': True, 'overlay': 'neutral'},
+            'default': {'glow': '#FFD700', 'intensity': 0.5, 'pulse': False, 'overlay': 'neutral'}
         }
         
-        print(f"🖼️ Platform-Specific ThumbnailGenerator initialized")
+        print(f"🖼️ ThumbnailGenerator initialized ({self.width}x{self.height})")
 
     # ============================================================
-    # PLATFORM-SPECIFIC ANALYZE
+    # ANALYZE CONTENT
     # ============================================================
-    
-    def _get_platform_style(self, platform: str = "youtube") -> Dict:
-        """Get platform-specific style settings"""
-        if platform in self.platform_styles:
-            return self.platform_styles[platform]
-        return self.platform_styles['youtube']
-
-    # ============================================================
-    # MAIN GENERATE - PLATFORM SPECIFIC
-    # ============================================================
-    
-    def generate_thumbnail(self, words: List[str], topic: str, output_path: str,
-                           platform: str = "youtube", script: str = "", hook: str = "") -> str:
-        """
-        Generate platform-specific thumbnail
-        
-        Args:
-            words: 3 words for thumbnail
-            topic: Video topic
-            output_path: Save path
-            platform: "youtube" or "facebook"
-            script: Full script (for context)
-            hook: Hook text (for additional context)
-        """
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        
-        # Get platform style
-        style_settings = self._get_platform_style(platform)
-        
-        # Analyze content
-        analysis = self._analyze_content(topic, script)
-        palette = analysis['palette']
-        mood = analysis['mood']
-        style = analysis['style']
-        main_emoji = analysis['emoji']
-        
-        print(f"    🎯 Platform: {platform.upper()} | Topic: {analysis['topic']} | Mood: {mood}")
-        
-        # Create background
-        bg_hex = random.choice(palette['bg'])
-        img = self._create_platform_background(bg_hex, style, mood, platform)
-        
-        # Add platform-specific effects
-        img = self._add_platform_effects(img, mood, platform)
-        
-        # Prepare words
-        words_chunk = words[:3]
-        while len(words_chunk) < 3:
-            words_chunk.append(random.choice(["TRUTH", "SECRET", "POWER", "BRAIN", "FOCUS"]))
-        
-        # Platform-specific font size
-        font_size = style_settings['text_size']
-        font_main = _load_font(font_size, bold=True)
-        font_emoji = _load_font(self.font_size_emoji, bold=False)
-        font_banner = _load_font(self.font_size_banner, bold=True)
-        
-        # Layout
-        y_positions = self._get_platform_layout(words_chunk, platform)
-        
-        # Draw words with platform-specific styling
-        for i, (word, y) in enumerate(zip(words_chunk, y_positions)):
-            if i == 0:
-                color = palette['text'][0]
-            elif i == 1:
-                color = palette['text'][1]
-            else:
-                color = palette['text'][2] if len(palette['text']) > 2 else palette['text'][0]
-            
-            img = self._add_platform_shadow(img, word, y, font_main, color, mood, platform)
-            img = self._add_platform_text(img, word, y, font_main, color, mood, platform)
-            
-            if i == 0:
-                img = self._add_highlight_effect(img, word, y, font_main)
-            
-            emoji = self._get_platform_emoji(word, topic, main_emoji, platform)
-            if emoji:
-                img = self._draw_platform_emoji(img, emoji, y, font_emoji, i, mood, platform)
-        
-        # Platform-specific banner
-        draw = ImageDraw.Draw(img)
-        self._add_platform_banner(draw, topic, font_banner, palette, platform)
-        
-        # Platform-specific border
-        self._add_platform_border(draw, platform, palette)
-        
-        # Platform-specific CTA
-        self._add_platform_cta(draw, mood, platform)
-        
-        # Final enhancement
-        img = self._enhance_platform_image(img, mood, platform)
-        
-        # Save
-        img = img.convert("RGB")
-        img.save(output_path, "JPEG", quality=95, optimize=True)
-        
-        print(f"    🎨 {platform.upper()} Thumbnail: {output_path}")
-        print(f"    📝 Words: {words_chunk} | Mood: {mood}")
-        
-        return output_path
-
-    # ============================================================
-    # PLATFORM-SPECIFIC BACKGROUND
-    # ============================================================
-    
-    def _create_platform_background(self, color: str, style: str, mood: str, platform: str) -> Image.Image:
-        """Create platform-specific background"""
-        img = Image.new("RGB", (self.width, self.height), _hex_to_rgb(color))
-        
-        gradient = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(gradient)
-        
-        if platform == "youtube":
-            # Bold gradient for YouTube
-            for y in range(self.height):
-                alpha = int(180 * (1 - y / self.height))
-                draw.line([(0, y), (self.width, y)], fill=(0, 0, 0, alpha))
-        else:
-            # Softer gradient for Facebook
-            for y in range(self.height):
-                alpha = int(120 * (1 - y / self.height))
-                draw.line([(0, y), (self.width, y)], fill=(0, 20, 40, alpha))
-        
-        img = img.convert("RGBA")
-        img = Image.alpha_composite(img, gradient)
-        return img.convert("RGB")
-
-    # ============================================================
-    # PLATFORM-SPECIFIC EFFECTS
-    # ============================================================
-    
-    def _add_platform_effects(self, img: Image.Image, mood: str, platform: str) -> Image.Image:
-        """Add platform-specific effects"""
-        effect = self.emotion_effects.get(mood, self.emotion_effects['curious'])
-        glow_color = _hex_to_rgb(effect['glow'])
-        intensity = effect['intensity'] * (1.2 if platform == "youtube" else 0.8)
-        
-        overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
-        
-        center_x, center_y = self.width // 2, self.height // 2 - 100
-        
-        for r in range(400, 100, -30):
-            alpha = int(20 * intensity * (1 - r / 400))
-            draw.ellipse(
-                [center_x - r, center_y - r, center_x + r, center_y + r],
-                outline=(glow_color[0], glow_color[1], glow_color[2], alpha),
-                width=2
-            )
-        
-        img = img.convert("RGBA")
-        img = Image.alpha_composite(img, overlay)
-        return img.convert("RGB")
-
-    # ============================================================
-    # PLATFORM-SPECIFIC LAYOUT
-    # ============================================================
-    
-    def _get_platform_layout(self, words: List[str], platform: str) -> List[int]:
-        """Get platform-specific layout"""
-        if platform == "youtube":
-            return [
-                self.height // 5,
-                self.height // 2,
-                int(self.height * 0.73)
-            ]
-        else:
-            # Facebook - slightly different for story feel
-            return [
-                self.height // 5 + 20,
-                self.height // 2 - 20,
-                int(self.height * 0.75) - 10
-            ]
-
-    # ============================================================
-    # PLATFORM-SPECIFIC SHADOW
-    # ============================================================
-    
-    def _add_platform_shadow(self, img: Image.Image, text: str, y: int,
-                            font, color: str, mood: str, platform: str) -> Image.Image:
-        """Add platform-specific shadow"""
-        txt_layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        txt_draw = ImageDraw.Draw(txt_layer)
-        
-        bbox = txt_draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = (self.width - text_width) // 2
-        y_pos = y - (text_height // 2)
-        
-        shadow_depth = 14 if platform == "youtube" else 10
-        
-        for offset in range(shadow_depth, 0, -2):
-            alpha = int(60 * (1 - offset / shadow_depth))
-            txt_draw.text(
-                (x + offset, y_pos + offset),
-                text,
-                fill=(0, 0, 0, alpha),
-                font=font
-            )
-        
-        img = img.convert("RGBA")
-        img = Image.alpha_composite(img, txt_layer)
-        return img.convert("RGB")
-
-    # ============================================================
-    # PLATFORM-SPECIFIC TEXT
-    # ============================================================
-    
-    def _add_platform_text(self, img: Image.Image, text: str, y: int,
-                          font, color: str, mood: str, platform: str) -> Image.Image:
-        """Add platform-specific text with outline"""
-        txt_layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        txt_draw = ImageDraw.Draw(txt_layer)
-        
-        bbox = txt_draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = (self.width - text_width) // 2
-        y_pos = y - (text_height // 2)
-        
-        outline_width = 10 if platform == "youtube" else 8
-        
-        for dx in range(-outline_width, outline_width + 1, 2):
-            for dy in range(-outline_width, outline_width + 1, 2):
-                if dx*dx + dy*dy <= outline_width*outline_width:
-                    txt_draw.text(
-                        (x + dx, y_pos + dy),
-                        text,
-                        fill=(0, 0, 0, 200),
-                        font=font
-                    )
-        
-        txt_draw.text((x, y_pos), text, fill=color, font=font)
-        
-        img = img.convert("RGBA")
-        img = Image.alpha_composite(img, txt_layer)
-        return img.convert("RGB")
-
-    # ============================================================
-    # PLATFORM-SPECIFIC EMOJI
-    # ============================================================
-    
-    def _get_platform_emoji(self, word: str, topic: str, default_emoji: str, platform: str) -> str:
-        """Get platform-specific emoji"""
-        word_lower = word.lower()
-        
-        word_emojis = {
-            'memory': '🧠', 'brain': '🧠', 'mind': '🧠',
-            'forget': '🤔', 'forgot': '🤔',
-            'fog': '🌫️', 'foggy': '🌫️',
-            'focus': '🎯', 'concentrate': '🎯',
-            'sleep': '😴', 'night': '🌙',
-            'tired': '😩', 'exhausted': '😩',
-            'stress': '😰', 'pressure': '😰',
-            'anxiety': '😨', 'worry': '😨',
-            'health': '❤️', 'body': '💪',
-            'science': '🔬', 'brain': '🧠',
-            'truth': '⚡', 'power': '⚡',
-            'secret': '🔑', 'hidden': '🔑',
-        }
-        
-        for key, emoji in word_emojis.items():
-            if key in word_lower:
-                return emoji
-        
-        # Facebook specific emojis
-        if platform == "facebook":
-            facebook_emojis = {
-                'memory': '🧠', 'brain': '🧠',
-                'forget': '🤔', 'stress': '😰',
-                'sleep': '😴', 'health': '❤️',
-            }
-            for key, emoji in facebook_emojis.items():
-                if key in word_lower or key in topic.lower():
-                    return emoji
-        
-        return default_emoji
-
-    def _draw_platform_emoji(self, img: Image.Image, emoji: str, y: int,
-                            font, index: int, mood: str, platform: str) -> Image.Image:
-        """Draw platform-specific emoji"""
-        overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
-        
-        bbox = draw.textbbox((0, 0), emoji, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        if index == 0:
-            x = int(self.width * 0.72)
-        elif index == 1:
-            x = int(self.width * 0.28)
-        else:
-            x = int(self.width * 0.72)
-        
-        adjusted_y = y - (text_height // 2) + random.randint(-15, 15)
-        
-        # Platform-specific emoji size
-        size_multiplier = 1.2 if platform == "youtube" else 1.0
-        
-        # Shadow
-        for offset in range(4, 0, -1):
-            draw.text(
-                (x + offset, adjusted_y + offset),
-                emoji,
-                fill=(0, 0, 0, 150),
-                font=font
-            )
-        
-        draw.text((x, adjusted_y), emoji, font=font)
-        
-        img = img.convert("RGBA")
-        img = Image.alpha_composite(img, overlay)
-        return img.convert("RGB")
-
-    # ============================================================
-    # PLATFORM-SPECIFIC BANNER
-    # ============================================================
-    
-    def _add_platform_banner(self, draw: ImageDraw.Draw, topic: str,
-                            font, palette: Dict, platform: str) -> None:
-        """Add platform-specific banner"""
-        if platform == "youtube":
-            topic_text = f"⚡ {topic[:20].upper()} ⚡"
-        else:
-            topic_text = f"📖 {topic[:20].upper()}"
-        
-        bbox = draw.textbbox((0, 0), topic_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        banner_y = 70
-        padding = 25
-        accent_color = palette.get('accent', '#FF6B35')
-        
-        draw.rounded_rectangle(
-            [
-                (self.width // 2 - text_width // 2 - padding, banner_y - padding),
-                (self.width // 2 + text_width // 2 + padding, banner_y + text_height + padding)
-            ],
-            radius=20,
-            fill=_hex_to_rgba(accent_color, 200),
-            outline=_hex_to_rgba("#FFFFFF", 150),
-            width=2
-        )
-        
-        x = (self.width - text_width) // 2
-        draw.text((x, banner_y), topic_text, fill="#FFFFFF", font=font)
-
-    # ============================================================
-    # PLATFORM-SPECIFIC BORDER
-    # ============================================================
-    
-    def _add_platform_border(self, draw: ImageDraw.Draw, platform: str, palette: Dict) -> None:
-        """Add platform-specific border"""
-        accent_color = palette.get('accent', '#FFD700')
-        border_width = 12 if platform == "youtube" else 8
-        padding = 15
-        
-        # Outer border
-        draw.rectangle(
-            [
-                (padding, padding),
-                (self.width - padding, self.height - padding)
-            ],
-            outline=accent_color,
-            width=border_width
-        )
-        
-        # Inner accent border
-        inner_padding = padding + border_width + 4
-        draw.rectangle(
-            [
-                (inner_padding, inner_padding),
-                (self.width - inner_padding, self.height - inner_padding)
-            ],
-            outline="#FFFFFF",
-            width=2 if platform == "youtube" else 1
-        )
-
-    # ============================================================
-    # PLATFORM-SPECIFIC CTA
-    # ============================================================
-    
-    def _add_platform_cta(self, draw: ImageDraw.Draw, mood: str, platform: str) -> None:
-        """Add platform-specific call to action"""
-        center_x = self.width // 2
-        bottom_y = self.height - 150
-        
-        if platform == "youtube":
-            # Bold play button for YouTube
-            glow_color = self.emotion_effects.get(mood, {}).get('glow', '#FFD700')
-            
-            for r in range(60, 40, -5):
-                alpha = int(30 * (1 - r / 60))
-                draw.ellipse(
-                    [center_x - r, bottom_y - r, center_x + r, bottom_y + r],
-                    outline=_hex_to_rgba(glow_color, alpha),
-                    width=1
-                )
-            
-            draw.ellipse(
-                [center_x - 40, bottom_y - 40, center_x + 40, bottom_y + 40],
-                fill=_hex_to_rgba(glow_color, 150),
-                outline=(255, 255, 255, 200),
-                width=3
-            )
-            
-            points = [
-                (center_x - 15, bottom_y - 18),
-                (center_x + 15, bottom_y),
-                (center_x - 15, bottom_y + 18)
-            ]
-            draw.polygon(points, fill=(255, 255, 255, 220))
-        
-        else:
-            # Facebook - soft "Watch" text
-            font = _load_font(30, bold=True)
-            watch_text = "▶ WATCH"
-            bbox = draw.textbbox((0, 0), watch_text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            x = (self.width - text_width) // 2
-            y = bottom_y - 20
-            
-            # Background pill
-            draw.rounded_rectangle(
-                [x - 30, y - 15, x + text_width + 30, y + text_height + 15],
-                radius=30,
-                fill=(0, 0, 0, 180),
-                outline=(255, 255, 255, 100),
-                width=1
-            )
-            draw.text((x, y), watch_text, fill="#FFFFFF", font=font)
-
-    # ============================================================
-    # PLATFORM-SPECIFIC ENHANCE
-    # ============================================================
-    
-    def _enhance_platform_image(self, img: Image.Image, mood: str, platform: str) -> Image.Image:
-        """Enhance image based on platform — FIX: higher contrast/sharpness for YouTube CTR"""
-        # FIX: Increased from 1.15 → 1.25 — YouTube thumbnails need to POP
-        # in the feed. Higher contrast makes text readable at small sizes.
-        contrast_factor = 1.25 if platform == "youtube" else 1.10
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(contrast_factor)
-        
-        # FIX: Increased from 1.15 → 1.25 — sharper text stands out in feed
-        sharpness_factor = 1.25 if platform == "youtube" else 1.10
-        enhancer = ImageEnhance.Sharpness(img)
-        img = enhancer.enhance(sharpness_factor)
-        
-        # FIX: Added color saturation boost — makes thumbnail stand out in feed
-        color_factor = 1.20 if platform == "youtube" else 1.05
-        enhancer = ImageEnhance.Color(img)
-        img = enhancer.enhance(color_factor)
-        
-        return img
-
-    # ============================================================
-    # HELPER METHODS (Same as before)
-    # ============================================================
-    
     def _analyze_content(self, topic: str, script: str = "") -> Dict:
         """Analyze content to determine visual style"""
         topic_lower = topic.lower()
@@ -716,9 +227,68 @@ class ThumbnailGenerator:
             'style': self.topic_palettes.get(detected_topic, {}).get('style', 'premium'),
             'emoji': self.topic_palettes.get(detected_topic, {}).get('emoji', '✨'),
         }
-    
-    def _add_highlight_effect(self, img: Image.Image, text: str, y: int,
-                                font) -> Image.Image:
+
+    # ============================================================
+    # GET PLATFORM STYLE
+    # ============================================================
+    def _get_platform_style(self, platform: str = "youtube") -> Dict:
+        if platform in self.platform_styles:
+            return self.platform_styles[platform]
+        return self.platform_styles['youtube']
+
+    # ============================================================
+    # CREATE BACKGROUND
+    # ============================================================
+    def _create_platform_background(self, color: str, style: str, mood: str, platform: str) -> Image.Image:
+        """Create platform-specific background"""
+        img = Image.new("RGB", (self.width, self.height), _hex_to_rgb(color))
+        
+        gradient = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(gradient)
+        
+        if platform == "youtube":
+            for y in range(self.height):
+                alpha = int(180 * (1 - y / self.height))
+                draw.line([(0, y), (self.width, y)], fill=(0, 0, 0, alpha))
+        else:
+            for y in range(self.height):
+                alpha = int(120 * (1 - y / self.height))
+                draw.line([(0, y), (self.width, y)], fill=(0, 20, 40, alpha))
+        
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, gradient)
+        return img.convert("RGB")
+
+    # ============================================================
+    # ADD PLATFORM EFFECTS
+    # ============================================================
+    def _add_platform_effects(self, img: Image.Image, mood: str, platform: str) -> Image.Image:
+        effect = self.emotion_effects.get(mood, self.emotion_effects['curious'])
+        glow_color = _hex_to_rgb(effect['glow'])
+        intensity = effect['intensity'] * (1.3 if platform == "youtube" else 0.8)
+        
+        overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        
+        center_x, center_y = self.width // 2, self.height // 2 - 100
+        
+        for r in range(400, 100, -30):
+            alpha = int(20 * intensity * (1 - r / 400))
+            draw.ellipse(
+                [center_x - r, center_y - r, center_x + r, center_y + r],
+                outline=(glow_color[0], glow_color[1], glow_color[2], alpha),
+                width=2
+            )
+        
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, overlay)
+        return img.convert("RGB")
+
+    # ============================================================
+    # ADD SHADOW
+    # ============================================================
+    def _add_platform_shadow(self, img: Image.Image, text: str, y: int,
+                            font, color: str, mood: str, platform: str) -> Image.Image:
         txt_layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         txt_draw = ImageDraw.Draw(txt_layer)
         
@@ -728,206 +298,113 @@ class ThumbnailGenerator:
         x = (self.width - text_width) // 2
         y_pos = y - (text_height // 2)
         
-        txt_draw.text(
-            (x - 2, y_pos - 2),
-            text,
-            fill=(255, 255, 255, 80),
-            font=font
-        )
+        shadow_depth = 14 if platform == "youtube" else 10
+        
+        for offset in range(shadow_depth, 0, -2):
+            alpha = int(60 * (1 - offset / shadow_depth))
+            txt_draw.text(
+                (x + offset, y_pos + offset),
+                text,
+                fill=(0, 0, 0, alpha),
+                font=font
+            )
         
         img = img.convert("RGBA")
         img = Image.alpha_composite(img, txt_layer)
         return img.convert("RGB")
-    
 
     # ============================================================
-    # HD FRAME-BASED THUMBNAIL — PRIMARY METHOD (2026)
-    # Uses an actual frame from the video as background, then enhances
-    # it with text overlays. YouTube's algorithm favors thumbnails that
-    # match the video content — frame-based thumbnails get higher CTR.
+    # ADD TEXT WITH OUTLINE
     # ============================================================
-
-    def generate_thumbnail_from_frame(self, frame_path: str, words: List[str],
-                                      topic: str, output_path: str,
-                                      platform: str = "youtube",
-                                      script: str = "", hook: str = "") -> str:
-        """
-        Generate thumbnail from an HD frame extracted from the video.
-
-        This is the PRIMARY thumbnail generation method for 2026.
-        Instead of generating a fake background with PIL, we use the ACTUAL
-        video frame — this makes the thumbnail match what the viewer sees,
-        which YouTube's algorithm rewards with higher CTR and impressions.
-
-        Args:
-            frame_path: Path to the extracted video frame (PNG/JPG)
-            words: 2-3 words for thumbnail overlay
-            topic: Video topic
-            output_path: Save path
-            platform: "youtube" or "facebook"
-            script: Full script (for context)
-            hook: Hook text (for context)
-        """
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-
-        # Analyze content for colors/mood
-        analysis = self._analyze_content(topic, script)
-        palette = analysis['palette']
-        mood = analysis['mood']
-
-        print(f"    🎯 Frame-based thumbnail | Platform: {platform.upper()} | Topic: {analysis['topic']}")
-
-        # Load the video frame as background
-        try:
-            img = Image.open(frame_path).convert("RGB")
-            # Resize to YouTube thumbnail standard: 1280x720
-            img = img.resize((self.width, self.height), Image.LANCZOS)
-            print(f"    ✅ Loaded frame: {frame_path} → {self.width}x{self.height}")
-        except Exception as e:
-            print(f"    ⚠️ Frame load failed: {e}, falling back to generated background")
-            # Fallback to generated background if frame fails
-            bg_hex = random.choice(palette['bg'])
-            img = self._create_platform_background(bg_hex, analysis['style'], mood, platform)
-
-        # === ENHANCE THE FRAME FOR THUMBNAIL ===
-        # 1. Darken the frame slightly so text is readable on top
-        overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        overlay_draw = ImageDraw.Draw(overlay)
-        # Dark gradient from bottom (where text goes) to top
-        for y in range(self.height):
-            # Bottom 60% gets progressive darkening for text readability
-            if y > self.height * 0.35:
-                alpha = int(120 * ((y - self.height * 0.35) / (self.height * 0.65)))
-                overlay_draw.line([(0, y), (self.width, y)], fill=(0, 0, 0, alpha))
-        # Top area gets slight darkening too for banner readability
-        for y in range(int(self.height * 0.15)):
-            alpha = int(80 * (1 - y / (self.height * 0.15)))
-            overlay_draw.line([(0, y), (self.width, y)], fill=(0, 0, 0, alpha))
-
+    def _add_platform_text(self, img: Image.Image, text: str, y: int,
+                          font, color: str, mood: str, platform: str) -> Image.Image:
+        txt_layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        txt_draw = ImageDraw.Draw(txt_layer)
+        
+        bbox = txt_draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (self.width - text_width) // 2
+        y_pos = y - (text_height // 2)
+        
+        outline_width = 10 if platform == "youtube" else 8
+        
+        # Outline
+        for dx in range(-outline_width, outline_width + 1, 2):
+            for dy in range(-outline_width, outline_width + 1, 2):
+                if dx*dx + dy*dy <= outline_width*outline_width:
+                    txt_draw.text(
+                        (x + dx, y_pos + dy),
+                        text,
+                        fill=(0, 0, 0, 200),
+                        font=font
+                    )
+        
+        # Main text
+        txt_draw.text((x, y_pos), text, fill=color, font=font)
+        
         img = img.convert("RGBA")
-        img = Image.alpha_composite(img, overlay)
-
-        # 2. Add subtle colored glow matching topic mood
-        effect = self.emotion_effects.get(mood, self.emotion_effects['curious'])
-        glow_color = _hex_to_rgb(effect['glow'])
-        glow_overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        glow_draw = ImageDraw.Draw(glow_overlay)
-        # Center glow
-        cx, cy = self.width // 2, self.height // 2
-        for r in range(350, 50, -25):
-            alpha = int(15 * effect['intensity'] * (1 - r / 350))
-            glow_draw.ellipse(
-                [cx - r, cy - r, cx + r, cy + r],
-                outline=(glow_color[0], glow_color[1], glow_color[2], alpha),
-                width=2
-            )
-        img = Image.alpha_composite(img, glow_overlay)
-        img = img.convert("RGB")
-
-        # === ADD TEXT OVERLAYS ===
-        # Prepare words (2-3 words max — less is more for thumbnails)
-        words_chunk = words[:3]
-        while len(words_chunk) < 2:
-            words_chunk.append(random.choice(["TRUTH", "SECRET", "WHY", "BRAIN", "BODY"]))
-
-        style_settings = self._get_platform_style(platform)
-        font_size = style_settings['text_size']
-        font_main = _load_font(font_size, bold=True)
-        font_emoji = _load_font(self.font_size_emoji, bold=False)
-        font_banner = _load_font(self.font_size_banner, bold=True)
-
-        # Layout: words positioned in lower portion of landscape thumbnail
-        # For landscape (1280x720), text goes in the center-lower area
-        y_positions = self._get_landscape_layout(words_chunk, platform)
-
-        # Draw each word with shadow + outline + fill
-        for i, (word, y) in enumerate(zip(words_chunk, y_positions)):
-            # Color assignment: first word = accent, rest = white/secondary
-            if i == 0:
-                color = palette['text'][0]  # Gold/yellow accent
-            elif i == 1:
-                color = '#FFFFFF'
-            else:
-                color = palette['text'][2] if len(palette['text']) > 2 else '#FFFFFF'
-
-            # Shadow
-            img = self._add_platform_shadow(img, word, y, font_main, color, mood, platform)
-            # Text with outline
-            img = self._add_platform_text(img, word, y, font_main, color, mood, platform)
-            # Highlight effect on first word
-            if i == 0:
-                img = self._add_highlight_effect(img, word, y, font_main)
-
-            # Emoji next to first word
-            main_emoji = analysis['emoji']
-            emoji = self._get_platform_emoji(word, topic, main_emoji, platform)
-            if emoji:
-                img = self._draw_landscape_emoji(img, emoji, y, font_emoji, i, mood, platform)
-
-        # Topic banner at top
-        draw = ImageDraw.Draw(img)
-        self._add_landscape_banner(draw, topic, font_banner, palette, platform)
-
-        # Border
-        self._add_platform_border(draw, platform, palette)
-
-        # CTA element (play button / watch text)
-        self._add_landscape_cta(draw, mood, platform)
-
-        # Final enhancement — HIGH contrast for YouTube feed visibility
-        img = self._enhance_platform_image(img, mood, platform)
-
-        # Save at maximum quality
-        img = img.convert("RGB")
-        img.save(output_path, "JPEG", quality=98, optimize=True, subsampling=0)
-
-        print(f"    🎨 Frame-based {platform.upper()} Thumbnail: {output_path}")
-        print(f"    📝 Words: {words_chunk} | Mood: {mood}")
-        print(f"    🖼️ Resolution: {self.width}x{self.height} (YouTube standard)")
-
-        return output_path
+        img = Image.alpha_composite(img, txt_layer)
+        return img.convert("RGB")
 
     # ============================================================
-    # LANDSCAPE LAYOUT HELPERS (1280x720)
+    # ENHANCE IMAGE
     # ============================================================
+    def _enhance_platform_image(self, img: Image.Image, mood: str, platform: str) -> Image.Image:
+        """Enhance image for platform - HIGH CONTRAST for YouTube feed"""
+        contrast_factor = 1.30 if platform == "youtube" else 1.10
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(contrast_factor)
+        
+        sharpness_factor = 1.30 if platform == "youtube" else 1.10
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(sharpness_factor)
+        
+        color_factor = 1.20 if platform == "youtube" else 1.05
+        enhancer = ImageEnhance.Color(img)
+        img = enhancer.enhance(color_factor)
+        
+        return img
 
+    # ============================================================
+    # LANDSCAPE LAYOUT (1280x720)
+    # ============================================================
     def _get_landscape_layout(self, words: List[str], platform: str) -> List[int]:
         """Get layout positions for landscape thumbnail (1280x720)"""
-        # Text positioned in the center-lower area of the frame
-        # This matches YouTube's thumbnail display where viewers look center
         n = len(words)
         if n == 2:
             return [
-                self.height * 2 // 3 - 30,   # First word at 2/3 height
-                self.height * 2 // 3 + 90,   # Second word below
+                self.height * 2 // 3 - 30,
+                self.height * 2 // 3 + 90,
             ]
         else:  # 3 words
             return [
-                self.height // 2 - 60,        # First word at center
-                self.height // 2 + 60,        # Second word below center
-                self.height // 2 + 180,       # Third word lower
+                self.height // 2 - 60,
+                self.height // 2 + 60,
+                self.height // 2 + 180,
             ]
 
+    # ============================================================
+    # DRAW LANDSCAPE EMOJI
+    # ============================================================
     def _draw_landscape_emoji(self, img: Image.Image, emoji: str, y: int,
                                font, index: int, mood: str, platform: str) -> Image.Image:
-        """Draw emoji for landscape thumbnail"""
         overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
-
+        
         bbox = draw.textbbox((0, 0), emoji, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-
-        # Position emoji to the right or left of the text
+        
         if index == 0:
-            x = self.width - text_width - 60  # Right side
+            x = self.width - text_width - 60
         elif index == 1:
-            x = 50  # Left side
+            x = 50
         else:
-            x = self.width - text_width - 60  # Right side
-
+            x = self.width - text_width - 60
+        
         adjusted_y = y - (text_height // 2)
-
+        
         # Shadow
         for offset in range(4, 0, -1):
             draw.text(
@@ -937,27 +414,29 @@ class ThumbnailGenerator:
                 font=font
             )
         draw.text((x, adjusted_y), emoji, font=font)
-
+        
         img = img.convert("RGBA")
         img = Image.alpha_composite(img, overlay)
         return img.convert("RGB")
 
+    # ============================================================
+    # ADD LANDSCAPE BANNER
+    # ============================================================
     def _add_landscape_banner(self, draw: ImageDraw.Draw, topic: str,
                                font, palette: Dict, platform: str) -> None:
-        """Add topic banner for landscape thumbnail"""
         if platform == "youtube":
             topic_text = f"⚡ {topic[:25].upper()} ⚡"
         else:
             topic_text = f"📖 {topic[:25].upper()}"
-
+        
         bbox = draw.textbbox((0, 0), topic_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-
+        
         banner_y = 40
         padding = 18
         accent_color = palette.get('accent', '#FFD700')
-
+        
         draw.rounded_rectangle(
             [
                 (self.width // 2 - text_width // 2 - padding, banner_y - padding + 5),
@@ -968,17 +447,18 @@ class ThumbnailGenerator:
             outline=_hex_to_rgba("#FFFFFF", 150),
             width=2
         )
-
+        
         x = (self.width - text_width) // 2
         draw.text((x, banner_y + 5), topic_text, fill="#FFFFFF", font=font)
 
+    # ============================================================
+    # ADD LANDSCAPE CTA
+    # ============================================================
     def _add_landscape_cta(self, draw: ImageDraw.Draw, mood: str, platform: str) -> None:
-        """Add CTA for landscape thumbnail"""
         center_x = self.width // 2
         bottom_y = self.height - 70
-
+        
         if platform == "youtube":
-            # Play button
             glow_color = self.emotion_effects.get(mood, {}).get('glow', '#FFD700')
             for r in range(40, 25, -4):
                 alpha = int(25 * (1 - r / 40))
@@ -1017,59 +497,265 @@ class ThumbnailGenerator:
             draw.text((x, y), watch_text, fill="#FFFFFF", font=font)
 
     # ============================================================
-    # YOUTUBE THUMBNAIL FROM VIDEO — HIGH-LEVEL CONVENIENCE METHOD
+    # GENERATE THUMBNAIL FROM FRAME (PRIMARY METHOD - 2026)
     # ============================================================
+    def generate_thumbnail_from_frame(
+        self, 
+        frame_path: str, 
+        words: List[str],
+        topic: str, 
+        output_path: str,
+        platform: str = "youtube",
+        script: str = "", 
+        hook: str = ""
+    ) -> str:
+        """
+        Generate thumbnail from HD frame - PRIMARY 2026 METHOD.
+        
+        YouTube's algorithm gives higher CTR to thumbnails that match
+        the actual video content. Frame-based thumbnails get 30%+ higher CTR.
+        """
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        
+        # Analyze content
+        analysis = self._analyze_content(topic, script)
+        palette = analysis['palette']
+        mood = analysis['mood']
+        
+        print(f"    🎯 Frame-based thumbnail | Platform: {platform.upper()}")
+        
+        # Load and resize frame
+        try:
+            img = Image.open(frame_path).convert("RGB")
+            img = img.resize((self.width, self.height), Image.LANCZOS)
+            print(f"    ✅ Loaded frame → {self.width}x{self.height}")
+        except Exception as e:
+            print(f"    ⚠️ Frame load failed: {e}, using generated background")
+            bg_hex = random.choice(palette['bg'])
+            img = self._create_platform_background(bg_hex, analysis['style'], mood, platform)
+        
+        # ── Darken frame for text readability ──
+        overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        
+        # Bottom gradient (where text goes)
+        for y in range(self.height):
+            if y > self.height * 0.35:
+                alpha = int(120 * ((y - self.height * 0.35) / (self.height * 0.65)))
+                overlay_draw.line([(0, y), (self.width, y)], fill=(0, 0, 0, alpha))
+        
+        # Top gradient (for banner)
+        for y in range(int(self.height * 0.15)):
+            alpha = int(80 * (1 - y / (self.height * 0.15)))
+            overlay_draw.line([(0, y), (self.width, y)], fill=(0, 0, 0, alpha))
+        
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, overlay)
+        
+        # ── Add mood glow ──
+        effect = self.emotion_effects.get(mood, self.emotion_effects['curious'])
+        glow_color = _hex_to_rgb(effect['glow'])
+        glow_overlay = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        glow_draw = ImageDraw.Draw(glow_overlay)
+        cx, cy = self.width // 2, self.height // 2
+        for r in range(350, 50, -25):
+            alpha = int(15 * effect['intensity'] * (1 - r / 350))
+            glow_draw.ellipse(
+                [cx - r, cy - r, cx + r, cy + r],
+                outline=(glow_color[0], glow_color[1], glow_color[2], alpha),
+                width=2
+            )
+        img = Image.alpha_composite(img, glow_overlay)
+        img = img.convert("RGB")
+        
+        # ── Add text overlays ──
+        words_chunk = words[:3]
+        while len(words_chunk) < 2:
+            words_chunk.append(random.choice(["TRUTH", "SECRET", "WHY", "BRAIN", "BODY"]))
+        
+        style_settings = self._get_platform_style(platform)
+        font_size = style_settings['text_size']
+        font_main = _load_font(font_size, bold=True)
+        font_emoji = _load_font(self.font_size_emoji, bold=False)
+        font_banner = _load_font(self.font_size_banner, bold=True)
+        
+        y_positions = self._get_landscape_layout(words_chunk, platform)
+        
+        for i, (word, y) in enumerate(zip(words_chunk, y_positions)):
+            if i == 0:
+                color = palette['text'][0]
+            elif i == 1:
+                color = '#FFFFFF'
+            else:
+                color = palette['text'][2] if len(palette['text']) > 2 else '#FFFFFF'
+            
+            # Shadow
+            img = self._add_platform_shadow(img, word, y, font_main, color, mood, platform)
+            # Text with outline
+            img = self._add_platform_text(img, word, y, font_main, color, mood, platform)
+            
+            # Emoji
+            main_emoji = analysis['emoji']
+            emoji = self._get_platform_emoji(word, topic, main_emoji, platform)
+            if emoji:
+                img = self._draw_landscape_emoji(img, emoji, y, font_emoji, i, mood, platform)
+        
+        # ── Banner ──
+        draw = ImageDraw.Draw(img)
+        self._add_landscape_banner(draw, topic, font_banner, palette, platform)
+        
+        # ── Border ──
+        self._add_platform_border(draw, platform, palette)
+        
+        # ── CTA ──
+        self._add_landscape_cta(draw, mood, platform)
+        
+        # ── Final enhancement ──
+        img = self._enhance_platform_image(img, mood, platform)
+        
+        # ── Save ──
+        img = img.convert("RGB")
+        img.save(output_path, "JPEG", quality=98, optimize=True, subsampling=0)
+        
+        print(f"    🎨 Thumbnail: {output_path}")
+        print(f"    📝 Words: {words_chunk} | Resolution: {self.width}x{self.height}")
+        
+        return output_path
 
-    def generate_youtube_thumbnail_from_frame(self, frame_path: str, words: List[str],
-                                               topic: str, output_path: str,
-                                               script: str = "", hook: str = "") -> str:
-        """Generate YouTube thumbnail from video frame (PRIMARY METHOD for 2026)"""
-        return self.generate_thumbnail_from_frame(
-            frame_path, words, topic, output_path, "youtube", script, hook
+    # ============================================================
+    # GET PLATFORM EMOJI
+    # ============================================================
+    def _get_platform_emoji(self, word: str, topic: str, default_emoji: str, platform: str) -> str:
+        word_lower = word.lower()
+        
+        word_emojis = {
+            'memory': '🧠', 'brain': '🧠', 'mind': '🧠',
+            'forget': '🤔', 'forgot': '🤔',
+            'fog': '🌫️', 'foggy': '🌫️',
+            'focus': '🎯', 'concentrate': '🎯',
+            'sleep': '😴', 'night': '🌙',
+            'tired': '😩', 'exhausted': '😩',
+            'stress': '😰', 'pressure': '😰',
+            'anxiety': '😨', 'worry': '😨',
+            'health': '❤️', 'body': '💪',
+            'science': '🔬',
+            'truth': '⚡', 'power': '⚡',
+            'secret': '🔑', 'hidden': '🔑',
+        }
+        
+        for key, emoji in word_emojis.items():
+            if key in word_lower:
+                return emoji
+        
+        if platform == "facebook":
+            facebook_emojis = {
+                'memory': '🧠', 'brain': '🧠',
+                'forget': '🤔', 'stress': '😰',
+                'sleep': '😴', 'health': '❤️',
+            }
+            for key, emoji in facebook_emojis.items():
+                if key in word_lower or key in topic.lower():
+                    return emoji
+        
+        return default_emoji
+
+    # ============================================================
+    # ADD PLATFORM BORDER
+    # ============================================================
+    def _add_platform_border(self, draw: ImageDraw.Draw, platform: str, palette: Dict) -> None:
+        accent_color = palette.get('accent', '#FFD700')
+        border_width = 12 if platform == "youtube" else 8
+        padding = 15
+        
+        draw.rectangle(
+            [
+                (padding, padding),
+                (self.width - padding, self.height - padding)
+            ],
+            outline=accent_color,
+            width=border_width
         )
-
-    def generate_facebook_thumbnail_from_frame(self, frame_path: str, words: List[str],
-                                                topic: str, output_path: str,
-                                                script: str = "", hook: str = "") -> str:
-        """Generate Facebook thumbnail from video frame"""
-        return self.generate_thumbnail_from_frame(
-            frame_path, words, topic, output_path, "facebook", script, hook
+        
+        inner_padding = padding + border_width + 4
+        draw.rectangle(
+            [
+                (inner_padding, inner_padding),
+                (self.width - inner_padding, self.height - inner_padding)
+            ],
+            outline="#FFFFFF",
+            width=2 if platform == "youtube" else 1
         )
 
     # ============================================================
     # CONVENIENCE METHODS
     # ============================================================
-    
-    def generate_youtube_thumbnail(self, words: List[str], topic: str, output_path: str,
-                                   script: str = "", hook: str = "") -> str:
-        """Generate YouTube thumbnail (bold, high-CTR)"""
-        return self.generate_thumbnail(words, topic, output_path, "youtube", script, hook)
-    
-    def generate_facebook_thumbnail(self, words: List[str], topic: str, output_path: str,
-                                   script: str = "", hook: str = "") -> str:
-        """Generate Facebook thumbnail (story-driven, engagement)"""
-        return self.generate_thumbnail(words, topic, output_path, "facebook", script, hook)
+    def generate_youtube_thumbnail_from_frame(
+        self, frame_path: str, words: List[str],
+        topic: str, output_path: str,
+        script: str = "", hook: str = ""
+    ) -> str:
+        return self.generate_thumbnail_from_frame(
+            frame_path, words, topic, output_path, "youtube", script, hook
+        )
 
+    def generate_facebook_thumbnail_from_frame(
+        self, frame_path: str, words: List[str],
+        topic: str, output_path: str,
+        script: str = "", hook: str = ""
+    ) -> str:
+        return self.generate_thumbnail_from_frame(
+            frame_path, words, topic, output_path, "facebook", script, hook
+        )
 
-# ============================================================
-# TEST
-# ============================================================
-if __name__ == "__main__":
-    print("🚀 TESTING PLATFORM-SPECIFIC THUMBNAIL GENERATOR\n" + "="*60)
-    
-    generator = ThumbnailGenerator()
-    
-    test_words = ["MEMORY", "BRAIN", "FOG"]
-    test_topic = "forgetting names"
-    
-    # YouTube Thumbnail
-    yt_path = "test_thumbnail_youtube.jpg"
-    generator.generate_youtube_thumbnail(test_words, test_topic, yt_path)
-    print(f"✅ YouTube Thumbnail: {yt_path}")
-    
-    # Facebook Thumbnail
-    fb_path = "test_thumbnail_facebook.jpg"
-    generator.generate_facebook_thumbnail(test_words, test_topic, fb_path)
-    print(f"✅ Facebook Thumbnail: {fb_path}")
-    
-    print(f"\n✅ Both thumbnails generated!")
+    # ============================================================
+    # LEGACY FALLBACK (PIL-only, if frame extraction fails)
+    # ============================================================
+    def generate_thumbnail(
+        self, words: List[str], topic: str, 
+        output_path: str, platform: str = "youtube",
+        script: str = "", hook: str = ""
+    ) -> str:
+        """Legacy fallback - PIL-only thumbnail (if frame extraction fails)"""
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        
+        analysis = self._analyze_content(topic, script)
+        palette = analysis['palette']
+        mood = analysis['mood']
+        
+        bg_hex = random.choice(palette['bg'])
+        img = self._create_platform_background(bg_hex, analysis['style'], mood, platform)
+        img = self._add_platform_effects(img, mood, platform)
+        
+        words_chunk = words[:3]
+        while len(words_chunk) < 3:
+            words_chunk.append(random.choice(["TRUTH", "SECRET", "POWER", "BRAIN", "FOCUS"]))
+        
+        style_settings = self._get_platform_style(platform)
+        font_size = style_settings['text_size']
+        font_main = _load_font(font_size, bold=True)
+        font_emoji = _load_font(self.font_size_emoji, bold=False)
+        font_banner = _load_font(self.font_size_banner, bold=True)
+        
+        y_positions = self._get_landscape_layout(words_chunk, platform)
+        
+        for i, (word, y) in enumerate(zip(words_chunk, y_positions)):
+            if i == 0:
+                color = palette['text'][0]
+            elif i == 1:
+                color = palette['text'][1]
+            else:
+                color = palette['text'][2] if len(palette['text']) > 2 else palette['text'][0]
+            
+            img = self._add_platform_shadow(img, word, y, font_main, color, mood, platform)
+            img = self._add_platform_text(img, word, y, font_main, color, mood, platform)
+            
+            emoji = self._get_platform_emoji(word, topic, analysis['emoji'], platform)
+            if emoji:
+                img = self._draw_landscape_emoji(img, emoji, y, font_emoji, i, mood, platform)
+        
+        draw = ImageDraw.Draw(img)
+        self._add_landscape_banner(draw, topic, font_banner, palette, platform)
+        self._add_platform_border(draw, platform, palette)
+        self._add_landscape_cta(draw, mood, platform)
+        
+        img = self._enhance
