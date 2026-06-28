@@ -1,181 +1,298 @@
-"""AI Prompts for Groq — BABY & CHILDREN SCIENCE (USA 2026)
-   NICHE: Baby Brain Development, Child Psychology, Parenting Science
-   TARGET: Parents, expecting parents, USA primary
-   GOAL: 70% swap rate → 20% (emotional + educational)
+"""AI Prompts for Groq — 2026 Viral Formula (USA Audience)
+   NICHE: BABY + BRAIN SCIENCE (Universal, All Ages)
+   TARGET: USA PRIMARY | Parents, Families, All Ages
+   FORMAT: YouTube Shorts (42-55 seconds)
+   GOAL: 0% Swipe Rate | 70%+ Retention | Viral Titles
+   STRUCTURE: Hook (1.5s) → Shock → Suspense → Story → CTR
+   
+   FIXED: All required variables exported (VIRAL_TITLE_GENERATOR, VIRAL_SCRIPT_GENERATOR, SHOCK_MOMENT_GENERATOR)
 """
 
 from typing import List, Dict, Optional
 import random
 
 # ═══════════════════════════════════════════════════════════
-# BABY & CHILDREN TOPICS (50+ Viral Topics)
+# AUDIENCE PROFILE — USA PRIMARY
 # ═══════════════════════════════════════════════════════════
-BABY_TOPICS = [
-    # ── BABY BRAIN DEVELOPMENT ──
-    "How a baby's brain doubles in size in the first year",
-    "Why babies cry at night — the neuroscience behind it",
-    "Baby's first words: brain development milestone explained",
-    "The science of baby sleep patterns and brain growth",
-    "How breastfeeding builds your baby's brain",
-    "Baby reflexes that disappear after 6 months — science explained",
-    "Why babies smile in their sleep — brain development",
-    "The neuroscience of baby-parent bonding and attachment",
-    "How music affects a baby's developing brain",
-    "Baby vision development — week by week guide",
-    "Why babies love faces — brain development science",
-    "The first 1000 days: critical window for brain development",
-    "How talking to your baby builds their brain cells",
-    "Baby brain development: what happens in the first 12 months",
-    "Why tummy time is crucial for baby brain growth",
-    "How baby brains process language before they can speak",
-    "The science behind baby memory development",
-    "How emotions develop in a baby's brain",
-    "Why babies stare at lights — visual brain development",
-    "Baby brain growth: what parents need to know",
+AUDIENCE_PROFILE = """
+AUDIENCE:
+- PRIMARY: USA (75%+ target)
+- SECONDARY: UK, Canada, Australia
+- Age: ALL AGES (13-65+)
+- Gender: All genders
+- Device: 90%+ Mobile (YouTube Shorts)
+- Behavior: Scroll during breaks, before bed, commuting
 
-    # ── CHILD PSYCHOLOGY ──
-    "Why toddlers say 'no' to everything — psychology explained",
-    "The science of tantrums: what's happening in a child's brain",
-    "How play shapes a child's developing brain",
-    "Why kids ask 'why' constantly — curiosity brain development",
-    "The psychology of sibling rivalry and brain development",
-    "How screen time affects a child's developing brain",
-    "Why kids lie — the neuroscience behind childhood dishonesty",
-    "The science of children's fears and brain development",
-    "How sleep affects a child's brain growth",
-    "Why kids have imaginary friends — psychology explained",
-    "The psychology of children's eating habits",
-    "How praise affects a child's developing brain",
-    "The science of childhood learning and memory",
-    "Why kids are more creative than adults — brain science",
-    "How emotions develop in children — brain growth explained",
-    "The psychology of childhood friendships",
-    "Why kids get separation anxiety — brain development",
-    "How bilingualism shapes a child's brain",
-    "The science of childhood curiosity and brain wiring",
-    "How reading to your child builds their brain",
+USA-SPECIFIC PAIN POINTS:
+- "Why does my baby do this?"
+- "Am I a good parent?"
+- "Is my baby developing normally?"
+- "What should I do as a parent?"
+- "I want to understand my child better"
 
-    # ── PARENTING SCIENCE ──
-    "The science of gentle parenting and brain development",
-    "How your voice shapes your baby's brain",
-    "The neuroscience of parent-child attachment",
-    "Why skin-to-skin contact builds baby's brain",
-    "How routine affects a child's developing brain",
-    "The science of co-sleeping and baby brain development",
-    "How stress during pregnancy affects baby's brain",
-    "The science of baby-wearing and brain development",
-    "How nutrition builds a baby's brain",
-    "The psychology of positive parenting and brain growth",
-    "How your emotional state affects your baby's brain",
-    "The science of baby massage and brain development",
-    "How outdoor play builds children's brains",
-    "The neuroscience of family routines and brain development",
-    "How pets affect a child's developing brain",
-]
+WHAT WORKS IN USA:
+- Relatable parenting moments
+- "OMG that happens to MY baby"
+- Direct, confident, no fluff
+- American English ONLY
+- Fast-paced, emotional
+- Clear value proposition in first 3 seconds
+"""
 
 # ═══════════════════════════════════════════════════════════
-# BABY HOOKS — Emotional + Curiosity (Swipe Stopper)
+# NEGATIVE CONSTRAINTS — ABSOLUTELY FORBIDDEN
+# ═══════════════════════════════════════════════════════════
+NEGATIVE_CONSTRAINTS = """
+--- ⛔ NEGATIVE CONSTRAINTS (FORBIDDEN) ---
+1. NO age-specific language ("after 35", "after 40", "men over 50")
+2. NO gender-specific language ("men", "women") — use "you/your" only
+3. NO "shocking", "terrifying", "horrifying", "crazy", "insane"
+4. NO "scientists say", "studies show", "research proves"
+5. NO medical fear-mongering or doom tone
+6. NO British spelling — use American English ONLY:
+   color (not colour), favor (not favour), organize (not organise)
+   recognize (not recognise), behavior (not behaviour)
+"""
+
+# ═══════════════════════════════════════════════════════════
+# VIRAL TITLE GENERATOR — USA SEO 2026
+# ═══════════════════════════════════════════════════════════
+VIRAL_TITLE_GENERATOR = """
+You are a YouTube Shorts title expert for USA audience in 2026.
+
+GOAL: Create titles that make USA parents think "wait... this is about MY baby"
+AUDIENCE: Parents, expecting parents, families
+
+WINNING TITLE TYPES FOR USA PARENTS:
+
+🟢 Type 1 — "Your baby" hooks:
+✅ "Your baby's brain does this every single day..."
+✅ "Your baby is ALREADY doing this right now"
+✅ "Your baby's brain has been hiding this from you"
+✅ "Your baby does this while they sleep"
+
+🟢 Type 2 — "Why" hooks:
+✅ "Why your baby does [X]"
+✅ "Why your baby feels [X]"
+✅ "Why your baby's brain can't stop [X]"
+✅ "Why [X] happens to every baby"
+
+🟢 Type 3 — "Nobody tells you" hooks:
+✅ "Nobody explains why your baby [X]"
+✅ "The real reason your baby [X]"
+✅ "What nobody tells you about [X]"
+✅ "The hidden reason behind [X]"
+
+TITLE RULES:
+- 5-8 words MAX + 1 emoji at the end
+- NO age or gender references
+- MUST be a statement (not question)
+- MUST create curiosity gap
+- MUST use American English spelling
+
+TOPIC: {topic}
+
+Return EXACTLY 5 titles, one per line. No numbers, no bullets.
+"""
+
+# ═══════════════════════════════════════════════════════════
+# VIRAL SCRIPT GENERATOR — USA 2026
+# ═══════════════════════════════════════════════════════════
+VIRAL_SCRIPT_GENERATOR = """
+You are a YouTube Shorts script writer for USA audience in 2026.
+
+AUDIENCE: USA parents and families.
+TONE: Like a brilliant friend explaining baby science — casual, clear, a little mind-blowing.
+GOAL: Make them feel "OMG I never knew this about my baby"
+
+STRUCTURE: Hook → Shock → Suspense → Story → CTR
+TARGET: 40-55 seconds spoken at natural pace
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### HOOK (8-10 words, 1.5-2.5 seconds)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Swipe-stopper hooks (pick style based on topic):
+✅ "Your baby's brain is growing RIGHT NOW at 100,000 new neurons..."
+✅ "Nobody ever explains why your baby does this..."
+✅ "This happens to your baby's brain every single day..."
+✅ "Your baby's brain has been keeping a secret from you..."
+✅ "You've seen this in your baby... here's why..."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### SHOCK (8-10 words, 2-3 seconds)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+One surprising fact about baby brain development.
+Examples:
+- "Your baby's brain doubles in size in the first year..."
+- "By age 3, your child's brain has 100 trillion connections..."
+- "Your baby can recognize your voice from birth..."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### SUSPENSE (8-10 words, 3-4 seconds)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"But here's what nobody explains..."
+"And this is where it gets interesting..."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### STORY (50-60 words, 22-28 seconds)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROBLEM then SOLUTION — like explaining to a curious parent.
+- Short sentences. Max 10 words each.
+- Universal experiences any parent can relate to
+- Always "you/your" — never "parents", "people"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### CTR (12-15 words, 5-6 seconds)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MANDATORY: Like + Comment + Follow ask
+Examples:
+"Comment BABY if your little one does this too! Follow for more."
+"Double tap if you love your baby! Tag a new parent! Follow."
+"Like if this blew your mind! Comment YES! Follow."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL RULES:
+- Use "you/your" throughout
+- American English ONLY
+- Total: 40-55 seconds
+
+Topic: {topic}
+Angle: {angle}
+Shock Angle: {shock_angle}
+
+Return ONLY the script with exact markers. No extra text.
+"""
+
+# ═══════════════════════════════════════════════════════════
+# SHOCK MOMENT GENERATOR — USA 2026
+# ═══════════════════════════════════════════════════════════
+SHOCK_MOMENT_GENERATOR = """
+Generate ONE surprising fact for video editing emphasis.
+
+Audience: USA parents — anyone with a baby.
+Feel: "whoa I never knew that" NOT "oh god that's terrifying"
+
+Rules:
+- 8-10 words maximum
+- About: {topic}
+- Tone: calm but surprising
+- NO age or gender references
+- American English spelling ONLY
+
+{NEGATIVE_CONSTRAINTS}
+
+Topic: {topic}
+Shock Angle: {shock_angle}
+
+Return ONLY the fact text, no markers, no extra words.
+"""
+
+# ═══════════════════════════════════════════════════════════
+# SEO DESCRIPTION — USA 2026
+# ═══════════════════════════════════════════════════════════
+SEO_DESCRIPTION_GENERATOR = """
+Write a YouTube Shorts description for USA audience in 2026.
+
+RULES:
+- STRICT LENGTH: 100-150 words
+- FIRST LINE: Hook with main keyword + "#Shorts"
+- Include timestamps: Hook 0:00, Key fact 0:08, Main insight 0:15, Takeaway 0:40
+- 3-5 hashtags: include #Shorts, plus 2-3 topic-relevant hashtags
+- CTA: "Follow for more baby science"
+- Keywords: {keywords}
+- American English ONLY
+
+Topic: {topic}
+"""
+
+# ═══════════════════════════════════════════════════════════
+# TAGS GENERATOR — USA SEO 2026
+# ═══════════════════════════════════════════════════════════
+TAGS_GENERATOR = """
+Generate 10-14 YouTube Shorts tags for USA audience in 2026.
+
+Rules:
+- EXACTLY 3 broad tags (1-2 words)
+- EXACTLY 7-9 specific tags (3-4 words)
+- EXACTLY 1 #Shorts tag
+- Include: "youtube shorts", "baby brain", "parenting tips"
+- NO age-specific terms
+
+Topic: {topic}
+Keywords: {keywords}
+
+Return format: One tag per line, no numbers.
+"""
+
+# ═══════════════════════════════════════════════════════════
+# BABY HOOKS (Fallback)
 # ═══════════════════════════════════════════════════════════
 BABY_HOOKS = [
     "Your baby's brain is growing RIGHT NOW at 100,000 new neurons every minute...",
-    "Nobody tells you what your baby's brain is doing while they sleep...",
-    "The first 1000 days decide your child's future brain power...",
+    "The first 1000 days decide your child's entire future brain power...",
+    "What your baby's brain is secretly doing while they sleep will AMAZE you...",
     "Your newborn's brain has already started THIS incredible process...",
-    "What your baby's brain is secretly doing during tummy time...",
-    "The one thing that builds your baby's brain faster than anything else...",
-    "Your baby's brain has more connections than stars in the galaxy...",
+    "The one thing that builds your baby's brain faster than ANYTHING else...",
+    "Your baby's brain has MORE connections than stars in the galaxy...",
     "This simple activity TRIPLES your baby's brain growth...",
     "Your baby's brain is ALREADY processing language before they speak...",
     "The surprising reason your baby cries — it's brain development...",
-    "Your child's brain is doing THIS every single night...",
-    "The science behind your baby's first smile — it's brain growth...",
-    "Your toddler's brain is wired for THIS — and it's amazing...",
-    "Your baby's brain is built through play — here's how...",
+    "Your child's brain is doing THIS every single night without fail...",
+    "Nobody tells you what your baby's brain is doing RIGHT NOW...",
+    "The science behind your baby's first smile is BRAIN GROWTH...",
+    "Your toddler's brain is wired for THIS — and it's AMAZING...",
+    "Your baby's brain is built through play — here's HOW...",
     "The first year of brain development changes EVERYTHING...",
 ]
 
 # ═══════════════════════════════════════════════════════════
-# BABY CTAs — Engagement Driven (Like + Comment Forced)
+# BABY CTAS (Forced Engagement)
 # ═══════════════════════════════════════════════════════════
 BABY_CTAS = [
+    "👍 DOUBLE TAP if your baby does this!",
+    "❤️ Like if you're AMAZED by your baby's brain!",
     "👇 Comment 'BABY' if your little one does this too!",
-    "❤️ Double tap if you love your baby's brain!",
-    "📌 Save this — every parent needs to know this!",
-    "🗣️ Tag a new parent who needs to see this!",
-    "🔔 Follow for more baby brain science!",
-    "💬 What does your baby do that amazes you? Comment below!",
-    "👇 Does your baby do this? Comment YES or NO!",
-    "❤️ Like if this made you appreciate your baby's brain more!",
-    "🗣️ Share this with every new mom you know!",
-    "🔔 Subscribe for more child brain development tips!",
-    "📌 Save this for when your baby hits this milestone!",
-    "👇 Comment 'MEMORY' if you want more baby science!",
+    "💬 What does YOUR baby do that amazes you? Comment below!",
+    "💬 Tag a NEW PARENT who needs to see this!",
+    "📌 SAVE this — every parent needs to know this!",
+    "🗣️ SHARE this with every new mom you know!",
+    "👍 Like AND Comment 'BRAIN' if you love baby science!",
 ]
 
 # ═══════════════════════════════════════════════════════════
-# BABY SCRIPT TEMPLATE
+# HELPERS
 # ═══════════════════════════════════════════════════════════
-BABY_SCRIPT_TEMPLATE = """
-[Hook] {hook}
+def format_prompt(template: str, **kwargs) -> str:
+    """Format a prompt template with kwargs"""
+    if '{NEGATIVE_CONSTRAINTS}' in template:
+        kwargs.setdefault('NEGATIVE_CONSTRAINTS', NEGATIVE_CONSTRAINTS)
+    return template.format(**kwargs)
 
-[Fact 1] Your baby's brain is creating {connections} new connections every second.
-
-[Fact 2] By age {age}, their brain has grown to {size}% of adult size.
-
-[Fact 3] Here's what you can do to support {activity} and build their brain.
-
-[Emotional] Your baby is learning from you every single moment.
-
-[CTA] {cta}
-"""
-
-# ═══════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
-# ═══════════════════════════════════════════════════════════
-def get_baby_topic() -> str:
-    """Get a random baby science topic"""
-    return random.choice(BABY_TOPICS)
-
-def get_baby_hook(topic: str = "") -> str:
-    """Get a baby hook (with optional topic integration)"""
-    hook = random.choice(BABY_HOOKS)
-    if topic:
-        # Integrate topic into hook
-        words = topic.split()[:3]
-        if words:
-            hook = hook.replace("your baby", "your baby's " + " ".join(words))
-    return hook
+def get_baby_hook() -> str:
+    """Get a random baby hook"""
+    return random.choice(BABY_HOOKS)
 
 def get_baby_cta() -> str:
-    """Get a baby CTA"""
+    """Get a random baby CTA"""
     return random.choice(BABY_CTAS)
 
-def generate_baby_script(topic: str) -> Dict:
-    """Generate a complete baby science script"""
-    hook = get_baby_hook(topic)
-    cta = get_baby_cta()
+
+# ═══════════════════════════════════════════════════════════
+# TEST
+# ═══════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    print("🚀 TESTING PROMPTS (USA 2026 - BABY NICHE)\n" + "=" * 60)
     
-    # Dynamic facts based on topic
-    facts = {
-        "connections": random.choice(["millions", "100,000", "1 million"]),
-        "age": random.choice(["1", "2", "3", "6", "12"]),
-        "size": random.choice(["80", "85", "90", "95"]),
-        "activity": random.choice(["tummy time", "talking", "reading", "playing", "singing"]),
-    }
+    print("\n✅ All variables loaded:")
+    print(f"   VIRAL_TITLE_GENERATOR: {len(VIRAL_TITLE_GENERATOR)} chars")
+    print(f"   VIRAL_SCRIPT_GENERATOR: {len(VIRAL_SCRIPT_GENERATOR)} chars")
+    print(f"   SHOCK_MOMENT_GENERATOR: {len(SHOCK_MOMENT_GENERATOR)} chars")
+    print(f"   BABY_HOOKS: {len(BABY_HOOKS)} hooks")
+    print(f"   BABY_CTAS: {len(BABY_CTAS)} CTAs")
     
-    script = BABY_SCRIPT_TEMPLATE.format(
-        hook=hook,
-        connections=facts["connections"],
-        age=facts["age"],
-        size=facts["size"],
-        activity=facts["activity"],
-        cta=cta
-    )
+    print("\n🎯 Testing format_prompt:")
+    formatted = format_prompt(VIRAL_TITLE_GENERATOR, topic="baby brain development")
+    print(f"   {formatted[:100]}...")
     
-    return {
-        "script": script,
-        "hook": hook,
-        "cta": cta,
-        "facts": facts,
-        "topic": topic,
-           }
+    print("\n" + "=" * 60)
+    print("✅ All prompts loaded successfully!")
