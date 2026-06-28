@@ -126,13 +126,3 @@ jobs:
         with:
           name: automation-logs-${{ github.run_id }}
           path: logs/
-
-      - name: Notify Discord
-        if: always() && secrets.DISCORD_WEBHOOK != ''
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ job.status }}
-          title: "🎬 YouTube Automation"
-          description: "Run: #${{ github.run_number }} | Status: ${{ job.status }}"
-          color: ${{ job.status == 'success' && '0x00FF00' || '0xFF0000' }}
