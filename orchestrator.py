@@ -1,25 +1,23 @@
 """
-YouTube Automation System — MASTER ORCHESTRATOR (FINAL FIXED)
+YouTube Automation System — MASTER ORCHESTRATOR (USA 2026 FINAL)
 Complete End-to-End Pipeline with YouTube SEO Optimization & Analytics
 
-FIXES:
-1. ✅ Circular import fixed (Lazy Imports)
-2. ✅ Audio path resolution (final_audio > audio_path)
-3. ✅ YouTube SEO optimized titles, descriptions, tags
-4. ✅ Facebook & Instagram optimized descriptions
-5. ✅ Metrics tracking integration
-6. ✅ Duration validation
-7. ✅ Proper error handling
-8. ✅ USA audience targeting
-9. ✅ No AI look - natural content
-10. ✅ UNIQUE titles every time (randomized templates)
+FIXES APPLIED:
+1. ✅ AI-generated titles with fallback (15-55 chars, USA optimized)
+2. ✅ Dynamic descriptions with engagement hooks (comment-bait + polls)
+3. ✅ Rotating tags (no spam signals - 2026 algorithm)
+4. ✅ USA geo-targeting hints for YouTube algorithm
+5. ✅ Facebook/Instagram optimized descriptions
+6. ✅ End-screen hooks for session time boost
+7. ✅ Proper duration validation (42-55s)
+8. ✅ HD frame extraction for thumbnails
+9. ✅ Unique titles every time (20+ templates)
+10. ✅ No duplicate hashtags (spam-free)
 """
 
 import os
 import sys
 import json
-
-# FIX H1: Load .env file early before any config imports that read env vars
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -72,25 +70,23 @@ LATEST_THUMB = OUTPUT_DIR / "latest_thumb.jpg"
 # ORCHESTRATOR CLASS
 # ============================================================
 class AutomationOrchestrator:
-    """Complete End-to-End Automation Pipeline - FINAL"""
+    """Complete End-to-End Automation Pipeline - USA 2026"""
 
     def __init__(self):
-        logger.info("🚀 Initializing Automation System...")
+        logger.info("🚀 Initializing Automation System (USA 2026)...")
 
-        # ============================================================
-        # FIX 1: LAZY IMPORTS to avoid circular dependency
-        # ============================================================
+        # Lazy imports to avoid circular dependency
         self._modules = {}
         self._init_modules()
 
-        # Metrics (optional)
+        # Metrics
         self.metrics = None
         try:
             from core.metrics import MetricsTracker
             self.metrics = MetricsTracker()
             logger.info("✅ Metrics tracking enabled")
         except ImportError:
-            logger.warning("⚠️ MetricsTracker not found - metrics disabled")
+            logger.warning("⚠️ MetricsTracker not found")
 
         # Statistics
         self.stats = {
@@ -104,42 +100,41 @@ class AutomationOrchestrator:
         }
 
         # ============================================================
-        # FIX 2: UNIQUE TITLE TEMPLATES (20+ variations)
-        # REMOVED Type 7 "Warning/Danger" — violates NEGATIVE_CONSTRAINTS in prompts.py
-        # REPLACED with curiosity-driven patterns that boost CTR without fear
+        # UNIQUE TITLE TEMPLATES - USA 2026 (20+ variations)
+        # NO warning/danger - curiosity-driven only
         # ============================================================
         self.title_templates = [
-            # Type 1: "Your brain" hooks — curiosity, not fear
+            # Type 1: "Your brain" hooks
             "Your brain does this with {topic} 🧠",
             "Your brain is hiding {topic} from you 🧠",
             "Your brain actually does this with {topic} 🧠",
             
-            # Type 2: "Why" hooks — relatable mystery
+            # Type 2: "Why" hooks
             "Why {topic} happens to you 🧠",
             "Why {topic} is more common than you think 🧠",
             "Why does {topic} even happen 🧠",
             
-            # Type 3: "Hidden truth" hooks — curiosity gap
+            # Type 3: "Hidden truth" hooks
             "The truth about {topic} nobody tells you 🧠",
             "The real reason behind {topic} 🧠",
             "What scientists found about {topic} 🧠",
             
-            # Type 4: "What nobody tells you" hooks — insider knowledge
+            # Type 4: "What nobody tells you" hooks
             "What nobody explains about {topic} 🧠",
             "What your brain does with {topic} 🧠",
             "What {topic} actually means for you 🧠",
             
-            # Type 5: "How" hooks — educational curiosity
+            # Type 5: "How" hooks
             "How {topic} affects your brain daily 🧠",
             "How {topic} really works inside you 🧠",
             "How your body creates {topic} 🧠",
             
-            # Type 6: "Science/Explained" hooks — authority + brevity
+            # Type 6: "Science/Explained" hooks
             "The science behind {topic} explained 🧠",
             "{topic} explained in 60 seconds 🧠",
             "The science you need to know about {topic} 🧠",
             
-            # Type 7: REPLACED — Curiosity + Relatability (no fear/danger)
+            # Type 7: Curiosity + Relatability (NO fear/danger)
             "You won't believe what causes {topic} 🧠",
             "This is why {topic} keeps happening 🧠",
             "The one reason behind {topic} 🧠",
@@ -148,10 +143,14 @@ class AutomationOrchestrator:
             "The simple truth about {topic} 🧠",
             "The easy way to understand {topic} 🧠",
             "What {topic} really means for you 🧠",
+            
+            # USA-specific hooks
+            "Every American experiences {topic} 🧠",
+            "Why {topic} is happening to you right now 🧠",
         ]
 
         # ============================================================
-        # FIX 3: UNIQUE DESCRIPTIONS
+        # DESCRIPTION TEMPLATES - USA 2026
         # ============================================================
         self.description_templates = [
             "🧠 The truth about {topic} that nobody tells you...",
@@ -159,14 +158,14 @@ class AutomationOrchestrator:
             "💡 One simple fact about {topic} that changes everything...",
             "⚡ The hidden reason behind {topic} explained...",
             "🎯 What {topic} really means for your brain...",
+            "🇺🇸 Every American should know this about {topic}...",
         ]
 
-        logger.info("✅ System initialized")
+        logger.info("✅ System initialized (USA 2026)")
 
     # ============================================================
     # LAZY INITIALIZATION
     # ============================================================
-
     def _init_modules(self):
         """Lazy initialization to avoid circular imports"""
         try:
@@ -247,7 +246,6 @@ class AutomationOrchestrator:
             raise
 
     def __getattr__(self, name):
-        """Allow direct access to modules"""
         if name in self._modules:
             return self._modules[name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
@@ -255,9 +253,7 @@ class AutomationOrchestrator:
     # ============================================================
     # HEALTH CHECK
     # ============================================================
-
     def health_check(self) -> Dict:
-        """Check all system components"""
         try:
             from config.settings import API_KEYS
             api_status = API_KEYS.validate()
@@ -274,78 +270,67 @@ class AutomationOrchestrator:
         }
 
     # ============================================================
-    # FIX 2: UNIQUE SEO OPTIMIZED CONTENT GENERATORS
+    # GENERATE YOUTUBE TITLE - AI FIRST, FALLBACK SECOND
     # ============================================================
-
     def _generate_youtube_title(self, topic: str, script: Dict) -> str:
-        """Generate UNIQUE YouTube title — AI-first, template fallback.
-        
-        FIX: Previous version used random.choice(title_templates) with {topic} 
-        injection, creating broken/overlong titles like "Your brain is forgetting 
-        why your body jerks before you fall asleep right now 🧠" (70+ chars).
-        
-        Now tries AI-generated title from content_generator first, then falls back 
-        to smart template selection with SHORT topic injection (max 20 chars).
         """
-        # --- ATTEMPT 1: AI-generated title (from content_generator) ---
+        Generate UNIQUE YouTube title - AI first, template fallback.
+        USA 2026 optimized: 15-55 characters.
+        """
+        # ATTEMPT 1: AI-generated title
         try:
             ai_title = self._modules['content_gen'].generate_title(topic=topic)
-            if ai_title and 15 <= len(ai_title) <= 60:
+            if ai_title and 15 <= len(ai_title) <= 55:
                 logger.info(f"   ✅ AI title: {ai_title}")
                 return ai_title
         except Exception as e:
             logger.warning(f"   ⚠️ AI title generation failed: {e}")
         
-        # --- ATTEMPT 2: Smart template selection with short topic ---
-        # Pick a template, but only inject first 2-3 words of topic for brevity
+        # ATTEMPT 2: Smart template selection with short topic
         template = random.choice(self.title_templates)
-        topic_short = ' '.join(topic.split()[:3])  # Max 3 words for injection
+        topic_short = ' '.join(topic.split()[:3])
         
         try:
             title = template.format(topic=topic_short)
         except (KeyError, IndexError):
             title = template.replace('{topic}', topic_short)
         
-        # Hard cap at 60 chars (YouTube title display limit for Shorts)
-        if len(title) > 60:
-            # Try with even shorter topic (2 words)
+        # Hard cap at 55 chars (YouTube Shorts sweet spot)
+        if len(title) > 55:
             topic_shorter = ' '.join(topic.split()[:2])
             try:
                 title = template.format(topic=topic_shorter)
             except (KeyError, IndexError):
                 title = template.replace('{topic}', topic_shorter)
         
-        # Final hard cap
-        if len(title) > 60:
-            title = title[:57] + "..."
+        if len(title) > 55:
+            title = title[:52] + "..."
         
         return title
 
+    # ============================================================
+    # GENERATE YOUTUBE DESCRIPTION - USA 2026
+    # ============================================================
     def _generate_youtube_description(self, topic: str, script: Dict) -> str:
-        """Generate UNIQUE YouTube description with engagement hooks.
-        
-        FIX: Previous version was generic — same hashtags, same structure, no CTA.
-        Now includes: comment-bait question, like prompt, topic-specific hashtags.
-        """
+        """Generate UNIQUE YouTube description with engagement hooks."""
         hook = script.get('hook', '')
         story = script.get('story', '')
         shock = script.get('shock', '')
         
-        # Random description intro
         intro = random.choice(self.description_templates).format(topic=topic)
         
-        # FIX: Comment-bait — specific question that viewers want to answer
+        # Comment-bait questions (USA tested)
         comment_questions = [
             f"Has {topic} ever happened to you? Tell me below 👇",
             f"Do you experience {topic}? Drop a comment!",
             f"What's your biggest body mystery? Comment below!",
             f"Have you noticed {topic}? Let me know in the comments 👇",
             f"Tag someone who always experiences {topic} 😂",
+            f"Americans - has this happened to you? Comment YES or NO!",
         ]
         comment_bait = random.choice(comment_questions)
         
-        # FIX: Quick Poll — binary choice that drives comment engagement
-        # Viewers are 3x more likely to comment when given a simple A/B choice
+        # Quick Poll (drives comments)
         poll_options = [
             f"🏟️ QUICK POLL: Has {topic} happened to you? Comment YES or NO!",
             f"🏟️ POLL: Did you know about {topic} before this? Comment knew or wow!",
@@ -354,18 +339,19 @@ class AutomationOrchestrator:
         ]
         poll = random.choice(poll_options)
         
-        # FIX: Dynamic topic-specific hashtags (not same #MemoryFacts every time)
+        # Dynamic topic-specific hashtags
         topic_words = [w for w in topic.lower().split() if len(w) > 3 and w not in 
                        ['your', 'body', 'brain', 'when', 'that', 'this', 'with', 'from', 'about']]
         topic_hashtag = '#' + topic_words[0].capitalize() if topic_words else '#BodyScience'
         
-        # Rotate between hashtag sets for variety
+        # Rotating hashtag sets (spam-free)
         hashtag_sets = [
-            f"#Shorts #shorts #{topic_hashtag.replace('#','')} #BrainFacts #BodyScience #healthtips",
-            f"#Shorts #shorts #BrainHealth #{topic_hashtag.replace('#','')} #facts #science",
-            f"#Shorts #shorts #{topic_hashtag.replace('#','')} #DidYouKnow #BodyFacts #health",
-            f"#Shorts #shorts #BrainFacts #{topic_hashtag.replace('#','')} #BodyMysteries #tips",
-            f"#Shorts #shorts #{topic_hashtag.replace('#','')} #ScienceExplained #facts #brain",
+            f"#Shorts #{topic_hashtag.replace('#','')} #BrainFacts #BodyScience #healthtips",
+            f"#Shorts #BrainHealth #{topic_hashtag.replace('#','')} #facts #science",
+            f"#Shorts #{topic_hashtag.replace('#','')} #DidYouKnow #BodyFacts #health",
+            f"#Shorts #BrainFacts #{topic_hashtag.replace('#','')} #BodyMysteries #tips",
+            f"#Shorts #{topic_hashtag.replace('#','')} #ScienceExplained #facts #brain",
+            f"#Shorts #{topic_hashtag.replace('#','')} #USA #health #wellness",
         ]
         hashtags = random.choice(hashtag_sets)
 
@@ -389,30 +375,31 @@ class AutomationOrchestrator:
 {hashtags}
 """.strip()
 
-        # FIX 2026: Deduplicate hashtags in description — YouTube flags
-        # repeated hashtag patterns across videos as spam. Ensure no duplicates
-        # within a single description, and strip any #Shorts that appears twice.
+        # Deduplicate hashtags (spam-free)
         import re as _re
         hashtag_pattern = _re.findall(r'#\w+', description)
         seen_hashtags = set()
         for ht in hashtag_pattern:
             ht_lower = ht.lower()
             if ht_lower in seen_hashtags:
-                # Remove duplicate (case-insensitive) — keep first occurrence only
                 description = description.replace(ht, '', 1).replace('  ', ' ')
             else:
                 seen_hashtags.add(ht_lower)
 
         return description[:5000]
 
+    # ============================================================
+    # GENERATE YOUTUBE TAGS - USA 2026 (Spam-Free)
+    # ============================================================
     def _generate_youtube_tags(self, topic: str, script: Dict) -> List[str]:
         """Generate YouTube tags - DYNAMIC to avoid spam signals"""
-        # FIX 2026: Rotating base tag sets so not every video has identical tags
+        # Rotating base tag sets
         base_tag_sets = [
             ["brain science", "brain fog", "why do i forget", "brain health", "body science"],
             ["brain facts", "cognitive health", "why does my body", "brain fog causes", "health facts"],
             ["body secrets", "brain tips", "memory loss", "neuroscience", "health tips"],
             ["why does this happen", "brain explained", "body science", "mind facts", "did you know"],
+            ["usa health", "american wellness", "body science", "brain facts", "explained"],
         ]
         primary_tags = random.choice(base_tag_sets)
         
@@ -436,26 +423,29 @@ class AutomationOrchestrator:
                 break
         return tags
 
+    # ============================================================
+    # GENERATE FACEBOOK DESCRIPTION - USA 2026
+    # ============================================================
     def _generate_facebook_description(self, topic: str, script: Dict) -> str:
-        """Facebook optimized description with engagement hooks"""
         hook = script.get('hook', '')
         shock = script.get('shock', '')
         
-        # FIX: Comment-bait for Facebook (people love sharing opinions here)
         fb_questions = [
             f"Has this ever happened to you? Share your experience below!",
             f"Tag someone who ALWAYS experiences {topic}",
             f"Did you know this about {topic}? React if this is you!",
             f"Who else thought they were the only one? Comment below!",
+            f"Americans - has this happened to you? React!",
         ]
         fb_question = random.choice(fb_questions)
         
-        # FIX 2026: Dynamic FB hashtags - rotating sets for variety (no spam)
+        # Dynamic FB hashtags (spam-free)
         fb_hashtag_sets = [
             "#memory #brainhealth #BrainFacts #healthtips #shorts #reels",
             "#brainfog #BodyScience #facts #health #shorts #reels",
             "#BrainFacts #healthtips #DidYouKnow #brain #shorts #reels",
             "#bodyfacts #BrainFacts #health #science #shorts #reels",
+            "#USA #health #wellness #BrainFacts #shorts #reels",
         ]
         fb_hashtags = random.choice(fb_hashtag_sets)
         
@@ -477,63 +467,64 @@ Follow for more body science
 
 {fb_hashtags}"""
 
+    # ============================================================
+    # GENERATE INSTAGRAM CAPTION - USA 2026
+    # ============================================================
     def _generate_instagram_caption(self, topic: str, script: Dict) -> str:
-        """Instagram optimized caption with engagement hooks"""
         hook = script.get('hook', '')
         topic_words = topic.lower().replace('-', ' ').replace('?', '').split()
         topic_hashtag = '#' + topic_words[0].capitalize() if topic_words else '#BodyFacts'
         
-        # FIX: Instagram-specific engagement hooks
         ig_hooks = [
-            f"Save this for the next time {topic} happens to you! \U0001f4cc",
-            f"Double tap if {topic} has ever happened to you! \U0001f49b",
-            f"Share this with someone who needs to know! \U0001f4e4",
-            'Comment YES if this is SO you \U0001f602',
+            f"Save this for the next time {topic} happens to you! 📌",
+            f"Double tap if {topic} has ever happened to you! 💛",
+            f"Share this with someone who needs to know! 📤",
+            'Comment YES if this is SO you 😂',
+            f"Americans - has {topic} happened to you? Comment YES! 🇺🇸',
         ]
         ig_hook = random.choice(ig_hooks)
         
-        # FIX 2026: Dynamic IG hashtags - rotating sets + topic-specific (no spam)
+        # Dynamic IG hashtags (spam-free)
         ig_hashtag_sets = [
             f"#memory #{topic_hashtag.replace('#','')} #BrainFacts #healthtips #shorts #reels #explore",
             f"#brainfog #{topic_hashtag.replace('#','')} #facts #wellness #shorts #reels #explore",
             f"#BrainFacts #{topic_hashtag.replace('#','')} #DidYouKnow #brain #shorts #reels #viral",
             f"#{topic_hashtag.replace('#','')} #bodyfacts #health #science #shorts #reels #fyp",
+            f"#{topic_hashtag.replace('#','')} #USA #health #wellness #shorts #reels #explore",
         ]
         ig_hashtags = random.choice(ig_hashtag_sets)
         
-        return f"""\U0001f9e0 {hook}
+        return f"""🧠 {hook}
 
 The science behind {topic} explained in 60 seconds!
 
-\U0001f4a1 Why it happens
-\U0001f52c The science
-\u2705 What you can do
+💡 Why it happens
+🔬 The science
+✅ What you can do
 
 {ig_hook}
-Follow for more brain tips \U0001f446
+Follow for more brain tips 👆
 
 {ig_hashtags}"""
 
-
+    # ============================================================
+    # GENERATE ENDSCREEN HOOK - USA 2026
+    # ============================================================
     def _generate_endscreen_hook(self, topic: str) -> str:
-        """Generate end-screen engagement hook for YouTube description.
-        
-        FIX: Adds a 'Watch Next' + Subscribe CTA at the end of descriptions.
-        This is critical because YouTube's algorithm measures end-screen
-        interactions (clicks, subscribes) as a strong engagement signal.
-        Without it, viewers watch and leave = low session time = low recommendation.
-        """
         endscreen_hooks = [
-            "\U0001f514 SUBSCRIBE for daily body science nobody teaches you!",
-            "\U0001f514 Follow for Part 2 \u2014 your body has more secrets like this!",
-            "\U0001f514 Hit the bell \u2014 next video reveals why your body does THIS at 3am!",
-            "\U0001f514 Subscribe \u2014 tomorrow: the body trick 90% of people don't know!",
-            "\U0001f514 Follow for more \u2014 next Short reveals what your gut is hiding!",
+            "🔔 SUBSCRIBE for daily body science nobody teaches you!",
+            "🔔 Follow for Part 2 — your body has more secrets like this!",
+            "🔔 Hit the bell — next video reveals why your body does THIS at 3am!",
+            "🔔 Subscribe — tomorrow: the body trick 90% of people don't know!",
+            "🔔 Follow for more — next Short reveals what your gut is hiding!",
+            "🔔 Subscribe — every American should know this!",
         ]
         return random.choice(endscreen_hooks)
 
+    # ============================================================
+    # VALIDATE DURATION
+    # ============================================================
     def _validate_duration(self, duration: float) -> bool:
-        """Check if duration is within YouTube Shorts range"""
         try:
             from config.settings import VIDEO_CONFIG
             min_dur = getattr(VIDEO_CONFIG, 'DURATION_MIN', 42)
@@ -549,26 +540,22 @@ Follow for more brain tips \U0001f446
     # ============================================================
     # PROCESS ONE TOPIC
     # ============================================================
-
     async def _process_topic(self, topic: str, topic_data: Dict,
                               skip_upload: bool = False) -> Dict:
 
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         safe = topic[:40].replace(' ', '_').replace('/', '-')
 
-        # ── 1. SCRIPT ──────────────────────────────────────────
+        # ── 1. SCRIPT ──
         logger.info("📝 Step 1: Generating script...")
         script = self._modules['content_gen'].generate_script(topic=topic)
-
         hook_score = script.get('hook_score', 0)
         word_count = script.get('word_count', 0)
-
         logger.info(f"   ✅ Script: {word_count} words | Hook: {hook_score}/10")
 
-        # ── 2. AUDIO ───────────────────────────────────────────
+        # ── 2. AUDIO ──
         logger.info("🎙️ Step 2: Generating audio...")
         audio_dir = str(AUDIO_DIR / f"{safe}_{ts}")
-
         try:
             audio_data = await self._modules['audio_gen'].generate_with_effects(
                 script_segments=script['segments'],
@@ -581,17 +568,14 @@ Follow for more brain tips \U0001f446
 
         audio_path = audio_data.get('final_audio') or audio_data.get('audio_path') or ''
         audio_duration = audio_data.get('total_duration', 0)
+        logger.info(f"   ✅ Audio: {audio_duration:.1f}s")
 
-        logger.info(f"   ✅ Audio: {audio_duration:.1f}s | Path: {audio_path}")
-
-        # Validate duration
         if not self._validate_duration(audio_duration):
             logger.warning(f"⚠️ Audio duration {audio_duration:.1f}s outside range")
 
-        # ── 3. FOOTAGE ─────────────────────────────────────────
+        # ── 3. FOOTAGE ──
         logger.info("🎬 Step 3: Fetching footage...")
         footage_dir = str(FOOTAGE_DIR / f"{safe}_{ts}")
-
         try:
             footage_clips = self._modules['footage_fetcher'].fetch_footage_for_script(
                 script_segments=script['segments'],
@@ -604,16 +588,15 @@ Follow for more brain tips \U0001f446
         except Exception as e:
             logger.error(f"❌ Footage fetch failed: {e}")
             footage_paths = {}
-
         logger.info(f"   ✅ Footage: {len(footage_paths)} clips")
 
-        # ── 4. CAPTIONS ────────────────────────────────────────
+        # ── 4. CAPTIONS ──
         logger.info("💬 Step 4: Generating captions...")
         word_timings = audio_data.get('word_timings', [])
         captions = self._modules['caption_gen'].generate_captions(word_timings=word_timings)
         logger.info(f"   ✅ Captions: {len(captions)} lines")
 
-        # FIX C9: Generate karaoke ASS subtitle file for advanced caption rendering
+        # Karaoke ASS
         caption_ass_path = str(VIDEO_DIR / f"{safe}_{ts}_captions.ass")
         total_duration = audio_data.get('total_duration', 48.0)
         try:
@@ -624,14 +607,12 @@ Follow for more brain tips \U0001f446
             )
             logger.info(f"   ✅ Karaoke ASS captions generated")
         except Exception as e:
-            logger.warning(f"⚠️ Karaoke ASS generation failed (non-fatal): {e}")
+            logger.warning(f"⚠️ Karaoke ASS generation failed: {e}")
             caption_ass_path = None
 
-
-        # ── 5. VIDEO ASSEMBLY ──────────────────────────────────
+        # ── 5. VIDEO ASSEMBLY ──
         logger.info("🎞️ Step 5: Assembling video...")
         video_path = str(VIDEO_DIR / f"{safe}_{ts}.mp4")
-
         try:
             self._modules['video_assembler'].create_video(
                 script_segments=script['segments'],
@@ -648,13 +629,13 @@ Follow for more brain tips \U0001f446
         logger.info(f"   ✅ Video → {video_path}")
         shutil.copy2(video_path, str(LATEST_VIDEO))
 
-        # ── 6. THUMBNAIL ───────────────────────────────────────
+        # ── 6. THUMBNAIL ──
         logger.info("🖼️ Step 6: Generating thumbnail from video frame...")
         thumb_path = str(THUMB_DIR / f"{safe}_{ts}.jpg")
         thumb_words = self._modules['content_gen'].generate_thumbnail_words(topic=topic)
         frame_path = None
 
-        # Step 6a: Extract HD frame from the finished video
+        # Step 6a: Extract HD frame
         try:
             frame_path = self._modules['video_assembler'].extract_hd_frame(
                 video_path=video_path,
@@ -666,7 +647,7 @@ Follow for more brain tips \U0001f446
             logger.warning(f"⚠️ Frame extraction failed: {e}")
             frame_path = None
 
-        # Step 6b: Generate thumbnail FROM video frame (PRIMARY 2026 method)
+        # Step 6b: Generate thumbnail FROM video frame (PRIMARY)
         if frame_path and os.path.exists(frame_path):
             try:
                 self._modules['thumbnail_gen'].generate_thumbnail_from_frame(
@@ -682,9 +663,9 @@ Follow for more brain tips \U0001f446
                 logger.info(f"   ✅ Frame-based thumbnail → {thumb_path}")
             except Exception as e:
                 logger.warning(f"⚠️ Frame-based thumbnail failed: {e}")
-                frame_path = None  # Force fallback
+                frame_path = None
 
-        # Step 6c: Fallback to PIL-only thumbnail (if frame extraction failed)
+        # Step 6c: Fallback to PIL-only
         if not frame_path or not os.path.exists(thumb_path):
             try:
                 self._modules['thumbnail_gen'].generate_thumbnail(
@@ -698,13 +679,12 @@ Follow for more brain tips \U0001f446
                 logger.warning(f"⚠️ All thumbnail generation failed: {e}")
                 thumb_path = None
 
-        # Clean up extracted frame (no longer needed)
+        # Clean up frame
         if frame_path and os.path.exists(frame_path):
             try:
                 os.remove(frame_path)
             except OSError:
                 pass
-
 
         if skip_upload:
             logger.info("⏭️ Skipping uploads")
@@ -717,7 +697,7 @@ Follow for more brain tips \U0001f446
                 'uploaded': False
             }
 
-        # ── 7. CLOUD UPLOAD ────────────────────────────────────
+        # ── 7. CLOUD UPLOAD ──
         video_url = None
         if self._modules['cloud_uploader'].is_configured():
             logger.info("☁️ Step 7: Cloud upload...")
@@ -730,10 +710,9 @@ Follow for more brain tips \U0001f446
         else:
             logger.info("☁️ Step 7: Cloud not configured, skipping")
 
-        # ── 8. SEO CONTENT ─────────────────────────────────────
+        # ── 8. SEO CONTENT ──
         title = self._generate_youtube_title(topic, script)
         description = self._generate_youtube_description(topic, script)
-        # FIX: Append end-screen engagement hook for algorithm boost
         endscreen = self._generate_endscreen_hook(topic)
         description = description + '\n\n' + endscreen
         tags = self._generate_youtube_tags(topic, script)
@@ -743,7 +722,7 @@ Follow for more brain tips \U0001f446
 
         logger.info(f"   📌 Title: {title}")
 
-        # ── 9. YOUTUBE UPLOAD ──────────────────────────────────
+        # ── 9. YOUTUBE UPLOAD ──
         yt_result = {'status': 'skipped'}
         logger.info("📺 Step 8: YouTube upload...")
         try:
@@ -760,7 +739,7 @@ Follow for more brain tips \U0001f446
             logger.error(f"   ❌ YouTube: {e}")
             yt_result = {'status': 'error', 'error': str(e)}
 
-        # ── 10. FACEBOOK UPLOAD ───────────────────────────────
+        # ── 10. FACEBOOK UPLOAD ──
         fb_result = {'status': 'skipped'}
         logger.info("📘 Step 9: Facebook upload...")
         try:
@@ -776,7 +755,7 @@ Follow for more brain tips \U0001f446
             logger.error(f"   ❌ Facebook: {e}")
             fb_result = {'status': 'error', 'error': str(e)}
 
-        # ── 11. INSTAGRAM UPLOAD ──────────────────────────────
+        # ── 11. INSTAGRAM UPLOAD ──
         ig_result = {'status': 'skipped'}
         if video_url:
             logger.info("📸 Step 10: Instagram upload...")
@@ -794,7 +773,7 @@ Follow for more brain tips \U0001f446
         else:
             logger.info("📸 Step 10: Instagram skipped (no cloud URL)")
 
-        # ── 12. UPDATE STATS ───────────────────────────────────
+        # ── 12. UPDATE STATS ──
         uploaded = any([
             yt_result.get('status') not in ['error', 'skipped'],
             fb_result.get('status') not in ['error', 'skipped'],
@@ -806,7 +785,7 @@ Follow for more brain tips \U0001f446
         self.stats['total_hook_score'] += hook_score
         self.stats['topics_processed'].append(topic)
 
-        # ── 13. RECORD METRICS ─────────────────────────────────
+        # ── 13. RECORD METRICS ──
         if self.metrics:
             try:
                 self.metrics.record_video(
@@ -827,7 +806,6 @@ Follow for more brain tips \U0001f446
             except Exception as e:
                 logger.warning(f"⚠️ Metrics recording failed: {e}")
 
-        # ── 14. RETURN RESULT ──────────────────────────────────
         return {
             'topic': topic,
             'title': title,
@@ -847,16 +825,10 @@ Follow for more brain tips \U0001f446
         }
 
     # ============================================================
-    # MAIN PIPELINE
+    # UPLOAD TO PLATFORMS (For --upload-only mode)
     # ============================================================
-
     async def upload_to_platforms(self, video_data: Dict) -> Dict:
-        """Upload an existing video to all platforms.
-        
-        Used by main.py's --upload-only mode. Takes video_data dict
-        with video_path, thumbnail_path, title, description, tags
-        and uploads to YouTube, Facebook, Instagram.
-        """
+        """Upload an existing video to all platforms."""
         results = {}
         video_path = video_data.get('video_path', '')
         thumbnail_path = video_data.get('thumbnail_path')
@@ -899,7 +871,7 @@ Follow for more brain tips \U0001f446
             fb_result = {'status': 'error', 'error': str(e)}
         results['facebook'] = fb_result
 
-        # Instagram (requires cloud URL)
+        # Instagram
         ig_result = {'status': 'skipped'}
         video_url = None
         if self._modules['cloud_uploader'].is_configured():
@@ -924,17 +896,20 @@ Follow for more brain tips \U0001f446
 
         return results
 
+    # ============================================================
+    # MAIN PIPELINE
+    # ============================================================
     async def run_pipeline(self, count: int = 1, specific_topic: str = None,
                            skip_upload: bool = False) -> Dict:
 
         logger.info(f"\n{'#'*60}")
-        logger.info(f"🚀 STARTING PIPELINE")
+        logger.info(f"🚀 STARTING PIPELINE (USA 2026)")
         logger.info(f"   Time: {datetime.now()}")
         logger.info(f"   Videos: {count}")
         logger.info(f"   Upload: {'❌' if skip_upload else '✅'}")
         logger.info(f"{'#'*60}\n")
 
-        # Health check first
+        # Health check
         health = self.health_check()
         if health['status'] == 'degraded':
             logger.warning(f"⚠️ System degraded: {health['missing']}")
@@ -984,7 +959,7 @@ Follow for more brain tips \U0001f446
                 logger.info(f"\n⏳ Waiting {delay}s before next video...")
                 await asyncio.sleep(delay)
 
-        # ── FINAL SUMMARY ──────────────────────────────────────
+        # ── FINAL SUMMARY ──
         self.stats['end_time'] = datetime.now().isoformat()
 
         logger.info(f"\n{'#'*60}")
@@ -1014,10 +989,9 @@ Follow for more brain tips \U0001f446
 # ============================================================
 # MAIN ENTRY POINT
 # ============================================================
-
 async def main():
     parser = argparse.ArgumentParser(
-        description='YouTube Automation Pipeline - FINAL FIXED',
+        description='YouTube Automation Pipeline - USA 2026',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 EXAMPLES:
@@ -1042,21 +1016,17 @@ EXAMPLES:
 
     args = parser.parse_args()
 
-    # Set logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Initialize orchestrator
     orchestrator = AutomationOrchestrator()
 
-    # Health check
     if args.health_check:
         health = orchestrator.health_check()
         print("\n📊 HEALTH CHECK RESULTS:")
         print(json.dumps(health, indent=2, default=str))
         return
 
-    # Run pipeline
     results = await orchestrator.run_pipeline(
         count=args.count,
         specific_topic=args.topic,
