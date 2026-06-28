@@ -530,7 +530,7 @@ Follow for more brain tips 👆
             min_dur = getattr(VIDEO_CONFIG, 'DURATION_MIN', 42)
             max_dur = getattr(VIDEO_CONFIG, 'DURATION_MAX', 55)
         except ImportError:
-            min_dur, max_dur = 42, 55
+            min_dur, max_dur = 35, 55
 
         if duration < min_dur or duration > max_dur:
             logger.warning(f"⚠️ Duration {duration:.1f}s outside {min_dur}-{max_dur}s range")
