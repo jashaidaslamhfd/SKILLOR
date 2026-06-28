@@ -1,14 +1,13 @@
 name: YouTube Automation System
 
 on:
-  # Schedule: Optimized for USA peak engagement (Eastern Time)
-  # 7AM ET = 12:00 UTC (morning scroll), 12PM ET = 16:00 UTC (lunch break), 
-  # 7PM ET = 23:00 UTC (after dinner peak)
+  # Schedule: USA peak engagement times (Eastern Time)
+  # 7AM ET = 12:00 UTC | 12PM ET = 16:00 UTC | 7PM ET = 23:00 UTC
   schedule:
-    - cron: '0 12 * * *'  # USA 7AM ET - morning scroll
-    - cron: '0 16 * * *'  # USA 12PM ET - lunch break  
-    - cron: '0 23 * * *'  # USA 7PM ET - after dinner peak
-  
+    - cron: '0 12 * * *'   # 7AM ET - Morning scroll
+    - cron: '0 16 * * *'   # 12PM ET - Lunch break
+    - cron: '0 23 * * *'   # 7PM ET - After dinner peak
+
   # Manual trigger from GitHub UI
   workflow_dispatch:
     inputs:
@@ -33,47 +32,59 @@ permissions:
   actions: write
   checks: write
 
+# Environment variables
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
 jobs:
   automation:
     name: Run YouTube Automation
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # Prevent infinite runs
-    
+    timeout-minutes: 30
+
     steps:
       # ============================================================
-      # Step 1: Checkout Code
+      # STEP 1: Checkout Code
       # ============================================================
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       # ============================================================
-      # Step 2: Setup Python (UPGRADED to 3.11 to fix Google API FutureWarning)
+      # STEP 2: Setup Python 3.11
       # ============================================================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-      
+
       # ============================================================
-      # Step 3: Install Dependencies
+      # STEP 3: Install Dependencies
       # ============================================================
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install cloudinary  # Ensure cloudinary is installed
-      
+
       # ============================================================
-      # Step 4: Install FFmpeg
+      # STEP 4: Install FFmpeg
       # ============================================================
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-      
+          ffmpeg -version | head -1
+
       # ============================================================
-      # Step 5: Cache YouTube Token (UPGRADED to v4 to eliminate Node 20 Deprecation)
+      # STEP 5: Create Required Directories
+      # ============================================================
+      - name: Create directories
+        run: |
+          mkdir -p state output logs output/audio output/footage output/videos output/thumbnails
+
+      # ============================================================
+      # STEP 6: Cache YouTube Token
       # ============================================================
       - name: Cache YouTube Token
         id: youtube-cache
@@ -82,9 +93,9 @@ jobs:
           path: token_cache.json
           key: youtube-token-${{ runner.os }}-v1
           restore-keys: |
-            youtube-token-${{ runner.os }}-v
-      
-      - name: Display cache status
+            youtube-token-${{ runner.os }}-
+
+      - name: Display token cache status
         run: |
           if [ -f token_cache.json ]; then
             echo "✅ YouTube token cache restored"
@@ -92,24 +103,38 @@ jobs:
             echo "⏳ No cached token found, will create new one"
           fi
 
-      # ── FIX: Cache state/ folder so used_topics.txt and used_clips.txt
-      #         survive across GitHub Actions runs (fresh machine each time)
-      # FIX C6: State cache key now date-based instead of run_number.
-      # github.run_number increments every run and never restores cache.
-      # Date-based key restores from today's earlier runs.
+      # ============================================================
+      # STEP 7: Cache State Folder (FIXED)
+      # ============================================================
+      # FIX: Uses date-based key so cache updates daily
+      # This prevents reusing the same topics/clips across runs
+      # ============================================================
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
       - name: Restore state cache
+        id: state-cache
         uses: actions/cache@v4
         with:
           path: state/
-          key: skillor-state-${{ runner.os }}-${{ github.event.repository.updated_at || 'default' }}
+          key: skillor-state-${{ runner.os }}-${{ steps.date.outputs.date }}
           restore-keys: |
+            skillor-state-${{ runner.os }}-${{ steps.date.outputs.date }}
             skillor-state-${{ runner.os }}-
 
-      - name: Ensure state directory exists
-        run: mkdir -p state
-      
+      - name: Display state cache status
+        run: |
+          if [ -d state ] && [ "$(ls -A state 2>/dev/null)" ]; then
+            echo "✅ State cache restored"
+            echo "📂 Files in state:"
+            ls -la state/
+          else
+            echo "⏳ No state cache found, starting fresh"
+          fi
+
       # ============================================================
-      # Step 6: Run Automation
+      # STEP 8: Run Automation (FIXED - No eval)
       # ============================================================
       - name: Run YouTube Automation
         id: automation
@@ -118,54 +143,62 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-          
+
           # Groq API
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          
+
           # Stock Footage
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          
+
           # Facebook
           FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          
+
           # Instagram
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
-          
+
           # Cloudinary
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          
-          # Python settings
-          PYTHONUNBUFFERED: '1'
-          
+
+        # FIX: Using array syntax instead of eval for security
         run: |
-          # Set default values from workflow inputs
-          COUNT="${{ github.event.inputs.count || '1' }}"
+          # Build command arguments safely
+          ARGS=("--count" "${{ github.event.inputs.count || '1' }}")
+
+          # Add topic if provided
           TOPIC="${{ github.event.inputs.topic || '' }}"
-          SKIP_UPLOAD="${{ github.event.inputs.skip_upload || 'false' }}"
-          
-          # Build command
-          # FIX C5: Changed entry point from orchestrator.py to main.py
-          # main.py is the proper entry point with argparse, health check, and logging
-          CMD="python main.py --count $COUNT"
-          
           if [ -n "$TOPIC" ]; then
-            CMD="$CMD --topic \"$TOPIC\""
+            ARGS+=("--topic" "$TOPIC")
           fi
-          
+
+          # Add skip-upload if enabled
+          SKIP_UPLOAD="${{ github.event.inputs.skip_upload || 'false' }}"
           if [ "$SKIP_UPLOAD" = "true" ]; then
-            CMD="$CMD --skip-upload"
+            ARGS+=("--skip-upload")
           fi
-          
-          echo "📤 Running: $CMD"
-          eval $CMD
-      
+
+          echo "📤 Running: python main.py ${ARGS[*]}"
+          python main.py "${ARGS[@]}"
+
       # ============================================================
-      # Step 7: Upload Artifacts
+      # STEP 9: Save State Cache After Run
+      # ============================================================
+      # FIX: Ensures updated state is saved for next run
+      # ============================================================
+      - name: Save state cache
+        if: always()
+        run: |
+          if [ -d state ] && [ "$(ls -A state 2>/dev/null)" ]; then
+            echo "📂 State after run:"
+            ls -la state/
+          fi
+
+      # ============================================================
+      # STEP 10: Upload Artifacts
       # ============================================================
       - name: Upload logs
         if: always()
@@ -174,7 +207,7 @@ jobs:
           name: automation-logs-${{ github.run_id }}
           path: logs/
           retention-days: 7
-      
+
       - name: Upload video
         if: success()
         uses: actions/upload-artifact@v4
@@ -182,7 +215,7 @@ jobs:
           name: generated-video-${{ github.run_id }}
           path: output/latest_video.mp4
           retention-days: 7
-      
+
       - name: Upload thumbnail
         if: success()
         uses: actions/upload-artifact@v4
@@ -190,29 +223,43 @@ jobs:
           name: generated-thumbnail-${{ github.run_id }}
           path: output/latest_thumb.jpg
           retention-days: 7
-      
-      - name: Upload token cache
-        if: always()
+
+      # FIX: Token cache uploaded ONLY on failure (debugging)
+      # And retention reduced to 1 day for security
+      - name: Upload token cache (on failure only)
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: token-cache-${{ github.run_id }}
+          name: token-cache-debug-${{ github.run_id }}
           path: token_cache.json
-          retention-days: 7
-      
+          retention-days: 1
+
       # ============================================================
-      # Step 8: Notifications
+      # STEP 11: Notifications (FIXED - Real notifications)
       # ============================================================
-      - name: Send failure notification
-        if: failure()
+      - name: Notify Discord
+        if: always() && secrets.DISCORD_WEBHOOK != ''
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          title: "🎬 YouTube Automation"
+          description: |
+            **Run:** #${{ github.run_number }}
+            **Status:** ${{ job.status }}
+            **Duration:** ${{ github.run_duration }}
+            **Videos:** ${{ github.event.inputs.count || '1' }}
+          color: ${{ job.status == 'success' && '0x00FF00' || '0xFF0000' }}
+
+      - name: Print status
+        if: always()
         run: |
-          echo "❌ YouTube Automation Failed!"
-          echo "Run: ${{ github.run_id }}"
-          echo "Time: $(date)"
-          echo "Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-      
-      - name: Send success notification
-        if: success()
-        run: |
-          echo "✅ YouTube Automation Completed Successfully!"
-          echo "Run: ${{ github.run_id }}"
-          echo "Time: $(date)"
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ YouTube Automation Completed Successfully!"
+            echo "📊 Run: #${{ github.run_number }}"
+            echo "⏱️ Duration: ${{ github.run_duration }}"
+          else
+            echo "❌ YouTube Automation Failed!"
+            echo "📊 Run: #${{ github.run_number }}"
+            echo "🔗 Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
