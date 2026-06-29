@@ -2,13 +2,12 @@
 YouTube Automation System — MASTER ORCHESTRATOR (USA 2026)
 Complete End-to-End Pipeline with YouTube SEO Optimization & Analytics
 
-FIXES:
-1. ✅ Baby-focused topics and hooks
-2. ✅ Forced engagement CTAs (Like + Comment + Share)
-3. ✅ 100% free audio (edge-tts)
-4. ✅ First segment uses footage (no blank clips)
-5. ✅ Color grading for vibrant videos
-6. ✅ Swipe stopper on first 0.8s
+FIXES APPLIED:
+1. ✅ Baby-focused topics, hooks, and enhanced title psychology (Curiosity/Urgency)
+2. ✅ Forced engagement CTAs (Like + Comment + Share) with multi-platform variations
+3. ✅ 100% free audio (edge-tts) integration
+4. ✅ Persistent state registry tracker (`output/state.json`) for safe batching/uploads
+5. ✅ Dynamic/randomized delay between pipeline runs to avoid bot flags
 """
 
 import os
@@ -60,6 +59,7 @@ for d in [OUTPUT_DIR, AUDIO_DIR, FOOTAGE_DIR, VIDEO_DIR, THUMB_DIR, CAPTIONS_DIR
 
 LATEST_VIDEO = OUTPUT_DIR / "latest_video.mp4"
 LATEST_THUMB = OUTPUT_DIR / "latest_thumb.jpg"
+STATE_FILE = OUTPUT_DIR / "state.json"
 
 
 # ============================================================
@@ -92,22 +92,16 @@ class AutomationOrchestrator:
             'start_time': datetime.now().isoformat()
         }
 
-        # ============================================================
-        # BABY TITLE TEMPLATES
-        # ============================================================
+        # ═══════════════════════════════════════════════════════════
+        # 🥇 UPGRADED BABY TITLE TEMPLATES (Curiosity & Urgency Stacking)
+        # ═══════════════════════════════════════════════════════════
         self.title_templates = [
-            "Your baby's brain does this with {topic} 🧠",
-            "The real reason behind {topic} 🧠",
-            "What nobody explains about {topic} 🧠",
-            "How {topic} affects your baby's brain 🧠",
-            "The science behind {topic} explained 🧠",
-            "Your baby's brain is hiding {topic} from you 🧠",
-            "Why {topic} happens to your baby 🧠",
-            "What scientists found about {topic} 🧠",
-            "The truth about {topic} nobody tells parents 🧠",
-            "Every parent should know this about {topic} 🧠",
-            "Your baby's brain does THIS with {topic} 🧠",
-            "The hidden reason behind {topic} 🧠",
+            "Your baby's brain does this with {topic} — you need to know this 🧠",
+            "What no one tells you about {topic} and your baby 🧠",
+            "The hidden reason behind {topic} in your baby 🧠",
+            "Your baby's brain has been hiding {topic} from you 🧠",
+            "Why {topic} happens to your baby — no one tells you this 🧠",
+            "The secret behind {topic} affecting your baby's development 🧠",
         ]
 
         # ============================================================
@@ -223,7 +217,7 @@ class AutomationOrchestrator:
         try:
             from config.settings import API_KEYS
             api_status = API_KEYS.validate()
-            missing = [k for k, v in api_status.items() if not v]
+            missing = [k for k, v in api_status.items() if not v or isinstance(v, str)]
         except ImportError:
             api_status = {}
             missing = ['settings']
@@ -239,7 +233,7 @@ class AutomationOrchestrator:
     # GENERATE YOUTUBE TITLE - BABY FOCUSED
     # ============================================================
     def _generate_youtube_title(self, topic: str, script: Dict) -> str:
-        """Generate BABY-FOCUSED YouTube title"""
+        """Generate BABY-FOCUSED YouTube title incorporating strong CTR Urgency patterns"""
         
         # Try AI first
         try:
@@ -428,10 +422,10 @@ Follow for more baby science 👆
     def _validate_duration(self, duration: float) -> bool:
         try:
             from config.settings import VIDEO_CONFIG
-            min_dur = getattr(VIDEO_CONFIG, 'DURATION_MIN', 42)
-            max_dur = getattr(VIDEO_CONFIG, 'DURATION_MAX', 55)
+            min_dur = getattr(VIDEO_CONFIG, 'DURATION_MIN', 45)
+            max_dur = getattr(VIDEO_CONFIG, 'DURATION_MAX', 60)
         except ImportError:
-            min_dur, max_dur = 35, 55
+            min_dur, max_dur = 45, 60
 
         if duration < min_dur or duration > max_dur:
             logger.warning(f"⚠️ Duration {duration:.1f}s outside {min_dur}-{max_dur}s range")
@@ -498,7 +492,7 @@ Follow for more baby science 👆
         logger.info(f"   ✅ Captions: {len(captions)} lines")
 
         caption_ass_path = str(VIDEO_DIR / f"{safe}_{ts}_captions.ass")
-        total_duration = audio_data.get('total_duration', 48.0)
+        total_duration = audio_data.get('total_duration', 50.0)
         try:
             self._modules['caption_gen'].generate_karaoke_ass(
                 word_timings=word_timings,
@@ -579,6 +573,24 @@ Follow for more baby science 👆
             except OSError:
                 pass
 
+        # ═══════════════════════════════════════════════════════════
+        # 🥇 FIX 4: PERSISTENT STATE REGISTRY (Saves batch/upload statuses safely)
+        # ═══════════════════════════════════════════════════════════
+        title = self._generate_youtube_title(topic, script)
+        description = self._generate_youtube_description(topic, script)
+        tags = self._generate_youtube_tags(topic, script)
+        
+        state_data = {
+            "latest_video": video_path,
+            "latest_thumb": thumb_path,
+            "title": title,
+            "description": description,
+            "tags": tags,
+            "timestamp": datetime.now().isoformat()
+        }
+        with open(STATE_FILE, 'w') as sf:
+            json.dump(state_data, sf, indent=2)
+
         if skip_upload:
             logger.info("⏭️ Skipping uploads")
             return {
@@ -591,9 +603,6 @@ Follow for more baby science 👆
             }
 
         # ── 7. SEO CONTENT ──
-        title = self._generate_youtube_title(topic, script)
-        description = self._generate_youtube_description(topic, script)
-        tags = self._generate_youtube_tags(topic, script)
         fb_description = self._generate_facebook_description(topic, script)
         ig_caption = self._generate_instagram_caption(topic, script)
 
@@ -768,8 +777,11 @@ Follow for more baby science 👆
                 self.stats['failed_uploads'] += 1
 
             if i < len(topics) - 1:
-                delay = 120
-                logger.info(f"\n⏳ Waiting {delay}s before next video...")
+                # ═══════════════════════════════════════════════════════════
+                # 🥇 FIX 5: DYNAMIC/RANDOMIZED WAIT TO BYPASS BOT FLAGS
+                # ═══════════════════════════════════════════════════════════
+                delay = random.randint(60, 120)
+                logger.info(f"\n⏳ Randomized delay of {delay}s before next video...")
                 await asyncio.sleep(delay)
 
         self.stats['end_time'] = datetime.now().isoformat()
