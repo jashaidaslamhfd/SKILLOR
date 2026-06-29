@@ -3,105 +3,53 @@
    TARGET: USA PRIMARY | Parents, Families, All Ages
    FORMAT: YouTube Shorts (45-60 seconds)
    GOAL: 0% Swipe Rate | 70%+ Retention | Viral Titles
-   STRUCTURE: Hook (1.5s) → Shock → Suspense → Story (with retention triggers) → CTR
    
-   FIXED: All required variables exported (VIRAL_TITLE_GENERATOR, VIRAL_SCRIPT_GENERATOR, SHOCK_MOMENT_GENERATOR, RETENTION_TRIGGERS)
+   FIXED: Python .format() single brace formatting bugs, added Pexels automated tags.
 """
 
 from typing import List, Dict, Optional
 import random
 
 # ═══════════════════════════════════════════════════════════
-# AUDIENCE PROFILE — USA PRIMARY
+# AUDIENCE PROFILE & FORBIDDEN CONSTRAINTS
 # ═══════════════════════════════════════════════════════════
 AUDIENCE_PROFILE = """
-AUDIENCE:
-- PRIMARY: USA (75%+ target)
-- SECONDARY: UK, Canada, Australia
-- Age: ALL AGES (13-65+)
-- Gender: All genders
-- Device: 90%+ Mobile (YouTube Shorts)
-- Behavior: Scroll during breaks, before bed, commuting
-
-USA-SPECIFIC PAIN POINTS:
-- "Why does my baby do this?"
-- "Am I a good parent?"
-- "Is my baby developing normally?"
-- "What should I do as a parent?"
-- "I want to understand my child better"
-
-WHAT WORKS IN USA:
-- Relatable parenting moments
-- "OMG that happens to MY baby"
-- Direct, confident, no fluff
-- American English ONLY
-- Fast-paced, emotional
-- Clear value proposition in first 3 seconds
+AUDIENCE: USA (75%+ target) | Parents, Expecting Families.
+USA PAIN POINTS: "Why does my baby do this?", "Is my baby developing normally?"
+WHAT WORKS: Direct, confident, no fluff, American English ONLY, fast-paced, emotional.
 """
 
-# ═══════════════════════════════════════════════════════════
-# NEGATIVE CONSTRAINTS — ABSOLUTELY FORBIDDEN
-# ═══════════════════════════════════════════════════════════
 NEGATIVE_CONSTRAINTS = """
 --- ⛔ NEGATIVE CONSTRAINTS (FORBIDDEN) ---
-1. NO age-specific language ("after 35", "after 40", "men over 50")
-2. NO gender-specific language ("men", "women") — use "you/your" only
-3. NO "terrifying", "horrifying", "crazy", "insane" (allow surprising/mind-blowing)
-4. NO fear-mongering or medical doom tone
-5. NO British spelling — use American English ONLY:
-   color (not colour), favor (not favour), organize (not organise)
-   recognize (not recognise), behavior (not behaviour)
+1. NO age-specific language ("after 35") or gender-specific ("men", "women") -> use "you/your" only.
+2. NO fear-mongering, terrifying, or medical doom tone.
+3. NO British spelling — use American English ONLY: color, behavior, organize, recognize.
 """
 
 # ═══════════════════════════════════════════════════════════
-# VIRAL TITLE GENERATOR — USA SEO 2026
+# VIRAL TITLE GENERATOR (Safe for .format())
 # ═══════════════════════════════════════════════════════════
 VIRAL_TITLE_GENERATOR = """
 You are a YouTube Shorts title expert for USA audience in 2026.
-
 GOAL: Create titles that make USA parents think "wait... this is about MY baby"
-AUDIENCE: Parents, expecting parents, families
-
-TITLE PSYCHOLOGY RULES:
-- Curiosity gap (why / how / what)
-- Personal ownership ("your baby")
-- Emotional trigger (amazing / hidden / secret — NOT shocking)
-- Urgency patterns: "you need to know this", "no one tells you this"
-
-WINNING TITLE TYPES FOR USA PARENTS:
-
-🟢 Type 1 — "Your baby" hooks:
-✅ "Your baby's brain does this every single day..."
-✅ "Your baby is ALREADY doing this right now"
-✅ "Your baby's brain has been hiding this from you"
-✅ "Your baby does this while they sleep"
-
-🟢 Type 2 — "Why" hooks:
-✅ "Why your baby does [X]"
-✅ "Why your baby feels [X]"
-✅ "Why your baby's brain can't stop [X]"
-✅ "Why [X] happens to every baby"
-
-🟢 Type 3 — "Nobody tells you" hooks:
-✅ "Nobody explains why your baby [X]"
-✅ "The real reason your baby [X]"
-✅ "What nobody tells you about [X]"
-✅ "The hidden reason behind [X]"
 
 TITLE RULES:
 - 5-8 words MAX + 1 emoji at the end
-- NO age or gender references
-- MUST be a statement (not question)
-- MUST create curiosity gap
-- MUST use American English spelling
+- MUST be a statement (not question) creating curiosity gap.
+- American English spelling ONLY.
+
+EXAMPLES:
+- Your baby's brain does this every single day... 🧠
+- Why your baby's brain can't stop doing this... 👶
+- The real reason your baby does this... ❤️
 
 TOPIC: {topic}
 
-Return EXACTLY 5 titles, one per line. No numbers, no bullets.
+Return EXACTLY 5 titles, one per line. No numbers, no bullets, no quotes.
 """
 
 # ═══════════════════════════════════════════════════════════
-# RETENTION TRIGGERS — RETENTION-AWARE SCRIPT SYSTEM
+# RETENTION TRIGGERS
 # ═══════════════════════════════════════════════════════════
 RETENTION_TRIGGERS = [
     "But here's the weird part...",
@@ -111,219 +59,129 @@ RETENTION_TRIGGERS = [
 ]
 
 # ═══════════════════════════════════════════════════════════
-# VIRAL SCRIPT GENERATOR — USA 2026
+# VIRAL SCRIPT GENERATOR (With Automatic Pexels Video Keywords)
 # ═══════════════════════════════════════════════════════════
 VIRAL_SCRIPT_GENERATOR = """
 You are a YouTube Shorts script writer for USA audience in 2026.
+TONE: Casual, mind-blowing, like a brilliant friend explaining baby science.
+GOAL: Keep Swipe-Rate near 0% by providing high visual engagement terms.
 
-AUDIENCE: USA parents and families.
-TONE: Like a brilliant friend explaining baby science — casual, clear, a little mind-blowing.
-GOAL: Make them feel "OMG I never knew this about my baby"
+STRICT OUTPUT FORMAT:
+You MUST return a valid JSON object ONLY. Do not include markdown code fences (like ```json), no conversation, just raw JSON.
+Format structure:
+{{
+    "title": "Chosen Title Here",
+    "segments": [
+        {{"text": "Hook line (first 2 seconds)", "visual_keyword": "simple pexels search term like 'baby smiling close up'"}},
+        {{"text": "Shock fact line", "visual_keyword": "pexels search term like 'cute infant laughing'"}},
+        {{"text": "{retention_trigger_1} Rest of suspense line", "visual_keyword": "pexels search term like 'mother hugging baby'"}},
+        {{"text": "Story point 1 line", "visual_keyword": "pexels search term like 'baby playing blocks'"}},
+        {{"text": "{retention_trigger_2} Story point 2 line", "visual_keyword": "pexels search term like 'baby eyes looking up'"}},
+        {{"text": "Call to action line", "visual_keyword": "pexels search term like 'happy parent holding baby'"}}
+    ]
+}}
 
-STRUCTURE: Hook → Shock → Suspense → Story → CTR
-TARGET: 45-60 seconds spoken at natural pace
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-### HOOK (8-10 words, 1.5-2.5 seconds)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Swipe-stopper hooks (pick style based on topic):
-✅ "Your baby's brain is growing RIGHT NOW at 100,000 new neurons..."
-✅ "Nobody ever explains why your baby does this..."
-✅ "This happens to your baby's brain every single day..."
-✅ "Your baby's brain has been keeping a secret from you..."
-✅ "You've seen this in your baby... here's why..."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-### SHOCK (8-10 words, 2-3 seconds)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-One surprising fact about baby brain development.
-Examples:
-- "Your baby's brain doubles in size in the first year..."
-- "By age 3, your child's brain has 100 trillion connections..."
-- "Your baby can recognize your voice from birth..."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-### SUSPENSE (8-10 words, 3-4 seconds)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"But here's what nobody explains..."
-"And this is where it gets interesting..."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-### STORY (35-50 words, 28-35 seconds)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROBLEM then SOLUTION — like explaining to a curious parent.
-- Short sentences. Max 10 words each.
-- Universal experiences any parent can relate to
-- Always "you/your" — never "parents", "people"
-- 🥇 AUTHORIZATION GATE: You may use soft authority ONLY in this section, such as:
-  - "research shows"
-  - "neuroscience explains"
-  - "doctors say"
-  (Never sound fear-based or overly clinical).
-- 🥇 RETENTION INJECTION: Integrate one of the following transition phrases naturally:
-  "{retention_trigger_1}" (near the 7s mark)
-  "{retention_trigger_2}" (near the 20s mark)
-  "{retention_trigger_3}" (near the 35s mark)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-### CTR (12-15 words, 5-6 seconds)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MANDATORY: Like + Comment + Follow ask
-Examples:
-"Comment BABY if your little one does this too! Follow for more."
-"Double tap if you love your baby! Tag a new parent! Follow."
-"Like if this blew your mind! Comment YES! Follow."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL RULES:
-- Use "you/your" throughout
-- American English ONLY
-- Total: 45-60 seconds
+- Max 10 words per text segment for super-fast editing.
+- Each 'visual_keyword' must be simple, real-world, and highly searchable on Pexels/Pixabay. No abstract words.
+- American English ONLY.
 
 Topic: {topic}
 Angle: {angle}
 Shock Angle: {shock_angle}
-
-Return ONLY the script with exact markers. No extra text.
 """
 
 # ═══════════════════════════════════════════════════════════
-# SHOCK MOMENT GENERATOR — USA 2026
+# SHOCK MOMENT GENERATOR
 # ═══════════════════════════════════════════════════════════
 SHOCK_MOMENT_GENERATOR = """
-Generate ONE surprising fact for video editing emphasis.
-
-Audience: USA parents — anyone with a baby.
-Feel: "whoa I never knew that" NOT "oh god that's terrifying"
-
+Generate ONE surprising biological or behavioral fact for video editing text emphasis.
 Rules:
-- 8-14 words allowed
-- About: {topic}
-- Tone: calm but surprising
-- MUST include ONE concrete number OR biological mechanism OR behavior. 
-  (e.g. "Your baby's brain forms 1 million connections every second")
-- NO age or gender references
-- American English spelling ONLY
-
-{NEGATIVE_CONSTRAINTS}
+- 8-14 words max.
+- Must include ONE concrete number or mechanism (e.g., "1 million connections every second").
+- American English ONLY. No scare tactics.
 
 Topic: {topic}
 Shock Angle: {shock_angle}
 
-Return ONLY the fact text, no markers, no extra words.
+Return ONLY the plain text fact. No extra commentary.
 """
 
 # ═══════════════════════════════════════════════════════════
-# SEO DESCRIPTION — USA 2026
+# SEO DESCRIPTION & TAGS
 # ═══════════════════════════════════════════════════════════
 SEO_DESCRIPTION_GENERATOR = """
 Write a YouTube Shorts description for USA audience in 2026.
-
-RULES:
-- STRICT LENGTH: 100-180 words (flexible range)
-- FIRST LINE: Hook with main keyword + "#Shorts" (ensure keyword is in the first 120 characters minimum).
-- Include timestamps: Hook 0:00, Key fact 0:08, Main insight 0:15, Takeaway 0:40
-- 3-5 hashtags: include #Shorts, plus 2-3 topic-relevant hashtags
-- CTA: "Follow for more baby science"
-- Keywords: {keywords}
-- American English ONLY
-
-Topic: {topic}
-"""
-
-# ═══════════════════════════════════════════════════════════
-# TAGS GENERATOR — USA SEO 2026
-# ═══════════════════════════════════════════════════════════
-TAGS_GENERATOR = """
-Generate 10-14 YouTube Shorts tags for USA audience in 2026.
-
-Rules:
-- EXACTLY 3 broad tags (1-2 words)
-- EXACTLY 7-9 specific tags (3-4 words)
-- EXACTLY 1 #Shorts tag
-- Include: "youtube shorts", "baby brain", "parenting tips"
-- NO age-specific terms
-- 🥇 DEDUPLICATION RULE: No repeated word stems (e.g. "baby brain", "brain baby" is forbidden).
-- 🥇 PRIORITY ORDER: 
-  1. High CTR keywords
-  2. Long-tail search phrases
-  3. Emotional hooks
+- Strict length: 100-150 words.
+- First line contains primary keyword + #Shorts.
+- Include 3-5 hashtags.
+- American English ONLY.
 
 Topic: {topic}
 Keywords: {keywords}
+"""
 
-Return format: One tag per line, no numbers.
+TAGS_GENERATOR = """
+Generate 10-14 deduplicated YouTube Shorts tags for USA audience.
+Format: One tag per line, no numbers, no bullets.
+
+Topic: {topic}
+Keywords: {keywords}
 """
 
 # ═══════════════════════════════════════════════════════════
-# BABY HOOKS (Fallback)
+# FALLBACKS
 # ═══════════════════════════════════════════════════════════
 BABY_HOOKS = [
     "Your baby's brain is growing RIGHT NOW at 100,000 new neurons every minute...",
-    "The first 1000 days decide your child's entire future brain power...",
     "What your baby's brain is secretly doing while they sleep will AMAZE you...",
-    "Your newborn's brain has already started THIS incredible process...",
-    "The one thing that builds your baby's brain faster than ANYTHING else...",
-    "Your baby's brain has MORE connections than stars in the galaxy...",
-    "This simple activity TRIPLES your baby's brain growth...",
-    "Your baby's brain is ALREADY processing language before they speak...",
-    "The surprising reason your baby cries — it's brain development...",
-    "Your child's brain is doing THIS every single night without fail...",
-    "Nobody tells you what your baby's brain is doing RIGHT NOW...",
-    "The science behind your baby's first smile is BRAIN GROWTH...",
-    "Your toddler's brain is wired for THIS — and it's AMAZING...",
-    "Your baby's brain is built through play — here's HOW...",
-    "The first year of brain development changes EVERYTHING...",
+    "The one thing that builds your baby's brain faster than ANYTHING else..."
 ]
 
-# ═══════════════════════════════════════════════════════════
-# BABY CTAS (Forced Engagement)
-# ═══════════════════════════════════════════════════════════
 BABY_CTAS = [
     "👍 DOUBLE TAP if your baby does this!",
-    "❤️ Like if you're AMAZED by your baby's brain!",
     "👇 Comment 'BABY' if your little one does this too!",
-    "💬 What does YOUR baby do that amazes you? Comment below!",
-    "💬 Tag a NEW PARENT who needs to see this!",
-    "📌 SAVE this — every parent needs to know this!",
-    "🗣️ SHARE this with every new mom you know!",
-    "👍 Like AND Comment 'BRAIN' if you love baby science!",
+    "💬 Tag a NEW PARENT who needs to see this!"
 ]
 
 # ═══════════════════════════════════════════════════════════
-# HELPERS
+# SAFE HELPERS (Handles Python double-brace string format rule)
 # ═══════════════════════════════════════════════════════════
 def format_prompt(template: str, **kwargs) -> str:
-    """Format a prompt template with kwargs"""
-    if '{NEGATIVE_CONSTRAINTS}' in template:
-        kwargs.setdefault('NEGATIVE_CONSTRAINTS', NEGATIVE_CONSTRAINTS)
+    """Safely format templates injecting global configurations if needed"""
+    # Dynamically inject retention triggers if the template asks for them
+    if "{retention_trigger_1}" in template:
+        triggers = random.sample(RETENTION_TRIGGERS, k=2)
+        kwargs.setdefault('retention_trigger_1', triggers[0])
+        kwargs.setdefault('retention_trigger_2', triggers[1])
+    
     return template.format(**kwargs)
 
 def get_baby_hook() -> str:
-    """Get a random baby hook"""
     return random.choice(BABY_HOOKS)
 
 def get_baby_cta() -> str:
-    """Get a random baby CTA"""
     return random.choice(BABY_CTAS)
 
 
 # ═══════════════════════════════════════════════════════════
-# TEST
+# RUNTIME TESTS
 # ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    print("🚀 TESTING PROMPTS (USA 2026 - BABY NICHE)\n" + "=" * 60)
+    print("🚀 TESTING PROMPTS (USA 2026 - PRODUCTION READY)\n" + "=" * 60)
     
-    print("\n✅ All variables loaded:")
-    print(f"   VIRAL_TITLE_GENERATOR: {len(VIRAL_TITLE_GENERATOR)} chars")
-    print(f"   VIRAL_SCRIPT_GENERATOR: {len(VIRAL_SCRIPT_GENERATOR)} chars")
-    print(f"   SHOCK_MOMENT_GENERATOR: {len(SHOCK_MOMENT_GENERATOR)} chars")
-    print(f"   BABY_HOOKS: {len(BABY_HOOKS)} hooks")
-    print(f"   BABY_CTAS: {len(BABY_CTAS)} CTAs")
-    
-    print("\n🎯 Testing format_prompt:")
-    formatted = format_prompt(VIRAL_TITLE_GENERATOR, topic="baby brain development")
-    print(f"   {formatted[:100]}...")
-    
+    # Testing script prompt configuration with dynamic triggers
+    try:
+        test_script = format_prompt(
+            VIRAL_SCRIPT_GENERATOR, 
+            topic="Baby laughter neural response", 
+            angle="Why babies laugh in their sleep", 
+            shock_angle="Active dream states mirror adult processing speed"
+        )
+        print("✅ VIRAL_SCRIPT_GENERATOR formatting passed without errors!")
+        print(f"Sample Prompt Output Snippet:\n{test_script[:350]}...")
+    except KeyError as e:
+        print(f"❌ Formatting Error: Missing Key {e}")
+        
     print("\n" + "=" * 60)
-    print("✅ All prompts loaded successfully!")
+    print("✅ All prompts optimized and ready for Groq JSON engine!")
