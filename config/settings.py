@@ -11,6 +11,7 @@ FIXES APPLIED:
 5. ✅ Zoneinfo time-zone aware scheduling pattern (America/New_York)
 6. ✅ Upgraded emotional/curiosity thumbnail configuration (Style & word count)
 7. ✅ Deduplicated cluster grouping for keywords
+8. ✅ Defined missing PlatformConfig and SEOConfig dependencies
 """
 
 import os
@@ -18,6 +19,23 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Union
 from datetime import datetime
 from zoneinfo import ZoneInfo  # 🥇 Fix 5: timezone-aware datetime
+
+# ============================================================
+# PLATFORM & SEO CONFIGS (Added missing base dependencies)
+# ============================================================
+@dataclass
+class PlatformConfig:
+    """Platform distribution switches and limits"""
+    YOUTUBE_ENABLED: bool = True
+    FACEBOOK_ENABLED: bool = True
+    INSTAGRAM_ENABLED: bool = True
+    MAX_RETRIES: int = 3
+
+@dataclass
+class SEOConfig:
+    """Base Search Engine Optimization defaults"""
+    DEFAULT_HASHTAGS: List[str] = field(default_factory=lambda: ["#Shorts", "#Parenting"])
+    MAX_HASHTAGS: int = 6
 
 # ============================================================
 # VIDEO CONFIG — YouTube Shorts 2026 Optimized
@@ -182,9 +200,8 @@ CAPTION_CONFIG = CaptionConfig()
 THUMBNAIL_CONFIG = ThumbnailConfig()
 NICHE_CONFIG = BabyNicheConfig()
 SCHEDULER_CONFIG = SchedulerConfig()
-PLATFORM_CONFIG = PlatformConfig()   # ⬅️ ADD THIS
-SEO_CONFIG = SEOConfig()             # ⬅️ ADD THIS
-API_KEYS = APIKeys()                 # ⬅️ ADD THIS (agar nahi hai)
+PLATFORM_CONFIG = PlatformConfig()
+SEO_CONFIG = SEOConfig()
 
 
 # 🥇 Fix 1: Isolated health check moved safely down here to ensure dependencies are fully loaded
