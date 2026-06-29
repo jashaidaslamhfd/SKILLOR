@@ -37,13 +37,25 @@ jobs:
       - name: 📦 Build Deep Dependency Cache & Modules Lock
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Yeh check karega ki agar requirements.txt directly root par nahi hai toh sub-folders dhoondhe
+          if [ -f requirements.txt ]; then 
+            pip install -r requirements.txt
+          else
+            find . -name "requirements.txt" -exec pip install -r {} \;
+          fi
 
       - name: 🔍 Perform Pre-Flight Systemic Health Check Verification
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
+          # Pehle check karega ki main.py kahan hai, phir us folder se run karega
+          MAIN_PATH=$(find . -name "main.py" | head -n 1)
+          if [ -z "$MAIN_PATH" ]; then
+            echo "❌ CRITICAL ERROR: main.py file poore project me kahin nahi mili!"
+            exit 1
+          fi
+          cd $(dirname "$MAIN_PATH")
           python main.py --health-check
 
       - name: 🚀 Run Content Creation & Upload Pipeline
@@ -61,7 +73,11 @@ jobs:
           FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
         run: |
-          # Executes 1 complete end-to-end automation cycle on each peak-time run
+          # Dynamic Path Resolution: Yeh automatically main.py ka folder dhoondh kar uske andar enter hoga
+          MAIN_PATH=$(find . -name "main.py" | head -n 1)
+          cd $(dirname "$MAIN_PATH")
+          
+          # Run final single script pipeline automation
           python main.py --count 1
 
       - name: 🛡️ Safely Commit & Persist System State Registry Updates
@@ -69,9 +85,10 @@ jobs:
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Automation Core"
           
-          # Adds state.json changes to protect historical logging registry data boundaries
-          git add output/state.json || true
-          git commit -m "chore(telemetry): update state matrix registry logs [skip ci]" || true
-          
-          # Pushes the latest execution entries back to repo cleanly
-          git push origin main || true
+          # state.json dhoondh kar git status me append karega
+          STATE_PATH=$(find . -name "state.json" | head -n 1)
+          if [ ! -z "$STATE_PATH" ]; then
+            git add "$STATE_PATH"
+            git commit -m "chore(telemetry): update state matrix registry logs [skip ci]" || true
+            git push origin main || true
+          fi
