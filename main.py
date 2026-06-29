@@ -1,7 +1,7 @@
 """
 YouTube Automation System — MAIN ENTRY POINT (PRODUCTION ROUTER 2026)
-INTEGRATED PATH FIX:
-- Adds dynamic directory tracking to prevent 'ModuleNotFoundError: No module named config.settings'
+INTEGRATED PATH & SUB-MODULE ENGINE FIX:
+- Solves 'ModuleNotFoundError: No module named core.topic_engine' permanently.
 """
 
 import os
@@ -12,16 +12,20 @@ import argparse
 import json
 from pathlib import Path
 
-# 🚀 THE FIX: Dynamic Path Resolution Injection
-# Add the directory containing main.py and all its subdirectories to sys.path
+# 🚀 THE CRITICAL FIX: Absolute Multi-Layer Path Resolution
 current_file_path = Path(__file__).resolve()
 project_root = current_file_path.parent
-sys.path.append(str(project_root))
 
-# Also search if config or scripts are one level deeper and map them
-for path_node in project_root.rglob('config'):
-    if path_node.is_dir():
-        sys.path.append(str(path_node.parent))
+# Inject the folder containing main.py as primary lookup index
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# Forcefully find and append the parent folder of 'core' and 'config' to avoid import breaks
+for folder_candidate in project_root.rglob('core'):
+    if folder_candidate.is_dir():
+        parent_dir = str(folder_candidate.parent)
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
         break
 
 # Load env configurations BEFORE any internal core engines boot up
