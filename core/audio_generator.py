@@ -282,7 +282,10 @@ class AudioGenerator:
                 
             # 10. Validated - Safe to cache and delete source WAV
             if os.path.exists(temp_wav):
-                try: os.remove(temp_wav) except Exception: pass
+                try:
+                    os.remove(temp_wav)
+                    except Exception:
+                    pass
                 
             # Save to persistent cache system
             shutil_copy_path = os.path.join(output_dir, f"chunk_{idx}.mp3")
