@@ -1,17 +1,28 @@
 """
 YouTube Automation System — MAIN ENTRY POINT (PRODUCTION ROUTER 2026)
-INTEGRATED ARGS FIX:
-- Matches precisely with native orchestrator.py run_pipeline positional matrices.
+INTEGRATED PATH FIX:
+- Adds dynamic directory tracking to prevent 'ModuleNotFoundError: No module named config.settings'
 """
 
 import os
 import sys
-import json
 import shutil
 import asyncio
 import argparse
-import logging
+import json
 from pathlib import Path
+
+# 🚀 THE FIX: Dynamic Path Resolution Injection
+# Add the directory containing main.py and all its subdirectories to sys.path
+current_file_path = Path(__file__).resolve()
+project_root = current_file_path.parent
+sys.path.append(str(project_root))
+
+# Also search if config or scripts are one level deeper and map them
+for path_node in project_root.rglob('config'):
+    if path_node.is_dir():
+        sys.path.append(str(path_node.parent))
+        break
 
 # Load env configurations BEFORE any internal core engines boot up
 from dotenv import load_dotenv
@@ -50,7 +61,7 @@ async def main():
 
     print(f"⚙️ Dispatching execution loops to AutomationOrchestrator.run_pipeline... Count: [{args.count}]")
     
-    # 🚀 THE FIX: Calling the EXACT function name and signature present inside your orchestrator.py
+    # Calling the exact function name and signature present inside your orchestrator.py
     results = await orchestrator.run_pipeline(
         count=args.count,
         specific_topic=args.topic,
