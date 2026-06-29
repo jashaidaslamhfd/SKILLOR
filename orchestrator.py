@@ -1,8 +1,8 @@
 """
-YouTube Automation System — MASTER ORCHESTRATOR (USA 2026 - PRODUCTION FINAL)
-INTEGRATED IMPORTS & CLASS FALLBACK FIX:
-- Automatically handles dynamic naming variations (ContentGenerator / ScriptGenerator)
-- Fully offline open-source Kokoro-82M AI voice integration ('am_adam')
+YouTube Automation System — MASTER ORCHESTRATOR (USA 2026 - KOKORO KPIPELINE FIXED)
+INTEGRATED VOICE ENGINE FIX:
+- Solves 'ImportError: cannot import name KokoroPipeline' by using correct KPipeline interface.
+- 100% Offline open-source voice generation matching 'am_adam' voiceover profile.
 """
 
 import os
@@ -46,14 +46,12 @@ except ImportError as e:
     print(f"❌ Orchestrator failed to resolve system import boundaries: {e}")
     sys.exit(1)
 
-# 🚀 THE FIX: Dynamic Script Generator Import Resolution
-# Handles both 'ContentGenerator' and 'ScriptGenerator' naming conventions smoothly
+# Dynamic Script Generator Import Resolution
 try:
     from core.content_generator import ContentGenerator as ScriptAI
 except ImportError:
     try:
         from core.content_generator import ScriptGenerator as ScriptAI
-        print("ℹ️ Mapping fallback interface matching 'ScriptGenerator' signature model.")
     except ImportError as e:
         print(f"❌ CRITICAL: Could not find any valid Generator class in core.content_generator: {e}")
         sys.exit(1)
@@ -92,17 +90,14 @@ class AutomationOrchestrator:
 
         # Initialize engine layers
         self.topic_engine = ViralTopicEngine()
-        
-        # 🚀 Use the mapped AI wrapper with absolute configuration parameters safely
         self.content_gen = ScriptAI(config={"hook_api_key": os.getenv("GROQ_API_KEY")})
-        
         self.assembler = RetentionVideoAssembler()
         self.thumbnail_gen = ThumbnailGenerator()
         self.metrics = MetricsTracker()
         self.youtube_analytics = YouTubeAnalytics()
         
         self.kokoro_model = None
-        logger.info("✅ All core engines synced, mapped, and armed successfully.")
+        logger.info("✅ All core engines synced and mapped successfully.")
 
     def _load_state_safe(self):
         """Loads persistent state file schemas safely."""
@@ -127,7 +122,7 @@ class AutomationOrchestrator:
             logger.error(f"❌ Failed synchronization of master process state json: {e}")
 
     def _init_local_voice_engine(self):
-        """Lazy loads Torch and sets up Kokoro-82M offline engine with 'am_adam' voiceover."""
+        """Lazy loads Torch and sets up correct Kokoro KPipeline interface safely."""
         global torch, soundfile
         if self.kokoro_model is not None:
             return
@@ -136,14 +131,16 @@ class AutomationOrchestrator:
         try:
             import torch as t
             import soundfile as sf
-            from kokoro import KokoroPipeline
+            # 🚀 THE CRITICAL FIX: Importing the correct package KPipeline instead of KokoroPipeline
+            from kokoro import KPipeline
             
             torch = t
             soundfile = sf
             
-            logger.info("📥 Initializing Kokoro-82M local open-source pipeline (am_adam voice mode)...")
-            self.kokoro_model = KokoroPipeline(lang_code='a') 
-            logger.info("✅ Kokoro voice synthesizer engine loaded perfectly.")
+            logger.info("📥 Initializing Kokoro KPipeline (Downloading/Loading 82M open-source model layers)...")
+            # lang_code='a' specifies American English matrix allocation
+            self.kokoro_model = KPipeline(lang_code='a') 
+            logger.info("✅ Kokoro KPipeline model backend initialized perfectly.")
         except Exception as ml_err:
             logger.error(f"❌ Failed to initialize local ML audio environment: {ml_err}")
             raise ml_err
@@ -194,12 +191,9 @@ class AutomationOrchestrator:
 
                 # 2. DYNAMIC SCRIPT GENERATION VIA GROQ AI
                 logger.info(f"📝 [{track_id}] Requesting high-retention script via Groq AI...")
-                
-                # Check method variations inside content_generator safely
                 if hasattr(self.content_gen, 'generate_script'):
                     ai_script = self.content_gen.generate_script(target_topic)
                 else:
-                    # Fallback if method is named create_script or similar
                     ai_script = f"Did you know that {target_topic} changes your body completely? Watch till the end."
                 
                 if hasattr(self.content_gen, 'generate_hook'):
@@ -214,9 +208,10 @@ class AutomationOrchestrator:
                 master_video_out = str(OUTPUT_DIR / f"MASTER_{track_id}.mp4")
                 thumbnail_out = str(OUTPUT_DIR / f"CTR_THUMBNAIL_{track_id}.jpg")
 
-                # 3. LOCAL VOICE SYNTHESIS VIA KOKORO AI (AM_ADAM VOICE)
+                # 3. LOCAL VOICE SYNTHESIS VIA KOKORO KPIPELINE (AM_ADAM VOICE)
                 logger.info(f"🔊 [{track_id}] Synthesizing open-source local voiceover track using 'am_adam'...")
                 
+                # Correct function invocation mapping for KPipeline
                 generator = self.kokoro_model(
                     text=ai_script, 
                     voice='am_adam', 
@@ -226,7 +221,11 @@ class AutomationOrchestrator:
                 
                 audio_segments = []
                 for _, _, audio in generator:
-                    audio_segments.append(audio)
+                    if audio is not None:
+                        # Convert to numpy array representation safely if needed
+                        if hasattr(audio, 'numpy'):
+                            audio = audio.numpy()
+                        audio_segments.append(audio)
                 
                 if not audio_segments:
                     raise RuntimeError("❌ Kokoro voice generation output array returned empty.")
