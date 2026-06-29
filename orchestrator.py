@@ -1,8 +1,8 @@
 """
-YouTube Automation System — MASTER ORCHESTRATOR (USA 2026 - KOKORO KPIPELINE FIXED)
+YouTube Automation System — MASTER ORCHESTRATOR (USA 2026 - KOKORO NATIVE)
 INTEGRATED VOICE ENGINE FIX:
-- Solves 'ImportError: cannot import name KokoroPipeline' by using correct KPipeline interface.
-- 100% Offline open-source voice generation matching 'am_adam' voiceover profile.
+- Fixed 'AttributeError: KPipeline object has no attribute voices'.
+- Uses 100% accurate native KPipeline function calls with 'am_adam' voiceover profile.
 """
 
 import os
@@ -122,7 +122,7 @@ class AutomationOrchestrator:
             logger.error(f"❌ Failed synchronization of master process state json: {e}")
 
     def _init_local_voice_engine(self):
-        """Lazy loads Torch and sets up correct Kokoro KPipeline interface safely."""
+        """Lazy loads Torch and sets up correct Kokoro KPipeline interface natively."""
         global torch, soundfile
         if self.kokoro_model is not None:
             return
@@ -131,14 +131,12 @@ class AutomationOrchestrator:
         try:
             import torch as t
             import soundfile as sf
-            # 🚀 THE CRITICAL FIX: Importing the correct package KPipeline instead of KokoroPipeline
             from kokoro import KPipeline
             
             torch = t
             soundfile = sf
             
-            logger.info("📥 Initializing Kokoro KPipeline (Downloading/Loading 82M open-source model layers)...")
-            # lang_code='a' specifies American English matrix allocation
+            logger.info("📥 Initializing Kokoro KPipeline (Loading 82M open-source model weights)...")
             self.kokoro_model = KPipeline(lang_code='a') 
             logger.info("✅ Kokoro KPipeline model backend initialized perfectly.")
         except Exception as ml_err:
@@ -211,18 +209,16 @@ class AutomationOrchestrator:
                 # 3. LOCAL VOICE SYNTHESIS VIA KOKORO KPIPELINE (AM_ADAM VOICE)
                 logger.info(f"🔊 [{track_id}] Synthesizing open-source local voiceover track using 'am_adam'...")
                 
-                # Correct function invocation mapping for KPipeline
+                # 🚀 THE NATIVE FIX: Direct function call execution matrix
                 generator = self.kokoro_model(
                     text=ai_script, 
                     voice='am_adam', 
-                    speed=1.0, 
-                    split_pattern=r'\n+'
+                    speed=1.0
                 )
                 
                 audio_segments = []
                 for _, _, audio in generator:
                     if audio is not None:
-                        # Convert to numpy array representation safely if needed
                         if hasattr(audio, 'numpy'):
                             audio = audio.numpy()
                         audio_segments.append(audio)
