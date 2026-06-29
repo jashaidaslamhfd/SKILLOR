@@ -1,78 +1,10 @@
-# ============================================================
-# YouTube Automation System - Production Requirements (USA 2026)
-# ============================================================
-# Python 3.11+ Validated & Strict Environment Lock Matrix
-#
-# Installation Execution Flow:
-#   pip install --upgrade pip setuptools wheel
-#   pip install -r requirements.txt
-# ============================================================
-
-# ============================================================
-# ASYNC, NETWORK IO & CORE PROTOCOLS
-# ============================================================
-requests>=2.32.0,<3.0.0
-aiohttp>=3.10.5,<4.0.0
-urllib3>=2.2.0,<3.0.0
-certifi>=2024.7.4
-
-# ============================================================
-# AI CORE & LANGUAGE DISCOVERY LAYER (GROQ & LLM)
-# ============================================================
-groq>=1.1.0,<2.0.0
-
-# ============================================================
-# ⭐ OPEN-SOURCE LOCAL VOICE GENERATION (KOKORO / TORCH SUITE)
-# ============================================================
-# Core Tensor Computation & Neural Networks Engine
-torch>=2.2.0,<2.4.0
-torchaudio>=2.2.0,<2.4.0
-
-# Hugging Face Model Hub Downloader & Fast Audio Tokenizer Matrix
-implicit-dict>=0.1.1
-transformers>=4.38.0,<5.0.0
+requests>=2.31.0
+aiohttp>=3.9.0
+urllib3>=2.0.0
+certifi>=2024.2.2
+groq>=0.5.0
+torch>=2.2.0
+torchaudio>=2.2.0
+kokoro>=0.3.1
 soundfile>=0.12.1
-scipy>=1.12.0,<2.0.0
-
-# Phoneme Processing & Text Normalization Layers (For Organic Speech Cadence)
-phonemizer>=3.2.1
-Munch>=4.0.0
-
-# Fallback/Cloud Audio Integration (Microsoft Voice Wrapper)
-edge-tts>=6.1.9,<7.0.0
-ffmpeg-python>=0.2.0,<1.0.0
-
-# ============================================================
-# HIGH CTR IMAGING SUITE & GRAPHICS ENGINES
-# ============================================================
-Pillow>=10.4.0,<11.0.0
-# Native numerical matrix handler securing thumbnail drawing coordinate frames
-numpy>=1.26.0,<2.0.0
-
-# ============================================================
-# ENTERPRISE TELEMETRY, ANALYTICS & CHANNEL MANAGEMENT
-# ============================================================
-google-api-python-client>=2.100.0,<3.0.0
-google-auth-httplib2>=0.2.0,<1.0.0
-google-auth-oauthlib>=1.2.0,<2.0.0
-
-# ============================================================
-# TREND VELOCITY SCANNERS & DATA RESOLUTION LABELS
-# ============================================================
-pytrends>=4.9.0,<5.0.0
-# CRITICAL FIX: Explicitly pinning pandas to block severe internal module runtime crashes
-pandas>=2.1.0,<3.0.0
-lxml>=5.2.0,<6.0.0
-
-# ============================================================
-# AUTOMATED WORKSPACE ORCHESTRATION CLUSTERS
-# ============================================================
-python-dotenv>=1.0.1,<2.0.0
-python-dateutil>=2.9.0,<3.0.0
-cloudinary>=1.36.0,<2.0.0
-
-# ============================================================
-# PRODUCTION HARDENING & SECURITY ENCRYPTION PACKAGES
-# ============================================================
-cryptography>=42.0.0,<44.0.0
-setuptools>=69.0.0
+numpy>=1.24.0
