@@ -1,14 +1,3 @@
-"""
-Self-Correcting Hook Engine - Production Ready (FIXED)
-FIXES:
-1. ✅ Cache disabled by default (use_cache=False)
-2. ✅ Prompt injection protection (clean raw hook)
-3. ✅ Auto-append "..." to save API calls
-4. ✅ Reduced API costs with caching disabled
-5. ✅ Logging (track failures)
-6. ✅ Fresh hooks every time (no repetition)
-"""
-
 import re
 import time
 import json
@@ -24,7 +13,27 @@ try:
 except ImportError:
     Groq = None
 
-from config.settings import API_KEYS
+# ============================================================
+# CONSTANTS & SETTINGS (Separation of Concerns)
+# ============================================================
+MODEL_NAME = "llama-3.3-70b-versatile"
+
+MODERN_OPENERS = [
+    "Your body is ALREADY",
+    "Nobody ever explains why your body",
+    "This is why YOU keep experiencing",
+    "The real reason behind",
+    "You've felt this your whole life"
+]
+
+PROMPT_TEMPLATES = [
+    """Write 5 DIFFERENT modern hooks for this topic: {topic}
+RULES: Statements only, use "you/your", urgency, 8-10 words, end with "...". No age/gender.""",
+    """Write 5 PUNCHY curiosity hooks for this topic: {topic}
+RULES: High mystery statement, use "you/your", urgency, 8-10 words, end with "...". No age/gender.""",
+    """Write 5 CONTRAERIAN hooks for this topic: {topic}
+RULES: Bust a myth, use "you/your", urgency, 8-10 words, end with "...". No age/gender."""
+]
 
 # ============================================================
 # LOGGING SETUP
@@ -42,38 +51,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HookValidationResult:
-    """Validation result with detailed feedback"""
     hook: str
     is_valid: bool
-    is_modern: bool
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     word_count: int = 0
     score: int = 0
-    auto_fixed: bool = False
+    ai_feedback: Dict = field(default_factory=dict)
 
 
 class HookEngine:
-    """
-    Self-Correcting Hook Engine - Production Ready
-    
-    Features:
-    1. Validates hooks against 2026 standards
-    2. Auto-fixes minor issues (saves API calls)
-    3. Caching DISABLED by default (fresh hooks every time)
-    4. Logs all failures for debugging
-    5. Prevents repeating hooks
-    """
-    
-    def __init__(self, use_cache: bool = False):  # FIX: Cache disabled by default
-        self.api_key = API_KEYS.GROQ_API_KEY
-        self.model = "llama-3.3-70b-versatile"
+    def __init__(self, use_cache: bool = False, api_key: Optional[str] = None):
+        self.api_key = api_key
+        self.model = MODEL_NAME
         self.client = None
         self.max_attempts = 3
         self.use_cache = use_cache
         self._cache = {}
         self._cache_file = "hook_cache.json"
-        self._used_hooks = set()  # FIX: Track used hooks to prevent repetition
+        self._used_hooks = set()
+        self._history_file = "hook_history.json"
         
         if use_cache:
             self._load_cache()
@@ -81,49 +78,19 @@ class HookEngine:
             logger.info("⚠️ Cache disabled - generating fresh hooks every time")
         
         self._init_client()
-        
-        # Modern patterns (2026) - with IGNORECASE
-        self.modern_patterns = [
-            r'(your|you\'re|you are).*?(already|right now|been|quietly|actually)',
-            r'nobody tells you',
-            r'nobody ever',
-            r'this is why.*?you',
-            r'the reason.*?is (simpler|surprising|fascinating)',
-            r'you\'re not.*?your (brain|body) is just',
-            r'your (brain|body) is (already|quietly|actually|doing)',
-            r'this happens to your (brain|body)',
-            r'you\'ve (felt|experienced|done) this',
-            r'every (single )?(day|time|night)',
-        ]
-        
-        # Old patterns (will cause SWIPE) - with IGNORECASE
-        self.old_patterns = [
-            r'have you ever',
-            r'did you know',
-            r'scientists discovered',
-            r'shocking truth',
-            r'mind-blowing',
-            r'what if i told you',
-            r'did you know that',
-            r'have you wondered',
-            r'you won\'t believe',
-            r'this will shock you',
-        ]
-        
-        # Urgency words for validation
-        self.urgency_words = ['already', 'right now', 'been', 'quietly', 'actually']
-        
-        # Weak words that reduce impact
-        self.weak_words = ['maybe', 'perhaps', 'sometimes', 'could', 'might', 'should']
 
-    # ============================================================
-    # CACHE MANAGEMENT
-    # ============================================================
-    
-    def _load_cache(self):
-        """Load cache from file"""
-        if not self.use_cache:
+    def _init_client(self):
+        if not Groq or not self.api_key:
+            logger.warning("⚠️ Groq client not configured or missing API key")
             return
+        try:
+            self.client = Groq(api_key=self.api_key)
+            logger.info("✅ Groq client initialized")
+        except Exception as e:
+            logger.error(f"❌ Groq init failed: {e}")
+            self.client = None
+
+    def _load_cache(self):
         try:
             if Path(self._cache_file).exists():
                 with open(self._cache_file, 'r') as f:
@@ -134,33 +101,27 @@ class HookEngine:
             self._cache = {}
 
     def _save_cache(self):
-        """Save cache to file"""
         if not self.use_cache:
             return
         try:
             with open(self._cache_file, 'w') as f:
                 json.dump(self._cache, f, indent=2)
-            logger.info(f"Saved {len(self._cache)} hooks to cache")
         except Exception as e:
             logger.warning(f"Could not save cache: {e}")
 
     def _get_cached_hook(self, topic: str) -> Optional[str]:
-        """Get cached hook for topic"""
         if not self.use_cache:
             return None
         cache_key = topic.lower().strip()
         cached = self._cache.get(cache_key)
-        if cached:
-            # Check if cache is fresh (less than 7 days old)
-            if 'timestamp' in cached:
-                age = time.time() - cached['timestamp']
-                if age < 7 * 24 * 3600:  # 7 days
-                    logger.info(f"Cache hit for: {topic}")
-                    return cached['hook']
+        if cached and 'timestamp' in cached:
+            age = time.time() - cached['timestamp']
+            if age < 7 * 24 * 3600:
+                logger.info(f"Cache hit for: {topic}")
+                return cached['hook']
         return None
 
     def _cache_hook(self, topic: str, hook: str):
-        """Cache a successful hook"""
         if not self.use_cache:
             return
         cache_key = topic.lower().strip()
@@ -171,489 +132,279 @@ class HookEngine:
         }
         self._save_cache()
 
-    # ============================================================
-    # GROQ CLIENT
-    # ============================================================
-    
-    def _init_client(self):
-        """Initialize Groq client"""
-        if not Groq or not self.api_key:
-            logger.warning("⚠️ Groq not configured")
-            return
-        try:
-            self.client = Groq(api_key=self.api_key)
-            logger.info("✅ Groq client initialized")
-        except Exception as e:
-            logger.error(f"❌ Groq init failed: {e}")
-            self.client = None
-
-    def _call_groq(self, prompt: str, max_tokens: int = 100) -> str:
-        """Call Groq API with retry"""
+    def _call_groq(self, prompt: str, max_tokens: int = 250, json_mode: bool = False) -> str:
         if not self.client:
-            logger.warning("⚠️ Groq client not available")
+            logger.warning("⚠️ Groq client unavailable")
             return ""
+        
+        response_format = {"type": "json_object"} if json_mode else {"type": "text"}
         
         for attempt in range(3):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0.8,  # FIX: Slightly higher for variety
+                    temperature=0.7,
                     max_tokens=max_tokens,
+                    response_format=response_format,
                     timeout=30
                 )
                 return response.choices[0].message.content.strip()
             except Exception as e:
                 logger.warning(f"Groq error (attempt {attempt+1}): {e}")
                 time.sleep(2)
-        
         return ""
 
-    # ============================================================
-    # FIX 1: PROMPT INJECTION PROTECTION
-    # ============================================================
-    
-    def _clean_raw_hook(self, raw: str) -> str:
-        """
-        Clean raw response to extract ONLY the hook
-        Fixes: "Here is your hook:" or quotes around the hook
-        """
-        if not raw:
-            return ""
-        
-        # Remove common LLM prefaces
-        prefixes = [
-            "here is your rewritten hook:",
-            "here is your hook:",
-            "rewritten hook:",
-            "hook:",
-            "result:",
-            "output:",
-            "the hook is:",
-            "here's your hook:",
-            "here you go:",
-            "sure, here's a hook:",
-        ]
-        
-        raw_lower = raw.lower()
-        for prefix in prefixes:
-            if raw_lower.startswith(prefix):
-                raw = raw[len(prefix):].strip()
-                break
-        
-        # Take first line only (in case LLM adds extra text)
-        raw = raw.split('\n')[0].strip()
-        
-        # Remove quotes if present
-        raw = raw.strip('"').strip("'")
-        
-        # Remove any remaining prefixed text
-        raw = re.sub(r'^(hook|result|output):\s*', '', raw, flags=re.IGNORECASE)
-        
-        return raw
+    def _sanitize_hook(self, text: str) -> str:
+        """Priority 3: Aggressive string sanitization"""
+        # Remove markdown/bullet symbols
+        text = re.sub(r'[*#-]', '', text)
+        # Remove numbering
+        text = re.sub(r'^\d+\.\s*', '', text)
+        # Remove quotes
+        text = text.strip('"\'')
+        # Fix Word count (force exactly 8-10 words by truncation if needed)
+        words = text.split()
+        if len(words) > 10:
+            text = " ".join(words[:10])
+        elif len(words) < 8 and not text.endswith("..."):
+            text = text.rstrip('.') + "..."
+            
+        return text.strip()
+
+    def _check_semantic_similarity(self, new_hook: str, threshold: float = 0.8) -> bool:
+        """Priority 1: Simple Jaccard Similarity checker to prevent repetition"""
+        new_words = set(new_hook.lower().split())
+        for used in self._used_hooks:
+            used_words = set(used.lower().split())
+            if not new_words or not used_words:
+                continue
+            intersection = new_words.intersection(used_words)
+            union = new_words.union(used_words)
+            similarity = len(intersection) / len(union)
+            if similarity >= threshold:
+                return True # Too similar
+        return False
 
     # ============================================================
-    # FIX 2: VALIDATION WITH AUTO-FIX
+    # FIX 1 & 2: AI-DRIVEN VALIDATION & WEIGHTED SCORING
     # ============================================================
-    
-    def validate_hook(self, hook: str) -> HookValidationResult:
-        """
-        Validate hook against 2026 standards
-        Auto-fixes minor issues to save API calls
-        """
+    def validate_hook_ai(self, hook: str, topic: str) -> HookValidationResult:
+        """Uses LLM to evaluate hook quality against 2026 YT metrics"""
         errors = []
         warnings = []
-        auto_fixed = False
-        hook_lower = hook.lower()
         
-        # ============================================================
-        # Check 1: OLD HOOK PATTERNS (FAIL) - WITH IGNORECASE
-        # ============================================================
-        for old_pattern in self.old_patterns:
-            if re.search(old_pattern, hook_lower, re.IGNORECASE):
-                errors.append(f"OLD HOOK: '{old_pattern}'")
+        prompt = f"""
+Evaluate this YouTube Short hook for the topic: "{topic}"
+Hook: "{hook}"
+
+Analyze strictly on these rules and return a JSON output:
+1. Curiosity (0-30 points): Does it make you want to keep watching?
+2. Personalization (0-20 points): Uses "you" or "your"?
+3. Emotion/Relatability (0-15 points): Does it touch on a human feeling?
+4. Urgency (0-15 points): Uses words like 'already', 'right now', 'been'?
+5. Length/Clarity (0-20 points): 8-10 words, ends with '...', not a question?
+
+Return JSON format strictly:
+{{
+    "curiosity": int,
+    "personalization": int,
+    "emotion": int,
+    "urgency": int,
+    "length": int,
+    "is_valid": boolean,
+    "reason": "string describing issues if invalid"
+}}
+"""
+        raw_ai = self._call_groq(prompt, max_tokens=200, json_mode=True)
         
-        # ============================================================
-        # Check 2: MODERN HOOK PATTERNS (PASS)
-        # ============================================================
-        is_modern = False
-        for modern_pattern in self.modern_patterns:
-            if re.search(modern_pattern, hook_lower, re.IGNORECASE):
-                is_modern = True
-                break
+        ai_score_data = {}
+        try:
+            ai_score_data = json.loads(raw_ai)
+        except Exception:
+            logger.warning("⚠️ AI evaluation JSON parsing failed, setting default fallback")
+            ai_score_data = {"curiosity": 10, "personalization": 10, "emotion": 5, "urgency": 5, "length": 5, "is_valid": False, "reason": "Parsing failed"}
         
-        if not is_modern:
-            warnings.append("No modern hook pattern")
+        total_score = sum([
+            ai_score_data.get('curiosity', 0),
+            ai_score_data.get('personalization', 0),
+            ai_score_data.get('emotion', 0),
+            ai_score_data.get('urgency', 0),
+            ai_score_data.get('length', 0)
+        ])
         
-        # ============================================================
-        # Check 3: Length
-        # ============================================================
-        word_count = len(hook.split())
-        if word_count > 12:
-            errors.append(f"Too long: {word_count} words (max 10)")
-        elif word_count < 6:
-            warnings.append(f"Too short: {word_count} words (min 6)")
-        
-        # ============================================================
-        # Check 4: Personal Address
-        # ============================================================
-        if not any(word in hook_lower for word in ['you', 'your']):
-            errors.append("Must use 'you/your'")
-        
-        # ============================================================
-        # Check 5: Urgency Words
-        # ============================================================
-        if not any(word in hook_lower for word in self.urgency_words):
-            warnings.append("Add urgency word (already/right now)")
-        
-        # ============================================================
-        # Check 6: Question Format
-        # ============================================================
-        if '?' in hook:
-            warnings.append("Statements work better than questions")
-        
-        # ============================================================
-        # Check 7: Curiosity Gap (AUTO-FIX)
-        # ============================================================
-        if '...' not in hook:
-            # AUTO-FIX: Append "..." instead of going through rewrite
-            hook = hook.rstrip('.') + '...'
-            auto_fixed = True
-            logger.info(f"Auto-fixed missing '...': {hook}")
-        
-        # ============================================================
-        # Check 8: Weak Words
-        # ============================================================
-        for weak in self.weak_words:
-            if weak in hook_lower:
-                warnings.append(f"Weak word: '{weak}'")
-        
-        # Calculate score
-        score = 10 - len(errors) - len(warnings)
-        is_valid = len(errors) == 0
-        
-        # If only warnings and auto_fixed, consider it valid
-        if is_valid and auto_fixed:
-            is_valid = True
-        
+        # Determine logical check requirements
+        is_valid = ai_score_data.get('is_valid', True) and (total_score >= 65)
+        if not is_valid:
+            errors.append(f"AI rejected: {ai_score_data.get('reason', 'Quality score too low')}")
+            
         return HookValidationResult(
             hook=hook,
             is_valid=is_valid,
-            is_modern=is_modern,
             errors=errors,
             warnings=warnings,
-            word_count=word_count,
-            score=max(0, score),
-            auto_fixed=auto_fixed
+            word_count=len(hook.split()),
+            score=total_score,
+            ai_feedback=ai_score_data
         )
 
     # ============================================================
-    # REWRITE WITH CLEANING
+    # FIX 5: MULTI-AGENT ADAPTIVE RETRY
     # ============================================================
-    
-    def rewrite_hook(self, invalid_hook: str, errors: List[str], topic: str) -> str:
-        """Rewrite invalid hook with cleaning"""
-        
-        logger.info(f"Rewriting invalid hook: '{invalid_hook}'")
-        logger.info(f"Errors: {', '.join(errors)}")
-        
-        error_feedback = "\n".join([f"- {err}" for err in errors])
+    def rewrite_hook_adaptive(self, invalid_hook: str, feedback: str, topic: str, attempt: int) -> str:
+        """Applies contextual feedback depending on retry iteration"""
+        instructions = {
+            1: "Make the hook significantly shorter (strictly 8-10 words).",
+            2: "Increase the curiosity gap. Ensure it hits universal emotion.",
+            3: "Avoid generic phrases. Make it punchy and statement-based."
+        }
+        instruction = instructions.get(attempt, "Refine the hook completely based on 2026 YT standards.")
         
         prompt = f"""
-Rewrite this hook that failed validation:
-
-INVALID HOOK: "{invalid_hook}"
+Rewrite this failing hook. 
+FAILED HOOK: "{invalid_hook}"
 TOPIC: {topic}
+PREVIOUS REASON: {feedback}
 
-ERRORS:
-{error_feedback}
+INSTRUCTION FOR THIS ATTEMPT: {instruction}
 
-RULES for 2026 hooks:
-1. MUST be a statement (NOT question)
-2. MUST use "you/your"
-3. MUST use urgency words: "already", "right now", "been"
-4. MUST be 8-10 words
-5. MUST end with "..."
+RULES: 
+- 8 to 10 words.
+- MUST end with "..."
+- Statements ONLY (no questions).
+- Use "you" or "your".
 
-EXAMPLES (universal, all ages):
-- "Your body is ALREADY doing something you never knew about..."
-- "Nobody ever explains why your body does this to you..."
-- "This is why YOU keep experiencing this every single day..."
-- "You've felt this your whole life... here's why..."
-
-Return ONLY the rewritten hook. No prefix, no explanation.
+Return ONLY the raw rewritten hook string. No intro, no quotes.
 """
-        
-        raw = self._call_groq(prompt, max_tokens=60)
-        
-        # FIX: Clean the raw response
-        cleaned = self._clean_raw_hook(raw)
-        
-        if not cleaned:
-            logger.warning("Rewrite failed, using fallback")
-            return self._generate_fallback_hook(topic)
-        
-        logger.info(f"Rewritten: '{cleaned}'")
-        return cleaned
+        raw = self._call_groq(prompt, max_tokens=50)
+        return self._sanitize_hook(raw)
 
-    def _generate_fallback_hook(self, topic: str) -> str:
-        """Generate fallback hook - with variety"""
-        fallbacks = [
-            f"Your body is doing something RIGHT NOW about {topic}...",
-            f"Nobody ever explains why your body does {topic}...",
-            f"This is why YOU keep experiencing {topic}...",
-            f"The real reason behind {topic} is SIMPLER than you think...",
-            f"Your body isn't broken... it's just DOING {topic}...",
-            f"This happens to your body every day with {topic}...",
-            f"You've experienced {topic} your whole life... here's why...",
-        ]
-        # FIX: Random selection for variety
-        return random.choice(fallbacks)
+    def _generate_dynamic_fallback(self, topic: str) -> str:
+        opener = random.choice(MODERN_OPENERS)
+        return f"{opener} {topic} in a way you never knew..."
 
     # ============================================================
-    # MAIN GENERATION WITH VARIETY
+    # FIX 3: GENERATE PERFECT HOOK WITH RANDOMIZED PROMPTS
     # ============================================================
-    
     def generate_perfect_hook(self, topic: str) -> Dict:
-        """
-        Generate perfect hook with:
-        1. NO caching (fresh hooks every time)
-        2. Auto-validation
-        3. Self-correction
-        4. Variety (no repetition)
-        """
-        
-        # ============================================================
-        # Step 1: Check Cache (if enabled)
-        # ============================================================
         if self.use_cache:
             cached = self._get_cached_hook(topic)
             if cached:
-                validation = self.validate_hook(cached)
-                return {
-                    'hook': cached,
-                    'validation': validation,
-                    'status': 'cached',
-                    'attempts': 0,
-                    'cached': True
-                }
+                validation = self.validate_hook_ai(cached, topic)
+                return {'hook': cached, 'validation': validation, 'status': 'cached', 'attempts': 0}
         
-        logger.info(f"Generating fresh hook for: {topic}")
+        logger.info(f"🚀 Generating fresh hook for: {topic}")
         
-        # ============================================================
-        # Step 2: Generate initial hooks with variety
-        # ============================================================
-        prompt = f"""
-Write 5 DIFFERENT modern hooks for this topic: {topic}
-
-AUDIENCE: ALL AGES (13-65+) — universal, anyone should relate.
-
-RULES:
-1. MUST be statements (NOT questions)
-2. MUST use "you/your"
-3. MUST use urgency: "already", "right now", "been", "every day"
-4. MUST be 8-10 words
-5. MUST end with "..."
-6. NO age references (no "after 35", "after 40")
-7. NO gender references (no "men", "women")
-
-Use these openers:
-- "Your body is ALREADY..."
-- "Nobody ever explains why your body..."
-- "This is why YOU keep experiencing..."
-- "The real reason behind..."
-- "You've felt this your whole life..."
-
-Return ONLY 5 hooks, one per line. No numbers.
+        # Priority 1: Prompt Randomization
+        template = random.choice(PROMPT_TEMPLATES)
+        prompt = f"""{template.format(topic=topic)}
+Openers to use/inspire from: {', '.join(MODERN_OPENERS)}
+Return ONLY 5 hooks, one per line. No numbers, no symbols, no backticks.
 """
-        
-        raw = self._call_groq(prompt, max_tokens=200)
-        hooks = [h.strip() for h in raw.split('\n') if h.strip()]
-        
-        # Clean each hook
-        hooks = [self._clean_raw_hook(h) for h in hooks]
-        hooks = [h for h in hooks if h and len(h) > 5]
-        
-        # FIX: Filter out hooks we've already used
-        if self._used_hooks:
-            fresh_hooks = [h for h in hooks if h not in self._used_hooks]
-            if fresh_hooks:
-                hooks = fresh_hooks
+        raw = self._call_groq(prompt, max_tokens=300)
+        hooks = [self._sanitize_hook(h) for h in raw.split('\n') if h.strip()]
         
         if not hooks:
-            hooks = [self._generate_fallback_hook(topic) for _ in range(3)]
-        
-        # ============================================================
-        # Step 3: Test each hook
-        # ============================================================
+            hooks = [self._generate_dynamic_fallback(topic)]
+
         for hook in hooks:
-            validation = self.validate_hook(hook)
-            logger.info(f"Testing: '{hook}' → Score: {validation.score}/10")
+            # Priority 1: Similarity Detection
+            if self._check_semantic_similarity(hook):
+                logger.info(f"⏭️ Skipping semantically similar hook: '{hook}'")
+                continue
+                
+            validation = self.validate_hook_ai(hook, topic)
+            logger.info(f"🧪 Testing: '{hook}' → AI Score: {validation.score}/100")
             
             if validation.is_valid:
                 logger.info(f"✅ PERFECT HOOK FOUND!")
-                self._used_hooks.add(hook)  # Track used hook
+                self._used_hooks.add(hook)
+                self._save_hook_history(topic, hook, validation.score, "success")
                 if self.use_cache:
                     self._cache_hook(topic, hook)
-                return {
-                    'hook': hook,
-                    'validation': validation,
-                    'status': 'perfect',
-                    'attempts': 1,
-                    'cached': False
-                }
+                return {'hook': hook, 'validation': validation, 'status': 'perfect', 'attempts': 1}
             
-            # ============================================================
-            # Step 4: Rewrite if invalid
-            # ============================================================
-            if validation.errors:
-                for attempt in range(1, self.max_attempts):
-                    rewritten = self.rewrite_hook(hook, validation.errors, topic)
-                    
-                    # Clean rewritten hook
-                    rewritten = self._clean_raw_hook(rewritten)
-                    
-                    # FIX: Check if we've used this hook before
-                    if rewritten in self._used_hooks:
-                        logger.info(f"⏭️ Skipping already used hook: '{rewritten}'")
-                        continue
-                    
-                    new_validation = self.validate_hook(rewritten)
-                    logger.info(f"Attempt {attempt}: Score {new_validation.score}/10")
-                    
-                    if new_validation.is_valid:
-                        logger.info(f"✅ CORRECTED after {attempt} attempts!")
-                        self._used_hooks.add(rewritten)  # Track used hook
-                        if self.use_cache:
-                            self._cache_hook(topic, rewritten)
-                        return {
-                            'hook': rewritten,
-                            'validation': new_validation,
-                            'status': 'corrected',
-                            'attempts': attempt + 1,
-                            'cached': False
-                        }
-                    
-                    hook = rewritten
-                    validation = new_validation
+            # Adaptive Retries
+            current_hook = hook
+            for attempt in range(1, self.max_attempts):
+                reason = validation.errors[0] if validation.errors else "Quality issue"
+                rewritten = self.rewrite_hook_adaptive(current_hook, reason, topic, attempt)
+                rewritten = self._sanitize_hook(rewritten)
+                
+                new_validation = self.validate_hook_ai(rewritten, topic)
+                logger.info(f"🔄 Retry {attempt}: Score {new_validation.score}/100")
+                
+                if new_validation.is_valid:
+                    logger.info(f"✅ CORRECTED after {attempt} attempts!")
+                    self._used_hooks.add(rewritten)
+                    self._save_hook_history(topic, rewritten, new_validation.score, "corrected")
+                    if self.use_cache:
+                        self._cache_hook(topic, rewritten)
+                    return {'hook': rewritten, 'validation': new_validation, 'status': 'corrected', 'attempts': attempt + 1}
+                
+                current_hook = rewritten
+                validation = new_validation
+
+        logger.warning(f"⚠️ All correction attempts failed for {topic}, using dynamic fallback")
+        fallback = self._generate_dynamic_fallback(topic)
+        validation = self.validate_hook_ai(fallback, topic)
+        self._used_hooks.add(fallback)
+        self._save_hook_history(topic, fallback, validation.score, "fallback")
         
-        # ============================================================
-        # Step 5: Fallback
-        # ============================================================
-        logger.warning(f"All attempts failed for {topic}, using fallback")
-        fallback = self._generate_fallback_hook(topic)
-        validation = self.validate_hook(fallback)
-        self._used_hooks.add(fallback)  # Track used hook
-        if self.use_cache:
-            self._cache_hook(topic, fallback)
-        
-        return {
-            'hook': fallback,
-            'validation': validation,
-            'status': 'fallback',
-            'attempts': self.max_attempts,
-            'cached': False
+        return {'hook': fallback, 'validation': validation, 'status': 'fallback', 'attempts': self.max_attempts}
+
+    # ============================================================
+    # FIX 8: HOOK HISTORY LOGGING
+    # ============================================================
+    def _save_hook_history(self, topic: str, hook: str, score: int, status: str):
+        record = {
+            "topic": topic,
+            "hook": hook,
+            "date": datetime.now().isoformat(),
+            "score": score,
+            "status": status
         }
+        try:
+            history = []
+            if Path(self._history_file).exists():
+                with open(self._history_file, 'r') as f:
+                    history = json.load(f)
+            history.append(record)
+            with open(self._history_file, 'w') as f:
+                json.dump(history, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save history: {e}")
 
-    # ============================================================
-    # BATCH GENERATION
-    # ============================================================
-    
-    def generate_batch(self, topics: List[str]) -> List[Dict]:
-        """Generate hooks for multiple topics with variety"""
-        results = []
-        cache_hits = 0
-        
-        for topic in topics:
-            result = self.generate_perfect_hook(topic)
-            if result.get('cached'):
-                cache_hits += 1
-            results.append({
-                'topic': topic,
-                'hook': result['hook'],
-                'score': result['validation'].score,
-                'status': result['status'],
-                'attempts': result['attempts']
-            })
-            
-            # FIX: Random delay between API calls to avoid rate limits
-            if not result.get('cached'):
-                time.sleep(random.uniform(1, 3))
-        
-        logger.info(f"Batch complete: {len(results)} hooks, {cache_hits} from cache")
-        return results
-
-    # ============================================================
-    # CLEAR USED HOOKS (For fresh start)
-    # ============================================================
-    
-    def clear_used_hooks(self):
-        """Clear the used hooks set for fresh generation"""
-        self._used_hooks.clear()
-        logger.info("✅ Cleared used hooks cache")
-
-    # ============================================================
-    # STATUS
-    # ============================================================
-    
     def get_cache_stats(self) -> Dict:
-        """Get cache statistics"""
         return {
             'cached_hooks': len(self._cache),
             'cache_enabled': self.use_cache,
-            'cache_file': self._cache_file,
-            'used_hooks_count': len(self._used_hooks),
-            'fresh_hooks': not self.use_cache,
+            'used_hooks_count': len(self._used_hooks)
         }
 
-
-# ═══════════════════════════════════════════════════════════
-# TEST
-# ═══════════════════════════════════════════════════════════
+# ============================================================
+# EXECUTION TEST
+# ============================================================
 if __name__ == "__main__":
-    print("🚀 TESTING PRODUCTION HOOK ENGINE (FIXED)\n" + "="*60)
+    print("🚀 INITIALIZING ADVANCED HOOK ENGINE TESTING\n" + "="*60)
     
-    engine = HookEngine(use_cache=False)  # Cache disabled
+    # Kripya apna real GROQ API Key yahan paste karein
+    YOUR_GROQ_API_KEY = "gsk_..." 
     
-    # Test with problematic hooks
-    test_hooks = [
-        "Have you ever wondered why you forget names?",  # Will fail
-        "Your brain is ALREADY forgetting names",  # Missing "..."
-        "Nobody tells you what actually happens to memory...",  # Should pass
+    engine = HookEngine(use_cache=False, api_key=YOUR_GROQ_API_KEY)
+    
+    topics = [
+        "why your body jerks before sleep", 
+        "why a song gets stuck in your head"
     ]
     
-    print("\n📊 VALIDATION TESTS:\n")
-    for hook in test_hooks:
-        result = engine.validate_hook(hook)
-        status = "✅" if result.is_valid else "❌"
-        print(f"{status} '{hook}'")
-        print(f"   Score: {result.score}/10 | Words: {result.word_count} | Auto-fixed: {result.auto_fixed}")
-        if result.errors:
-            print(f"   ❌ {', '.join(result.errors)}")
-        if result.warnings:
-            print(f"   ⚠️ {', '.join(result.warnings)}")
-        print()
-    
-    print("\n🔄 SELF-CORRECTION TEST (Fresh hooks):\n")
-    
-    # Generate multiple hooks to show variety
-    print("Generating hooks for same topic - showing variety:\n")
-    topics = ["why your body jerks before sleep", "why a song gets stuck in your head", "why you feel deja vu"]
-    
     for topic in topics:
-        print(f"\n📝 Topic: {topic}")
-        result1 = engine.generate_perfect_hook(topic)
-        print(f"   Hook 1: '{result1['hook']}' (Score: {result1['validation'].score}/10)")
-        
-        # Wait a moment
-        time.sleep(0.5)
-        
-        result2 = engine.generate_perfect_hook(topic)
-        print(f"   Hook 2: '{result2['hook']}' (Score: {result2['validation'].score}/10)")
-        
-        print(f"   Different: {result1['hook'] != result2['hook']}")
-    
-    print("\n📊 Cache Stats:")
-    print(engine.get_cache_stats())
-    
-    print("\n✅ Hook Engine tested successfully!")
+        print(f"\n📝 Processing Topic: {topic}")
+        result = engine.generate_perfect_hook(topic)
+        print(f"👉 Final Hook: '{result['hook']}'")
+        print(f"📈 Total AI Score: {result['validation'].score}/100")
+        print(f"📊 AI Breakdown: {json.dumps(result['validation'].ai_feedback, indent=2)}")
+        print(f"🏷️ Status: {result['status']} | Attempts: {result['attempts']}")
+        time.sleep(2)
+
+    print("\n✅ Hook Engine refactoring & testing complete!")
