@@ -11,12 +11,13 @@ USAGE:
     python main.py --health-check       # Check system health
 
 AUTHOR: YouTube Automation System
-VERSION: 2.0 (2026 Production Ready)
+VERSION: 2.1 (2026 Production Ready - Self-Healing Pipeline)
 """
 
 import os
 import sys
 import json
+import shutil
 import asyncio
 import argparse
 import logging
@@ -24,13 +25,18 @@ import traceback
 from datetime import datetime
 from typing import Dict, List, Optional
 from pathlib import Path
+from logging.handlers import RotatingFileHandler # 🥇 Fix 5: Rotating file handler
 
 # FIX H1: Load .env file BEFORE importing config/settings which reads env vars
 from dotenv import load_dotenv
 load_dotenv()
 
+# 🥇 Fix 6: Fail immediately if FFmpeg is missing at system startup before running deeper components
+if not shutil.which("ffmpeg"):
+    raise RuntimeError("🚨 CRITICAL DEPENDENCY MISSING: FFmpeg is required for video assembly but could not be located in your system PATH.")
+
 # ============================================================
-# SETUP LOGGING
+# SETUP LOGGING (Rotating logs to protect VPS disk space)
 # ============================================================
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
@@ -41,7 +47,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_filename),
+        RotatingFileHandler(log_filename, maxBytes=5_000_000, backupCount=5), # 5 MB per log file, max 5 backups
         logging.StreamHandler()
     ]
 )
@@ -61,9 +67,12 @@ class YouTubeAutomation:
     """Main Entry Point for YouTube Automation System"""
     
     def __init__(self):
-        self.orchestrator = None
+        self._orchestrator = None
         self.start_time = None
         self.end_time = None
+        
+        # Concurrency limits applied: 🥇 Fix 4
+        self.pipeline_semaphore = asyncio.Semaphore(2) 
         
         # Banner
         self._print_banner()
@@ -73,7 +82,7 @@ class YouTubeAutomation:
         banner = """
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   🎬 YOUTUBE AUTOMATION SYSTEM - PRODUCTION READY v2.0     ║
+║   🎬 YOUTUBE AUTOMATION SYSTEM - PRODUCTION READY v2.1     ║
 ║                                                              ║
 ║   🎯 Niche: Brain & Body Science Facts (Universal)        ║
 ║   📱 Format: YouTube Shorts (1080x1920, 42-55s)            ║
@@ -84,6 +93,13 @@ class YouTubeAutomation:
         """
         print(banner)
         logger.info("🚀 System Initialized")
+
+    def get_orchestrator(self) -> AutomationOrchestrator:
+        """🥇 Fix 2: Lazy loading Orchestrator Singleton Pattern prevents reconnecting clients twice"""
+        if self._orchestrator is None:
+            logger.info("📦 Initializing orchestrator...")
+            self._orchestrator = AutomationOrchestrator()
+        return self._orchestrator
 
     # ============================================================
     # HEALTH CHECK
@@ -105,13 +121,12 @@ class YouTubeAutomation:
         api_status = API_KEYS.validate()
         results['checks']['apis'] = api_status
         
-        missing_apis = [k for k, v in api_status.items() if not v]
+        missing_apis = [k for k, v in api_status.items() if not v or isinstance(v, str)]
         if missing_apis:
             results['warnings'].append(f"⚠️ Missing APIs: {', '.join(missing_apis)}")
             results['status'] = 'degraded'
         
         # Check FFmpeg
-        import shutil
         has_ffmpeg = shutil.which('ffmpeg') is not None
         results['checks']['ffmpeg'] = has_ffmpeg
         if not has_ffmpeg:
@@ -125,10 +140,9 @@ class YouTubeAutomation:
         }
         results['checks']['directories'] = dirs
         
-        # Check orchestrator
+        # Check orchestrator lazy init
         try:
-            if self.orchestrator is None:
-                self.orchestrator = AutomationOrchestrator()
+            _ = self.get_orchestrator()
             results['checks']['orchestrator'] = True
         except Exception as e:
             results['checks']['orchestrator'] = False
@@ -152,7 +166,7 @@ class YouTubeAutomation:
     
     async def run(self, count: int = 1, specific_topic: str = None,
                   skip_upload: bool = False, upload_only: bool = False):
-        """Run the automation pipeline"""
+        """Run the automation pipeline with 3-try minimum recovery safety"""
         
         self.start_time = datetime.now()
         logger.info(f"\n{'#'*60}")
@@ -163,31 +177,38 @@ class YouTubeAutomation:
         logger.info(f"{'#'*60}\n")
         
         try:
-            # Initialize orchestrator
-            logger.info("📦 Initializing orchestrator...")
-            self.orchestrator = AutomationOrchestrator()
+            orchestrator = self.get_orchestrator()
             
             # ============================================================
-            # UPLOAD ONLY MODE
+            # UPLOAD ONLY MODE (Safe Stateful Registry Implementation)
             # ============================================================
             if upload_only:
-                logger.info("📤 Upload only mode...")
-                latest_video = Path("output/latest_video.mp4")
-                latest_thumb = Path("output/latest_thumb.jpg")
+                logger.info("📤 Upload only mode using state registry...")
+                state_file = Path("output/state.json")
                 
-                if not latest_video.exists():
-                    logger.error("❌ No latest video found in output directory")
-                    return {'status': 'error', 'error': 'No video found'}
+                if not state_file.exists():
+                    logger.error("❌ State file 'output/state.json' missing! Cannot trace previously generated videos.")
+                    return {'status': 'error', 'error': 'State file missing'}
+                
+                with open(state_file, 'r') as f:
+                    state_data = json.load(f)
+                
+                latest_video_path = state_data.get("latest_video")
+                latest_thumb_path = state_data.get("latest_thumb")
+                
+                if not latest_video_path or not Path(latest_video_path).exists():
+                    logger.error(f"❌ Target video path '{latest_video_path}' does not exist on disk.")
+                    return {'status': 'error', 'error': 'Video path missing from state registry'}
                 
                 video_data = {
-                    'video_path': str(latest_video),
-                    'thumbnail_path': str(latest_thumb) if latest_thumb.exists() else None,
-                    'title': "Brain Science Short",
-                    'description': "Check out this brain science fact! #Shorts #BrainFacts",
-                    'tags': ['#Shorts', '#BrainFacts', '#Memory'],
+                    'video_path': latest_video_path,
+                    'thumbnail_path': latest_thumb_path if latest_thumb_path and Path(latest_thumb_path).exists() else None,
+                    'title': state_data.get("title", "Brain Science Short"),
+                    'description': state_data.get("description", "Check out this brain science fact! #Shorts #BrainFacts"),
+                    'tags': state_data.get("tags", ['#Shorts', '#BrainFacts', '#Memory']),
                 }
                 
-                upload_results = await self.orchestrator.upload_to_platforms(video_data)
+                upload_results = await orchestrator.upload_to_platforms(video_data)
                 
                 logger.info(f"\n📤 Upload Results:")
                 for platform, result in upload_results.items():
@@ -197,20 +218,38 @@ class YouTubeAutomation:
                         if status in ['uploaded', 'published']:
                             logger.info(f"   ✅ {platform.title()}: {url}")
                         else:
-                            logger.info(f"   ⚪ {platform.title()}: {status}")
+                            # 🥇 Fix 7: Log exact failure context rather than ignoring it silently
+                            logger.error(f"   ❌ {platform.title()}: FAILED -> Status: {status} | Error Details: {result.get('error', 'Unknown error')}")
                 
                 return {'status': 'complete', 'uploads': upload_results}
             
             # ============================================================
-            # FULL PIPELINE
+            # FULL PIPELINE (Concurrent semaphore execution with 3-attempt recovery)
             # ============================================================
-            logger.info("🎬 Running full pipeline...")
-            results = await self.orchestrator.run_pipeline(
-                count=count,
-                specific_topic=specific_topic,
-                skip_upload=skip_upload
-            )
+            logger.info("🎬 Running full pipeline with concurrency limitations...")
             
+            async with self.pipeline_semaphore:
+                results = None
+                max_attempts = 3
+                
+                for attempt in range(max_attempts):
+                    try:
+                        logger.info(f"Running pipeline attempt {attempt + 1} of {max_attempts}...")
+                        results = await orchestrator.run_pipeline(
+                            count=count,
+                            specific_topic=specific_topic,
+                            skip_upload=skip_upload
+                        )
+                        break
+                    except Exception as e:
+                        logger.error(f"Attempt {attempt + 1} failed: {e}")
+                        if attempt < max_attempts - 1:
+                            logger.info("Waiting 3 seconds before next retry attempt...")
+                            await asyncio.sleep(3)
+                        else:
+                            logger.critical("All retry attempts exhausted for orchestrator pipeline.")
+                            raise e
+
             self.end_time = datetime.now()
             duration = (self.end_time - self.start_time).total_seconds()
             
@@ -218,11 +257,11 @@ class YouTubeAutomation:
             logger.info(f"🏁 AUTOMATION COMPLETE")
             logger.info(f"   Time: {self.end_time}")
             logger.info(f"   Duration: {duration:.1f}s")
-            logger.info(f"   Success: {results.get('successful', 0)}")
-            logger.info(f"   Failed: {results.get('failed', 0)}")
+            logger.info(f"   Success: {results.get('successful', 0) if results else 0}")
+            logger.info(f"   Failed: {results.get('failed', 0) if results else 0}")
             logger.info(f"{'#'*60}")
             
-            return results
+            return results or {'status': 'error', 'error': 'Pipeline execution yielded empty response'}
             
         except KeyboardInterrupt:
             logger.warning("\n⏹️ Interrupted by user")
@@ -270,7 +309,7 @@ class YouTubeAutomation:
 # MAIN ENTRY POINT
 # ============================================================
 async def main():
-    """Main entry point with argument parsing"""
+    """Main entry point with cleared up parser logic"""
     
     parser = argparse.ArgumentParser(
         description='YouTube Automation System - Complete Pipeline',
@@ -325,6 +364,10 @@ EXAMPLES:
     
     args = parser.parse_args()
     
+    # 🥇 Fix 8: Remove conflicting/confusing CLI validation checks
+    if args.upload_only and args.skip_upload:
+        parser.error("🚨 CONFLICTING FLAGS: Cannot use both '--upload-only' and '--skip-upload' in the same run.")
+    
     # Set logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -341,8 +384,6 @@ EXAMPLES:
     
     # Upload only
     if args.upload_only:
-        if not args.skip_upload:
-            args.skip_upload = False  # upload-only implies upload
         results = await automation.run(
             upload_only=True
         )
@@ -378,4 +419,3 @@ if __name__ == "__main__":
         print(f"\n❌ Fatal error: {e}")
         traceback.print_exc()
         sys.exit(1)
-        
