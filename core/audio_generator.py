@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class AudioGenerator:
     """Production Audio Generator — Kokoro-82M TTS (No API Keys, 100% Free, Safe)"""
     
-    def __init__(self, voice: str = "af_bella"):
+    def __init__(self, voice: str = "am_adam"):
         """
         Initializes Kokoro Offline Engine.
         Default Voice: 'af_bella' (Warm American Female — Best for Parenting Niche)
