@@ -19,6 +19,7 @@ import logging
 import subprocess
 import hashlib
 import json
+import shutil  # ✅ FIX: Added missing import
 from typing import Dict, List, Optional
 
 from groq import Groq
@@ -80,7 +81,7 @@ class AudioGenerator:
         emoji_pattern = re.compile(
             "["
             "\U00010000-\U0010ffff"  # All emojis and wide unicode
-"]+", flags=re.UNICODE
+        "]+", flags=re.UNICODE
         )
         text = emoji_pattern.sub(r'', text)
         
@@ -284,7 +285,7 @@ class AudioGenerator:
             if os.path.exists(temp_wav):
                 try:
                     os.remove(temp_wav)
-                    except Exception:
+                except Exception:  # ✅ FIX: Correct indentation
                     pass
                 
             # Save to persistent cache system
@@ -304,7 +305,6 @@ class AudioGenerator:
         total_duration = await self._merge_and_validate_chunks(chunk_mp3_paths, final_path_mp3)
         
         # 1, 8 & 9. Deterministic Word Timings Engine
-        # Whisper/forced-alignment fallback, dividing duration evenly and removing random deviation
         word_timings = self._enforce_strict_word_timings(final_path_mp3, clean_text, total_duration)
         
         logger.info(f"    ✅ Audio Build Success: {total_duration:.1f}s | Words: {len(word_timings)}")
@@ -335,7 +335,6 @@ class AudioGenerator:
             clean = word.strip('.,!?;:\'"()[]{}')
             
             # 9. Fixed deterministic calculation without random variables
-            # Guarantees builds are identical and repeatable across runs
             duration = word_duration
             
             # CRITICAL: Lock first frame starting at exact 0.0s for hook retention
