@@ -182,6 +182,9 @@ CAPTION_CONFIG = CaptionConfig()
 THUMBNAIL_CONFIG = ThumbnailConfig()
 NICHE_CONFIG = BabyNicheConfig()
 SCHEDULER_CONFIG = SchedulerConfig()
+PLATFORM_CONFIG = PlatformConfig()   # ⬅️ ADD THIS
+SEO_CONFIG = SEOConfig()             # ⬅️ ADD THIS
+API_KEYS = APIKeys()                 # ⬅️ ADD THIS (agar nahi hai)
 
 
 # 🥇 Fix 1: Isolated health check moved safely down here to ensure dependencies are fully loaded
