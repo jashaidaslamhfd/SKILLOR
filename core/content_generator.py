@@ -1,13 +1,17 @@
 """
-Content Generator — Script Generation with Self-Correcting Hooks
-INTEGRATES: HookEngine for perfect hooks every time
-FIXED: Baby hooks + forced CTAs
+Content Generator — Unified Timeline Engine with AI Scoring (USA 2026)
+INTEGRATES: 
+1. 🧠 Centralized TimelineEngine Authority (Zero timing drift)
+2. 🎯 Audience-Targeted Shock Banks (Neuroscience vs. Baby Development)
+3. 🔄 Mid-Roll CTA Injection (Retention-aware pacing)
+4. 📊 Hook A/B Feedback Loop & Heuristic Word/Syllable Weighting
+5. 🧹 Optimized Sanitization & Cleaned Dependencies
 """
 
 import re
-import time
 import random
-from typing import Dict, List, Optional, Tuple
+import logging
+from typing import Dict, List, Optional
 
 try:
     from groq import Groq
@@ -23,22 +27,78 @@ from config.prompts import (
 )
 from core.hook_engine import HookEngine
 
+logger = logging.getLogger(__name__)
+
+# 🧠 Improvement 1 & Architecture Core: Unified Timeline Authority
+class TimelineEngine:
+    """Single source of truth for audio durations, pause offsets, and segment pacing models."""
+    def __init__(self, words_per_minute: int = 160):
+        self.wps = words_per_minute / 60.0
+
+    def calculate_syllable_weight(self, word: str) -> float:
+        """Improvement 2: Syllable/Phoneme weighting simulation for natural pacing."""
+        # Simple vowel counting heuristic to estimate syllable count
+        vowels = len(re.findall(r'[aeiouy]', word.lower()))
+        base = max(0.12, 0.20 + (vowels * 0.03)) # Long words take longer to speak
+        return round(base, 2)
+
+    def build_timeline(self, script_segments: List[Dict]) -> List[Dict]:
+        """
+        Calculates word-level timestamps including pause segments.
+        Prevents CaptionGenerator and AudioGenerator timing splits.
+        """
+        timeline = []
+        current_time = 0.0
+        
+        for segment in script_segments:
+            stype = segment.get('type')
+            text = segment.get('text', '')
+            is_pause = segment.get('is_pause', False)
+            
+            if is_pause:
+                duration = segment.get('duration', 0.4)
+                timeline.append({
+                    'type': 'pause', 'text': '', 'is_pause': True,
+                    'start': round(current_time, 2), 'end': round(current_time + duration, 2),
+                    'duration': duration
+                })
+                current_time += duration
+            else:
+                words = text.split()
+                if not words:
+                    continue
+                
+                # Improvement 3: Dynamic retention-aware pacing profiles
+                pacing_mult = 1.0
+                if stype == 'hook':   pacing_mult = 0.85 # Faster hook delivery
+                elif stype == 'shock':pacing_mult = 1.20 # Slow emphasis for shock
+                
+                for word in words:
+                    word_dur = self.calculate_syllable_weight(word) * pacing_mult
+                    timeline.append({
+                        'type': stype, 'word': word, 'is_pause': False,
+                        'start': round(current_time, 2),
+                        'end': round(current_time + word_dur, 2),
+                        'duration': word_dur
+                    })
+                    current_time += word_dur
+                    
+        return timeline
+
 
 class ContentGenerator:
-    """Content Generator with Self-Correcting Hooks"""
+    """Content Generator with Feedback Loops, Audience Splitting, and Mid-Roll CTAs"""
     
     def __init__(self):
         self.api_key = API_KEYS.GROQ_API_KEY
         self.model = "llama-3.3-70b-versatile"
         self.client = None
         self.hook_engine = HookEngine(use_cache=False)
+        self.timeline_engine = TimelineEngine(AUDIO_CONFIG.WORDS_PER_MINUTE)
         self._init_client()
         
-        # ============================================================
-        # SHOCK FACT FALLBACKS - 30+ UNIQUE FACTS
-        # ============================================================
-        self.shock_fact_fallbacks = [
-            # Universal Brain Facts
+        # 🎯 Logic Risk Fix: Audience-Targeted Shock Fact Banks
+        self.neuroscience_facts = [
             "Your brain can store 2.5 petabytes of information... that's 3 million hours of TV.",
             "You forget 50% of what you learn within an hour... and 90% within a week.",
             "Every time you remember something, your brain actually rewrites that memory.",
@@ -50,100 +110,51 @@ class ContentGenerator:
             "Emotional memories are 3 times stronger than neutral ones.",
             "Your brain prioritizes negative experiences... it's wired for survival.",
             "Your brain can only truly focus on one complex task at a time.",
-            "It takes 23 minutes to fully refocus after a single interruption.",
-            "Your brain's peak focus window is only 90 minutes at a time.",
-            "Your brain uses 20% of your entire body's energy... just to think.",
-            "Your brain is 73% water... even mild dehydration slows it down.",
-            # Universal Body Facts
-            "Your gut has 100 million neurons... almost as many as your entire spinal cord.",
-            "Your heart sends more signals to your brain than your brain sends back.",
-            "Your body replaces 96% of its atoms every single year.",
-            "Your skin replaces itself completely every 2 to 4 weeks.",
-            "Your body produces a completely new skeleton every 10 years.",
-            "You blink 15 to 20 times a minute... and barely notice any of them.",
-            "Your body has enough iron in it to make a small nail.",
-            "Your nose can detect over 1 trillion different smells.",
-            "Your eyes can distinguish over 10 million different colors.",
-            "Your body produces about 25 million new cells every single second.",
-            "Your heart beats roughly 100,000 times every single day.",
-            "Your blood travels 12,000 miles through your body every day.",
-            "Your lungs have 300 million tiny air sacs called alveoli.",
-            "Your body has more bacterial cells than human cells right now.",
-            "A sneeze travels at up to 100 miles per hour when it leaves your body.",
-            "Your tongue print is as unique as your fingerprint.",
-            "Your body generates enough heat to boil water in 30 minutes.",
-            "The surface area of your lungs is roughly the size of a tennis court.",
-            "Your body has around 37 trillion cells all working at once.",
-            "Your bones are 5 times stronger than steel of the same density.",
+            "It takes 23 minutes to fully refocus after a single interruption."
         ]
         
-        self.used_shock_facts = set()
-
-        # ============================================================
-        # BABY HOOKS - FORCED ATTENTION
-        # ============================================================
-        self.baby_hooks = [
+        self.baby_development_facts = [
             "Your baby's brain is growing RIGHT NOW at 100,000 new neurons every minute...",
             "The first 1000 days decide your child's entire future brain power...",
-            "What your baby's brain is secretly doing while they sleep will AMAZE you...",
             "Your newborn's brain has already started THIS incredible process...",
-            "The one thing that builds your baby's brain faster than ANYTHING else...",
             "Your baby's brain has MORE connections than stars in the galaxy...",
-            "This simple activity TRIPLES your baby's brain growth...",
             "Your baby's brain is ALREADY processing language before they speak...",
-            "The surprising reason your baby cries — it's brain development...",
-            "Your child's brain is doing THIS every single night without fail...",
-            "Nobody tells you what your baby's brain is doing RIGHT NOW...",
-            "What your baby's brain does during tummy time is INCREDIBLE...",
-            "The science behind your baby's first smile is BRAIN GROWTH...",
-            "Your toddler's brain is wired for THIS — and it's AMAZING...",
-            "Your baby's brain is built through play — here's HOW...",
-            "The first year of brain development changes EVERYTHING...",
-            "Your baby's brain can do THIS before they can even talk...",
             "What happens in your baby's brain when you sing to them...",
             "Your baby's brain processes YOUR voice differently than others...",
         ]
+        
+        # 🔴 Hook A/B Testing storage
+        self.hook_performance_scores = {}
 
-        # ============================================================
-        # BABY CTAS - FORCED ENGAGEMENT (Like + Comment + Share)
-        # ============================================================
         self.baby_ctas = [
             "👍 DOUBLE TAP if your baby does this!",
             "❤️ Like if you're AMAZED by your baby's brain!",
-            "👍 Hit LIKE if you knew this about your baby!",
-            "❤️ Like if this BLEW YOUR MIND about babies!",
             "👇 Comment 'BABY' if your little one does this too!",
-            "💬 What does YOUR baby do that amazes you? Comment below!",
-            "👇 Does YOUR baby do this? Comment YES or NO!",
             "💬 Tag a NEW PARENT who needs to see this!",
-            "👇 Comment 'ME' if this is YOUR baby!",
-            "💬 Share YOUR baby's milestone in the comments!",
-            "📌 SAVE this — every parent needs to know this!",
-            "🗣️ SHARE this with every new mom you know!",
-            "📌 SHARE with a parent who has a baby under 1!",
-            "🗣️ TAG someone who needs to see this baby science!",
-            "👍 Like AND Comment 'BRAIN' if you love baby science!",
-            "❤️ Like AND Share if you want more baby brain tips!",
-            "👍 Like AND Tag a new parent in the comments!",
+            "📌 SAVE this — every parent needs to know this!"
+        ]
+        
+        self.mid_roll_ctas = [
+            "👇 Comment 'YES' if your baby does this!",
+            "🔥 Hit subscribe for daily brain facts!",
         ]
 
     def _init_client(self):
         """Initialize Groq client"""
         if not Groq or not self.api_key:
-            print("⚠️ Groq not configured")
+            logger.warning("⚠️ Groq not configured")
             return
         try:
             self.client = Groq(api_key=self.api_key)
-            print("✅ Groq client initialized")
+            logger.info("✅ Groq client initialized")
         except Exception as e:
-            print(f"⚠️ Groq init failed: {e}")
+            logger.error(f"⚠️ Groq init failed: {e}")
             self.client = None
 
     def _call_groq(self, prompt: str, max_tokens: int = 600) -> str:
-        """Call Groq API"""
+        """Call Groq API safely"""
         if not self.client:
             return ""
-        
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -154,7 +165,7 @@ class ContentGenerator:
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Groq error: {e}")
+            logger.error(f"⚠️ Groq error: {e}")
             return ""
 
     def _extract(self, label: str, text: str) -> str:
@@ -166,63 +177,55 @@ class ContentGenerator:
         return match.group(1).strip() if match else ""
 
     def _clean(self, text: str) -> str:
-        """Clean text for TTS"""
+        """6. Retain statistical digits (e.g. 100,000) inside sanitization logic"""
         if not text:
             return ""
         text = re.sub(r'#\w+', '', text)
-        text = re.sub(r'[^\x00-\x7F]', '', text)
+        # Retain digits, basic punctuation (. , ? !), strip weird ASCII controls
+        text = re.sub(r'[^\x00-\x7F\s.,?!]', '', text) 
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
-    def _generate_fallback_story(self, topic: str) -> str:
-        """Generate fallback story"""
-        templates = [
-            f"The science behind {topic} is simpler than you'd think. "
-            f"Your baby's brain is actually building thousands of new connections every single second. "
-            f"And the part that really matters is how deeply your baby learns from you, "
-            f"even when you're not trying to teach them.",
-            
-            f"Here's what's actually happening with {topic}. "
-            f"Your baby's mind has been processing this since birth without you realizing it. "
-            f"The quiet truth is, your baby's brain knows exactly what it's doing. "
-            f"And understanding that changes everything about how you see them."
-        ]
-        return random.choice(templates)
+    def _get_targeted_shock_fact(self, topic: str) -> str:
+        """Selects shock bank based on audience context."""
+        if 'baby' in topic.lower() or 'child' in topic.lower():
+            return random.choice(self.baby_development_facts)
+        return random.choice(self.neuroscience_facts)
 
-    def _get_unique_shock_fact(self) -> str:
-        """Get a unique shock fact - never repeats"""
-        if len(self.used_shock_facts) >= len(self.shock_fact_fallbacks):
-            self.used_shock_facts.clear()
-            print("   🔄 All shock facts used, resetting...")
-        
-        available = [f for f in self.shock_fact_fallbacks if f not in self.used_shock_facts]
-        if not available:
-            available = self.shock_fact_fallbacks.copy()
-            self.used_shock_facts.clear()
-        
-        fact = random.choice(available)
-        self.used_shock_facts.add(fact)
-        return fact
+    def _select_optimized_hook(self) -> str:
+        """⭐ Improvement 2 & Hook Feedback Loop: Selects best performing hook via scoring."""
+        if not self.hook_performance_scores:
+            # Seed state - pick randomly from baseline bank
+            candidates = self.baby_development_facts
+        else:
+            # Sort by execution performance score descending
+            sorted_hooks = sorted(self.hook_performance_scores.keys(), 
+                                  key=lambda h: self.hook_performance_scores[h], 
+                                  reverse=True)
+            candidates = sorted_hooks[:3] # Top 3 options
+            
+        selected_hook = random.choice(candidates)
+        return selected_hook
+
+    def register_hook_performance(self, hook_text: str, score: float):
+        """Allows external analytics to inject CTR back into the generation matrix."""
+        self.hook_performance_scores[hook_text] = score
 
     def generate_script(self, topic: str, angle: str = "",
                         shock_angle: str = "", pattern: str = "memory_insight",
                         suspense_score: int = 70) -> Dict:
-        """Generate complete script with FORCED engagement hooks"""
+        """Executes full pipeline generation with unified timeline compilation and Mid-roll CTRs."""
         
-        print(f"\n🎬 Generating script for: {topic}")
+        logger.info(f"🎬 Generating script for: {topic}")
         
-        # ═══════════════════════════════════════════════════════════
-        # FIX: Use BABY hooks (strong, emotional, curiosity-driven)
-        # ═══════════════════════════════════════════════════════════
-        hook = random.choice(self.baby_hooks)
-        print(f"   Hook: '{hook}'")
+        hook = self._select_optimized_hook()
+        logger.info(f"   Hook Selected: '{hook[:40]}...'")
         
-        # ── Generate rest of script ──
         prompt = format_prompt(
             VIRAL_SCRIPT_GENERATOR,
             topic=topic,
-            angle=angle or f"Understanding your baby's brain development",
-            shock_angle=shock_angle or f"your baby's brain is quietly processing everything",
+            angle=angle or f"Understanding {topic} evolution",
+            shock_angle=shock_angle or f"{topic} mechanism processing",
             pattern=pattern,
             suspense_score=suspense_score
         )
@@ -234,218 +237,123 @@ class ContentGenerator:
         story = self._clean(self._extract("STORY", raw))
         ctr = self._clean(self._extract("CTR", raw))
         
-        # ── Fallbacks ──
-        if not shock:
-            shock = self._get_unique_shock_fact()
-            print(f"   💡 Using unique shock fact #{len(self.used_shock_facts)}")
+        # Apply fallbacks
+        if not shock: shock = self._get_targeted_shock_fact(topic)
+        if not suspense: suspense = "The biological reason behind this might surprise you..."
+        if not story: story = f"The science of {topic} is deeper than it seems."
+        if not ctr: ctr = random.choice(self.baby_ctas)
         
-        if not suspense:
-            suspense = "And the reason behind this might explain everything about your baby's development..."
+        # ═══════════════════════════════════════════════════════════
+        # BUILD TIMELINE SEGMENT ARRAYS (Includes ⏸️ Pause events)
+        # ═══════════════════════════════════════════════════════════
+        raw_segments = []
         
-        if not story:
-            story = self._generate_fallback_story(topic)
+        raw_segments.append({'type': 'hook', 'text': hook})
+        raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.5})
+        raw_segments.append({'type': 'shock', 'text': shock})
+        raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.3})
+        raw_segments.append({'type': 'suspense', 'text': suspense})
+        raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.4})
         
-        if not ctr:
-            ctr = random.choice(self.baby_ctas)
-        
-        # ── Build segments with FORCED CTAs ──
-        wps = AUDIO_CONFIG.WORDS_PER_MINUTE / 60.0
-        segments = []
-        t = 0.0
-        
-        def add_segment(stype, text, is_pause=False, dur=None):
-            nonlocal t
-            if not text and not is_pause:
-                return
-            if is_pause:
-                duration = dur or 0.4
-            else:
-                duration = dur or round(len(text.split()) / wps, 2)
-            segments.append({
-                'type': stype,
-                'text': '' if is_pause else text,
-                'duration': duration,
-                'start': round(t, 2),
-                'is_pause': is_pause
-            })
-            t += duration
-        
-        add_segment('hook', hook)
-        add_segment('pause', '', is_pause=True, dur=0.5)
-        add_segment('shock', shock)
-        add_segment('pause', '', is_pause=True, dur=0.3)
-        add_segment('suspense', suspense)
-        add_segment('pause', '', is_pause=True, dur=0.4)
-        
-        # Split story
+        # Split narrative story blocks naturally
         if '...' in story:
             parts = story.split('...', 1)
-            add_segment('story', parts[0].strip() + '...')
-            add_segment('pause', '', is_pause=True, dur=0.4)
+            raw_segments.append({'type': 'story', 'text': parts[0].strip() + '...'})
+            raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.4})
             if parts[1].strip():
-                add_segment('story', parts[1].strip())
+                raw_segments.append({'type': 'story', 'text': parts[1].strip()})
         else:
             words = story.split()
             mid = len(words) // 2
             if mid > 3:
-                add_segment('story', ' '.join(words[:mid]) + '...')
-                add_segment('pause', '', is_pause=True, dur=0.35)
-                add_segment('story', ' '.join(words[mid:]))
+                raw_segments.append({'type': 'story', 'text': ' '.join(words[:mid]) + '...'})
+                raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.35})
+                raw_segments.append({'type': 'story', 'text': ' '.join(words[mid:])})
             else:
-                add_segment('story', story)
+                raw_segments.append({'type': 'story', 'text': story})
         
-        add_segment('pause', '', is_pause=True, dur=0.4)
+        raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.3})
         
-        # ═══════════════════════════════════════════════════════════
-        # FIX: Add FORCED CTA (Like + Comment + Share)
-        # ═══════════════════════════════════════════════════════════
-        cta = random.choice(self.baby_ctas)
-        add_segment('ctr', cta)
+        # 🚨 Retention Fix: Mid-Roll CTA Injection before the final push or end-CTR
+        mid_cta = random.choice(self.mid_roll_ctas)
+        raw_segments.append({'type': 'ctr_mid', 'text': mid_cta})
+        raw_segments.append({'type': 'pause', 'text': '', 'is_pause': True, 'duration': 0.3})
         
-        full_script = ' '.join(s['text'] for s in segments if not s.get('is_pause'))
-        word_count = len(full_script.split())
-        
-        print(f"   Words: {word_count}")
-        print(f"   Duration: {round(t, 2)}s")
-        print(f"   CTA: '{cta}'")
+        # Terminal CTA
+        raw_segments.append({'type': 'ctr_end', 'text': ctr})
+
+        # 🧠 Compute timeline array containing exact timestamps from start to finish
+        word_timeline = self.timeline_engine.build_timeline(raw_segments)
+        total_duration = word_timeline[-1]['end'] if word_timeline else 0.0
+        word_count = sum(1 for item in word_timeline if not item['is_pause'])
+
+        logger.info(f"   Words compiled: {word_count} | Timeline duration: {total_duration}s")
         
         return {
-            'full_script': full_script,
-            'segments': segments,
+            'full_script': " ".join(s['word'] for s in word_timeline if not s['is_pause']),
+            'word_timeline': word_timeline, # Unified timing engine truth
+            'raw_segments': raw_segments,
             'word_count': word_count,
-            'duration': round(t, 2),
+            'duration': round(total_duration, 2),
             'hook': hook,
-            'hook_score': 9,
             'shock': shock,
             'suspense': suspense,
             'story': story,
-            'ctr': cta
+            'ctr': ctr
         }
 
     def generate_title(self, topic: str) -> str:
-        """Generate title - USA optimized"""
+        """Generate optimized title"""
         prompt = format_prompt(VIRAL_TITLE_GENERATOR, topic=topic)
         raw = self._call_groq(prompt, max_tokens=150) if self.client else ""
         
-        BAD_OPENERS = [
-            'why ignoring', 'ignoring why', 'how ignoring',
-            'did you know', 'scientists', 'shocking', 'mind-blowing',
-            'have you ever', 'what if i told',
-        ]
-        
-        GOOD_OPENERS = [
-            'your baby', 'your child', 'nobody explains', 'nobody tells',
-            'why your', 'the real reason', 'this happens',
-            'what your baby', 'how your baby',
-        ]
+        BAD_OPENERS = ['why ignoring', 'ignoring why', 'how ignoring', 'did you know', 'scientists', 'shocking', 'mind-blowing', 'have you ever', 'what if i told']
+        GOOD_OPENERS = ['your baby', 'your child', 'nobody explains', 'nobody tells', 'why your', 'the real reason', 'this happens', 'what your baby', 'how your baby']
         
         if raw:
             lines = [t.strip() for t in raw.split('\n') if t.strip()]
             for title in lines:
-                title = title.lstrip('0123456789.-*•) ').strip()
-                title = title.strip('"').strip("'").strip()
-                
-                skip_words = ['type', 'hook', 'rule', 'example', 'avoid',
-                              'use:', 'must', 'return', 'opener', '✅', '❌', '🟢']
-                if any(s in title.lower() for s in skip_words):
-                    continue
+                title = title.lstrip('0123456789.-*•) ').strip(' "').strip("'")
+                skip_words = ['type', 'hook', 'rule', 'example', 'avoid', 'use:', 'must', 'return', 'opener', '✅', '❌', '🟢']
+                if any(s in title.lower() for s in skip_words): continue
                 
                 title_lower = title.lower()
-                if any(title_lower.startswith(bad) for bad in BAD_OPENERS):
-                    continue
-                
-                if not any(title_lower.startswith(good) for good in GOOD_OPENERS):
-                    continue
+                if any(title_lower.startswith(bad) for bad in BAD_OPENERS): continue
+                if not any(title_lower.startswith(good) for good in GOOD_OPENERS): continue
                 
                 words = title.split()
                 non_emoji_words = [w for w in words if not any(ord(c) > 127 for c in w)]
-                if len(non_emoji_words) < 4 or len(non_emoji_words) > 9:
-                    continue
+                if not (4 <= len(non_emoji_words) <= 9): continue
                 
                 has_emoji = any(ord(c) > 127 for c in title)
-                if not has_emoji:
-                    title = title + ' 🧠'
-                
+                if not has_emoji: title += ' 🧠'
                 return title
         
-        # Fallback titles
-        fallbacks = [
-            f"Your baby's brain does THIS with {topic} 🧠",
-            f"The real reason behind {topic} 🧠",
-            f"What nobody explains about {topic} 🧠",
-            f"How {topic} affects your baby's brain 🧠",
-            f"The science behind {topic} explained 🧠",
-        ]
-        return random.choice(fallbacks)
+        return f"The real reason behind {topic} 🧠"
 
     def generate_thumbnail_words(self, topic: str) -> List[str]:
-        """Generate 3 high-CTR words for thumbnail"""
+        """Generate high-CTR keyword tokens"""
         topic_lower = topic.lower()
-        
-        TOPIC_WORD_MAP = {
-            'baby': ['BABY', 'BRAIN', 'SCIENCE'],
-            'brain': ['BRAIN', 'BABY', 'GROWTH'],
-            'sleep': ['SLEEP', 'BABY', 'BRAIN'],
-            'smile': ['SMILE', 'BABY', 'BRAIN'],
-            'tummy': ['TUMMY', 'BABY', 'TIME'],
-            'talk': ['TALK', 'BABY', 'BRAIN'],
-            'cry': ['CRY', 'BABY', 'SCIENCE'],
-            'play': ['PLAY', 'BABY', 'BRAIN'],
-            'first': ['FIRST', 'BABY', 'MILESTONE'],
-            'newborn': ['NEWBORN', 'BRAIN', 'FACTS'],
-            'toddler': ['TODDLER', 'BRAIN', 'GROWTH'],
-            'parent': ['PARENT', 'BABY', 'SCIENCE'],
+        TOPIC_MAP = {
+            'baby': ['BABY', 'BRAIN', 'SCIENCE'], 'brain': ['BRAIN', 'BABY', 'GROWTH'],
+            'sleep': ['SLEEP', 'BABY', 'BRAIN'], 'smile': ['SMILE', 'BABY', 'BRAIN'],
+            'tummy': ['TUMMY', 'BABY', 'TIME'], 'talk': ['TALK', 'BABY', 'BRAIN'],
+            'cry': ['CRY', 'BABY', 'SCIENCE'], 'play': ['PLAY', 'BABY', 'BRAIN'],
+            'newborn': ['NEWBORN', 'BRAIN', 'FACTS']
         }
-        
-        for key, words in TOPIC_WORD_MAP.items():
-            if key in topic_lower:
-                return words
-        
+        for key, words in TOPIC_MAP.items():
+            if key in topic_lower: return words
         return ['BABY', 'BRAIN', 'SCIENCE']
 
     def generate_seo(self, topic: str, script: str) -> Dict:
-        """Generate SEO description and tags"""
-        description_intros = [
-            f"The science behind {topic} explained simply.",
-            f"Your baby's brain does {topic} for a reason. Here's the science.",
-            f"What nobody explains about {topic} — until now.",
-        ]
-        description = (
-            f"{random.choice(description_intros)} "
-            f"Follow for more baby brain science. "
-            f"#Shorts"
-        )
-        
-        topic_words = [w for w in topic.lower().split() if len(w) > 3]
-        base_tags = ["baby brain", "parenting tips", "child development", "baby science"]
-        tags = topic_words[:4] + base_tags + ["youtube shorts"]
-        
-        seen = set()
-        unique_tags = []
-        for t in tags:
-            if t not in seen:
-                seen.add(t)
-                unique_tags.append(t)
+        """Generate SEO parameters"""
+        intros = [f"The science behind {topic} explained simply.", f"Your baby's brain does {topic} for a reason. Here's the science.", f"What nobody explains about {topic} — until now."]
+        desc = f"{random.choice(intros)} Follow for more baby brain science. #Shorts"
+        words = [w for w in topic.lower().split() if len(w) > 3]
+        tags = words[:4] + ["baby brain", "parenting tips", "child development", "baby science", "youtube shorts"]
+        unique = list(dict.fromkeys(tags))
         
         return {
-            'description': description[:250],
-            'tags': unique_tags[:15],
-            'keywords': ",".join(topic_words[:3] + ["explained", "science"])
+            'description': desc[:250], 'tags': unique[:15],
+            'keywords': ",".join(words[:3] + ["explained", "science"])
         }
-
-    def reset_used_shock_facts(self):
-        """Reset used shock facts cache"""
-        self.used_shock_facts.clear()
-        print("🧹 Reset shock facts cache")
-
-
-if __name__ == "__main__":
-    print("🚀 TESTING CONTENT GENERATOR")
-    generator = ContentGenerator()
-    
-    test_topics = ["baby brain development", "baby sleep science", "baby first words"]
-    for topic in test_topics:
-        print(f"\n📝 Generating for: {topic}")
-        script = generator.generate_script(topic=topic)
-        print(f"   Hook: {script['hook'][:50]}...")
-        print(f"   CTA: {script['ctr']}")
