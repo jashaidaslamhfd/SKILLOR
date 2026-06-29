@@ -1,11 +1,11 @@
 """AI Prompts for Groq — 2026 Viral Formula (USA Audience)
    NICHE: BABY + BRAIN SCIENCE (Universal, All Ages)
    TARGET: USA PRIMARY | Parents, Families, All Ages
-   FORMAT: YouTube Shorts (42-55 seconds)
+   FORMAT: YouTube Shorts (45-60 seconds)
    GOAL: 0% Swipe Rate | 70%+ Retention | Viral Titles
-   STRUCTURE: Hook (1.5s) → Shock → Suspense → Story → CTR
+   STRUCTURE: Hook (1.5s) → Shock → Suspense → Story (with retention triggers) → CTR
    
-   FIXED: All required variables exported (VIRAL_TITLE_GENERATOR, VIRAL_SCRIPT_GENERATOR, SHOCK_MOMENT_GENERATOR)
+   FIXED: All required variables exported (VIRAL_TITLE_GENERATOR, VIRAL_SCRIPT_GENERATOR, SHOCK_MOMENT_GENERATOR, RETENTION_TRIGGERS)
 """
 
 from typing import List, Dict, Optional
@@ -46,10 +46,9 @@ NEGATIVE_CONSTRAINTS = """
 --- ⛔ NEGATIVE CONSTRAINTS (FORBIDDEN) ---
 1. NO age-specific language ("after 35", "after 40", "men over 50")
 2. NO gender-specific language ("men", "women") — use "you/your" only
-3. NO "shocking", "terrifying", "horrifying", "crazy", "insane"
-4. NO "scientists say", "studies show", "research proves"
-5. NO medical fear-mongering or doom tone
-6. NO British spelling — use American English ONLY:
+3. NO "terrifying", "horrifying", "crazy", "insane" (allow surprising/mind-blowing)
+4. NO fear-mongering or medical doom tone
+5. NO British spelling — use American English ONLY:
    color (not colour), favor (not favour), organize (not organise)
    recognize (not recognise), behavior (not behaviour)
 """
@@ -62,6 +61,12 @@ You are a YouTube Shorts title expert for USA audience in 2026.
 
 GOAL: Create titles that make USA parents think "wait... this is about MY baby"
 AUDIENCE: Parents, expecting parents, families
+
+TITLE PSYCHOLOGY RULES:
+- Curiosity gap (why / how / what)
+- Personal ownership ("your baby")
+- Emotional trigger (amazing / hidden / secret — NOT shocking)
+- Urgency patterns: "you need to know this", "no one tells you this"
 
 WINNING TITLE TYPES FOR USA PARENTS:
 
@@ -96,6 +101,16 @@ Return EXACTLY 5 titles, one per line. No numbers, no bullets.
 """
 
 # ═══════════════════════════════════════════════════════════
+# RETENTION TRIGGERS — RETENTION-AWARE SCRIPT SYSTEM
+# ═══════════════════════════════════════════════════════════
+RETENTION_TRIGGERS = [
+    "But here's the weird part...",
+    "And this changes everything...",
+    "Most parents miss this...",
+    "This is where it gets interesting..."
+]
+
+# ═══════════════════════════════════════════════════════════
 # VIRAL SCRIPT GENERATOR — USA 2026
 # ═══════════════════════════════════════════════════════════
 VIRAL_SCRIPT_GENERATOR = """
@@ -106,7 +121,7 @@ TONE: Like a brilliant friend explaining baby science — casual, clear, a littl
 GOAL: Make them feel "OMG I never knew this about my baby"
 
 STRUCTURE: Hook → Shock → Suspense → Story → CTR
-TARGET: 40-55 seconds spoken at natural pace
+TARGET: 45-60 seconds spoken at natural pace
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ### HOOK (8-10 words, 1.5-2.5 seconds)
@@ -134,12 +149,21 @@ Examples:
 "And this is where it gets interesting..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-### STORY (50-60 words, 22-28 seconds)
+### STORY (35-50 words, 28-35 seconds)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROBLEM then SOLUTION — like explaining to a curious parent.
 - Short sentences. Max 10 words each.
 - Universal experiences any parent can relate to
 - Always "you/your" — never "parents", "people"
+- 🥇 AUTHORIZATION GATE: You may use soft authority ONLY in this section, such as:
+  - "research shows"
+  - "neuroscience explains"
+  - "doctors say"
+  (Never sound fear-based or overly clinical).
+- 🥇 RETENTION INJECTION: Integrate one of the following transition phrases naturally:
+  "{retention_trigger_1}" (near the 7s mark)
+  "{retention_trigger_2}" (near the 20s mark)
+  "{retention_trigger_3}" (near the 35s mark)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ### CTR (12-15 words, 5-6 seconds)
@@ -154,7 +178,7 @@ Examples:
 CRITICAL RULES:
 - Use "you/your" throughout
 - American English ONLY
-- Total: 40-55 seconds
+- Total: 45-60 seconds
 
 Topic: {topic}
 Angle: {angle}
@@ -173,9 +197,11 @@ Audience: USA parents — anyone with a baby.
 Feel: "whoa I never knew that" NOT "oh god that's terrifying"
 
 Rules:
-- 8-10 words maximum
+- 8-14 words allowed
 - About: {topic}
 - Tone: calm but surprising
+- MUST include ONE concrete number OR biological mechanism OR behavior. 
+  (e.g. "Your baby's brain forms 1 million connections every second")
 - NO age or gender references
 - American English spelling ONLY
 
@@ -194,8 +220,8 @@ SEO_DESCRIPTION_GENERATOR = """
 Write a YouTube Shorts description for USA audience in 2026.
 
 RULES:
-- STRICT LENGTH: 100-150 words
-- FIRST LINE: Hook with main keyword + "#Shorts"
+- STRICT LENGTH: 100-180 words (flexible range)
+- FIRST LINE: Hook with main keyword + "#Shorts" (ensure keyword is in the first 120 characters minimum).
 - Include timestamps: Hook 0:00, Key fact 0:08, Main insight 0:15, Takeaway 0:40
 - 3-5 hashtags: include #Shorts, plus 2-3 topic-relevant hashtags
 - CTA: "Follow for more baby science"
@@ -217,6 +243,11 @@ Rules:
 - EXACTLY 1 #Shorts tag
 - Include: "youtube shorts", "baby brain", "parenting tips"
 - NO age-specific terms
+- 🥇 DEDUPLICATION RULE: No repeated word stems (e.g. "baby brain", "brain baby" is forbidden).
+- 🥇 PRIORITY ORDER: 
+  1. High CTR keywords
+  2. Long-tail search phrases
+  3. Emotional hooks
 
 Topic: {topic}
 Keywords: {keywords}
