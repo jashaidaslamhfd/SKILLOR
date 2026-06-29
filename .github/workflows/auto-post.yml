@@ -1,128 +1,77 @@
-name: YouTube Automation System
+name: 🎬 USA Peak-Time YouTube Automation Pipeline (2026)
 
 on:
   schedule:
-    - cron: '0 12 * * *'
-    - cron: '0 16 * * *'
-    - cron: '0 23 * * *'
+    # 1. Video 1: 11:30 AM EST (4:30 PM UTC) - Morning Catch & Lunch Break
+    - cron: '30 16 * * *'
+    
+    # 2. Video 2: 04:30 PM EST (9:30 PM UTC) - Post-Work / School Commute Peak
+    - cron: '30 21 * * *'
+    
+    # 3. Video 3: 09:30 PM EST (02:30 AM UTC Next Day) - Late Night Bedtime Scrolling
+    - cron: '30 2 * * *'
+    
+  # Emergency manual trigger from GitHub UI if needed
   workflow_dispatch:
-    inputs:
-      count:
-        description: 'Number of videos to generate'
-        required: false
-        default: '1'
-        type: string
-      topic:
-        description: 'Specific topic (optional)'
-        required: false
-        type: string
-      skip_upload:
-        description: 'Skip upload to platforms'
-        required: false
-        default: 'false'
-        type: boolean
-
-permissions:
-  contents: read
-  actions: write
-  checks: write
-
-env:
-  PYTHONUNBUFFERED: '1'
-  PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
-  automation:
-    name: Run YouTube Automation
+  automate_shorts:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45 # Heavy audio rendering and local models safety buffer
 
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout System Repository Codes
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Initialize Python Execution Node (3.11)
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
+          cache: 'pip' # Speeds up installations over daily multi-runs
 
-      - name: Install dependencies
+      - name: 🎛️ Install Native Core System Binaries (FFmpeg + Espeak)
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          sudo apt update
+          sudo apt install -y ffmpeg espeak-ng libxml2-dev libxslt-dev
 
-      - name: Install FFmpeg
+      - name: 📦 Build Deep Dependency Cache & Modules Lock
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version | head -1
+          python -m pip install --upgrade pip setuptools wheel
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Create directories
-        run: |
-          mkdir -p state output logs output/audio output/footage output/videos output/thumbnails
-
-      - name: Cache YouTube Token
-        id: youtube-cache
-        uses: actions/cache@v4
-        with:
-          path: token_cache.json
-          key: youtube-token-${{ runner.os }}-v1
-          restore-keys: |
-            youtube-token-${{ runner.os }}-
-
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
-      - name: Restore state cache
-        id: state-cache
-        uses: actions/cache@v4
-        with:
-          path: state/
-          key: skillor-state-${{ runner.os }}-${{ steps.date.outputs.date }}
-          restore-keys: |
-            skillor-state-${{ runner.os }}-${{ steps.date.outputs.date }}
-            skillor-state-${{ runner.os }}-
-
-      - name: Run YouTube Automation
-        id: automation
+      - name: 🔍 Perform Pre-Flight Systemic Health Check Verification
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          python main.py --health-check
+
+      - name: 🚀 Run Content Creation & Upload Pipeline
+        env:
+          # Injecting Secure Variables Maps from Repository Secrets
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+          
+          # YouTube OAuth Client Injections (Raw Encrypted Content Mapping)
+          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          
+          # Facebook/Instagram Graph API Access Tokens Meta Rings
           FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
-          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
-          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
-          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
         run: |
-          ARGS=("--count" "${{ github.event.inputs.count || '1' }}")
-          TOPIC="${{ github.event.inputs.topic || '' }}"
-          if [ -n "$TOPIC" ]; then
-            ARGS+=("--topic" "$TOPIC")
-          fi
-          SKIP_UPLOAD="${{ github.event.inputs.skip_upload || 'false' }}"
-          if [ "$SKIP_UPLOAD" = "true" ]; then
-            ARGS+=("--skip-upload")
-          fi
-          python main.py "${ARGS[@]}"
+          # Executes 1 complete end-to-end automation cycle on each peak-time run
+          python main.py --count 1
 
-      - name: Save state cache
-        if: always()
+      - name: 🛡️ Safely Commit & Persist System State Registry Updates
         run: |
-          if [ -d state ] && [ "$(ls -A state 2>/dev/null)" ]; then
-            ls -la state/
-          fi
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: automation-logs-${{ github.run_id }}
-          path: logs/
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions Automation Core"
+          
+          # Adds state.json changes to protect historical logging registry data boundaries
+          git add output/state.json || true
+          git commit -m "chore(telemetry): update state matrix registry logs [skip ci]" || true
+          
+          # Pushes the latest execution entries back to repo cleanly
+          git push origin main || true
