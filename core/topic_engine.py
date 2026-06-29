@@ -1,219 +1,203 @@
 """
-Topic Engine — REFINED: Brain & Body Science (FIXED WITH ROBUST 429 FALLBACK)
-NICHE: Universal brain and body science facts (age-neutral)
-GOAL: Low competition, high demand topics
-SOURCE: Google Trends + Fallback topics
+Content Generator — USA 2026 Viral Formula
+Handles LLM script generation, title variations, and thumbnail keywords via Groq API.
 """
 
-import time
-import random
-import re
-import logging
-import json
 import os
-from datetime import datetime
+import re
+import json
+import logging
 from typing import List, Dict, Optional
 
-logger = logging.getLogger(__name__)
+# FIX: Import API_KEYS from settings to access credentials
+from config.settings import API_KEYS
 
 try:
-    from pytrends.request import TrendReq
+    from groq import Groq
 except ImportError:
-    TrendReq = None
-    print("⚠️ pytrends not installed. Install with: pip install pytrends")
+    Groq = None
 
+try:
+    from core.hook_engine import HookEngine
+except ImportError:
+    HookEngine = None
 
-class ViralTopicEngine:
-    """Topic Engine for Memory & Brain Fog Niche - FIXED"""
-    
-    # Disk par save hone wali used_topics file
-    USED_TOPICS_FILE = "state/used_topics.json"
-    
-    def __init__(self):
-        # Initialize Google Trends
-        self.pytrends = None
-        if TrendReq:
-            try:
-                self.pytrends = TrendReq(hl='en-US', tz=360, timeout=(10, 25))
-                print("✅ Google Trends initialized")
-            except Exception as e:
-                print(f"⚠️ Google Trends init failed: {e}")
+try:
+    import prompts
+except ImportError:
+    prompts = None
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class ContentGenerator:
+    """Production Content Generator — USA 2026"""
+
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile"):
+        self.model_name = model_name
         
-        # used_topics ko disk se load karo (session restart par bhi yaad rahe)
-        self.used_topics = self._load_used_topics()
+        # 🥇 FIX: Load GROQ key securely from config settings API_KEYS
+        self.groq_api_key = API_KEYS.GROQ_API_KEY
         
-        # ============================================================
-        # ALL-AGE: Body + Brain Science Keywords (Universal)
-        # ============================================================
-        self.memory_keywords = [
-            "brain development",
-            "infant sleep regression",
-            "toddler growth spurts",
-            "separation anxiety",
-            "newborn reflexes",
-            "language acquisition",
-            "sensory processing",
-            "motor skills",
-            "emotional bonding"
-        ]
-        
-        # Fallback topics pool to use if trends fail or hit rate limits (Cluster of 20+)
-        self.fallback_topics = [
-            {"query": "why do babies stare into space", "viral_score": 92, "suspense_score": 88, "pattern": "mystery"},
-            {"query": "why do newborns grunt so much", "viral_score": 89, "suspense_score": 85, "pattern": "curiosity"},
-            {"query": "why do babies clench their fists", "viral_score": 88, "suspense_score": 82, "pattern": "statement"},
-            {"query": "why do babies curl their toes", "viral_score": 87, "suspense_score": 80, "pattern": "mystery"},
-            {"query": "why do babies smile in their sleep", "viral_score": 95, "suspense_score": 90, "pattern": "emotional"},
-            {"query": "why do babies suck their bottom lip", "viral_score": 85, "suspense_score": 78, "pattern": "curiosity"},
-            {"query": "why do babies rub their eyes", "viral_score": 91, "suspense_score": 84, "pattern": "statement"},
-            {"query": "why do babies grab their ears", "viral_score": 90, "suspense_score": 86, "pattern": "mystery"},
-            {"query": "why do babies shake their heads", "viral_score": 93, "suspense_score": 89, "pattern": "curiosity"},
-            {"query": "why do babies kick their legs", "viral_score": 86, "suspense_score": 80, "pattern": "statement"},
-            {"query": "why do babies sneeze so much", "viral_score": 88, "suspense_score": 82, "pattern": "mystery"},
-            {"query": "why do babies arch their backs", "viral_score": 92, "suspense_score": 87, "pattern": "curiosity"},
-            {"query": "why do babies sweat while sleeping", "viral_score": 89, "suspense_score": 83, "pattern": "statement"},
-            {"query": "why do babies stick their tongues out", "viral_score": 94, "suspense_score": 91, "pattern": "mystery"},
-            {"query": "why do babies breathe fast while sleeping", "viral_score": 90, "suspense_score": 85, "pattern": "curiosity"},
-            {"query": "why do babies hate tummy time", "viral_score": 87, "suspense_score": 81, "pattern": "statement"},
-            {"query": "why do babies chew on their hands", "viral_score": 91, "suspense_score": 86, "pattern": "mystery"},
-            {"query": "why do babies cross their eyes", "viral_score": 89, "suspense_score": 84, "pattern": "curiosity"},
-            {"query": "why do babies lose hair", "viral_score": 85, "suspense_score": 79, "pattern": "statement"},
-            {"query": "why do babies get hiccups", "viral_score": 93, "suspense_score": 88, "pattern": "mystery"}
-        ]
+        if not self.groq_api_key:
+            logger.error("❌ GROQ_API_KEY is not set in environment or config.")
+            # Fallback to direct env check just in case
+            self.groq_api_key = os.getenv("GROQ_API_KEY")
+            
+        if Groq and self.groq_api_key:
+            self.client = Groq(api_key=self.groq_api_key)
+        else:
+            self.client = None
+            if not Groq:
+                logger.warning("⚠️ Groq library not installed.")
+            if not self.groq_api_key:
+                logger.warning("⚠️ Groq API key is missing.")
 
-    def _load_used_topics(self) -> List[str]:
-        """Load used topics from disk storage"""
-        os.makedirs("state", exist_ok=True)
-        if os.path.exists(self.USED_TOPICS_FILE):
-            try:
-                with open(self.USED_TOPICS_FILE, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"⚠️ Error loading used topics: {e}")
-        return []
+        # 🥇 FIX: Pass the loaded API key directly to HookEngine
+        if HookEngine:
+            self.hook_engine = HookEngine(use_cache=False, api_key=self.groq_api_key)
+        else:
+            self.hook_engine = None
 
-    def _save_used_topics(self):
-        """Save used topics to disk storage"""
+    def _call_groq(self, prompt: str, temperature: float = 0.7) -> str:
+        """Helper to call Groq LLM API with exception handling."""
+        if not self.client:
+            logger.error("❌ Groq client not initialized. Check API keys.")
+            raise ValueError("Groq client not initialized.")
+            
         try:
-            with open(self.USED_TOPICS_FILE, 'w') as f:
-                json.dump(self.used_topics, f, indent=2)
+            chat_completion = self.client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model=self.model_name,
+                temperature=temperature,
+                max_tokens=2048
+            )
+            return chat_completion.choices[0].message.content
         except Exception as e:
-            print(f"⚠️ Error saving used topics: {e}")
+            logger.error(f"❌ Groq API call failed: {e}")
+            raise e
 
-    def _get_trending_topics(self) -> List[Dict]:
-        """Fetch trends via pytrends with robust rate-limit/429 fallback"""
-        if not self.pytrends:
-            return []
+    def generate_script(self, topic: str) -> Dict:
+        """Generate full script based on the USA 2026 viral formula format."""
+        logger.info(f"📝 Generating script for topic: {topic}")
         
-        topics = []
+        # Try hook engine first to get a validated hook
+        hook_text = "Your body is doing something right now..."
+        hook_score = 85
+        if self.hook_engine:
+            try:
+                hook_res = self.hook_engine.generate_perfect_hook(topic)
+                hook_text = hook_res.get('hook', hook_text)
+                v_score = hook_res.get('validation')
+                if v_score and hasattr(v_score, 'score'):
+                    hook_score = v_score.score
+            except Exception as e:
+                logger.warning(f"⚠️ Hook engine fallback triggered: {e}")
+
+        # Groq prompt template formatting
+        prompt = f"""
+Create a highly viral YouTube Short script (USA Audience 2026) about: {topic}
+
+Use this exact structure:
+1. Hook (1.5s): {hook_text}
+2. Shock Moment (surprising scientific statement)
+3. Suspense/Educational Story (why it happens to the body)
+4. Call to Action (like, comment, share)
+
+CRITICAL RULES:
+- Casual, confident, authoritative American English.
+- Do not mention age or gender.
+- Total length must be 42-55 seconds (approx. 115-135 words).
+- Output valid JSON format keys: 'hook', 'shock', 'suspense', 'story', 'ctr', 'full_script', 'segments'.
+"""
+        response_text = self._call_groq(prompt, temperature=0.6)
+        
+        # Clean up Markdown formatting from LLM responses if present
+        clean_json = response_text.replace("```json", "").replace("```", "").strip()
+        
         try:
-            # Pytrends realtime breakout/trending searches
-            trending = self.pytrends.trending_searches(pn='united_states')
-            if not trending.empty:
-                queries = trending[0].tolist()
-                for q in queries[:10]:
-                    # Filter matching keywords or add directly
-                    topics.append({
-                        'query': q.lower(),
-                        'viral_score': random.randint(85, 99),
-                        'suspense_score': random.randint(75, 95),
-                        'pattern': 'trends',
-                        'source': 'google_trends'
-                    })
-        except Exception as e:
-            # 429 Rate Limit Handled Gracefully
-            if "429" in str(e) or "Too Many Requests" in str(e):
-                print("⚠️ Google Trends rate limit hit (429). Using backup fallback pool.")
-            else:
-                print(f"⚠️ Google Trends fetch failed: {e}")
-        return topics
+            script_data = json.loads(clean_json)
+        except json.JSONDecodeError:
+            logger.warning("⚠️ LLM response was not valid JSON, parsing basic text blocks.")
+            script_data = self._parse_text_fallback(response_text, hook_text)
 
-    def get_daily_topics(self, count: int = 1) -> List[Dict]:
-        """Fetch daily topics, prioritizing fresh / unused trending searches"""
-        all_trends = self._get_trending_topics()
-        
-        # Filter out already used items
-        fresh_trends = [t for t in all_trends if t['query'] not in self.used_topics]
-        
-        # Shuffle fallbacks to avoid repeating same sequences
-        random.shuffle(self.fallback_topics)
-        fresh_fallbacks = [
-            f for f in self.fallback_topics 
-            if f['query'] not in self.used_topics
+        # Append additional execution metadata
+        script_data['hook_score'] = hook_score / 10.0
+        script_data['word_count'] = len(script_data.get('full_script', '').split())
+        return script_data
+
+    def _parse_text_fallback(self, text: str, hook: str) -> Dict:
+        """Fallback parser if LLM fails to return pure JSON structure."""
+        segments = [
+            {'type': 'hook', 'text': hook, 'duration': 2.5},
+            {'type': 'shock', 'text': "Let's uncover why this occurs.", 'duration': 3.0},
+            {'type': 'story', 'text': text[:100], 'duration': 35.0},
+            {'type': 'ctr', 'text': "Subscribe for daily science facts.", 'duration': 2.5}
         ]
-        
-        # Merge lists
-        pool = fresh_trends + fresh_fallbacks
-        
-        # If pool gets depleted, clear disk state & reset
-        if len(pool) < count:
-            print("⚠️ Topics pool nearly exhausted. Resetting used topics tracking cache.")
-            self.clear_used_topics()
-            pool = fresh_trends + self.fallback_topics
-            random.shuffle(pool)
-            
-        selected = []
-        for _ in range(count):
-            if not pool:
-                # Absolute fallback safety
-                selected.append({
-                    "query": f"why do babies {random.choice(self.memory_keywords)}",
-                    "viral_score": 90,
-                    "suspense_score": 85,
-                    "pattern": "fallback",
-                    "source": "safety_pool"
-                })
-                continue
-                
-            item = pool.pop(0)
-            query = item.get('query', '')
-            
-            # Mark consumed
-            self.used_topics.append(query)
-            selected.append(item)
-            
-        # Persist consume status to disk
-        self._save_used_topics()
-        return selected
-
-    def is_topic_viral(self, topic: str) -> bool:
-        """Check if topic contains trigger words that spark high CTR"""
-        # 🥇 FIXED: Removed extra space between personal_ and words
-        personal_words = ["you", "your", "experience"]
-        return any(w in topic.lower() for w in personal_words)
-
-    def clear_used_topics(self):
-        """Clear used topics cache (memory + disk)"""
-        self.used_topics.clear()
-        self._save_used_topics()  # Disk bhi clear karo
-        print("🧹 Cleared used topics cache (memory + disk)")
-
-    def get_stats(self) -> Dict:
-        """Get topic engine statistics"""
         return {
-            'used_topics_count': len(self.used_topics),
-            'fallback_topics_count': len(self.fallback_topics),
-            'memory_keywords_count': len(self.memory_keywords),
-            'trending_available': self.pytrends is not None,
+            'hook': hook,
+            'shock': "Shock moment placeholder",
+            'suspense': "Suspense detail placeholder",
+            'story': text,
+            'ctr': "Subscribe for more",
+            'full_script': text,
+            'segments': segments
         }
 
+    def generate_title(self, topic: str) -> str:
+        """Generate click-through-rate (CTR) optimized title for YouTube."""
+        logger.info(f"🎯 Generating title for topic: {topic}")
+        prompt = f"Write a CTR optimized, viral YouTube Shorts title for: '{topic}'. Max 50 chars. Curios/Urgency style."
+        return self._call_groq(prompt, temperature=0.7).replace('"', '').strip()
+
+    def generate_thumbnail_words(self, topic: str) -> List[str]:
+        """Extract high impact thumbnail keywords."""
+        logger.info(f"🖼️ Generating thumbnail words for: {topic}")
+        prompt = f"Extract 2-4 punchy, emotional/curiosity words for a thumbnail for topic: '{topic}'. Return as comma-separated list."
+        res = self._call_groq(prompt, temperature=0.5)
+        return [w.strip() for w in res.split(',')]
+
+    def format_script_segments(self, script_data: Dict) -> List[Dict]:
+        """Convert a standard script into timed cinematic segments."""
+        segments = []
+        full_text = script_data.get('full_script', '')
+        # Basic parsing logic
+        sentences = re.split(r'[.?!]', full_text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        current_time = 0.0
+        for s in sentences:
+            duration = max(1.5, len(s.split()) * 0.38) # WPM scale
+            segments.append({
+                'text': s,
+                'start': current_time,
+                'duration': duration,
+                'type': 'educational'
+            })
+            current_time += duration
+        return segments
+
 
 # ============================================================
-# TEST
+# EXECUTION TEST
 # ============================================================
 if __name__ == "__main__":
-    print("🚀 TESTING TOPIC ENGINE\n" + "="*60)
+    print("🚀 TESTING CONTENT GENERATOR (USA 2026)\n" + "=" * 60)
     
-    engine = ViralTopicEngine()
+    generator = ContentGenerator()
+    test_topic = "why your body jerks before sleep"
     
-    print("\n📊 Fetching 5 topics...")
-    topics = engine.get_daily_topics(count=5)
+    print(f"\n📝 Testing script generation for: '{test_topic}'")
+    script = generator.generate_script(test_topic)
     
-    print(f"\n✅ Found {len(topics)} topics:\n")
+    print("\n✅ Script Result:")
+    print(f"   Hook: {script.get('hook')}")
+    print(f"   Word Count: {script.get('word_count')}")
     
-    for i, topic in enumerate(topics, 1):
-        print(f"{i}. {topic.get('query')}")
-        print(f"   Viral Score: {topic.get('viral_score', 0)}")
-        print(f"   Suspense Score: {topic.get('suspense_score', 0)}")
-        print(f"   Pattern: {topic.get('pattern', 'unknown')}")
-        print(f"   Source: {topic.get('source', 'unknown')}")
+    print(f"\n🎯 Title: {generator.generate_title(test_topic)}")
+    print(f"🖼️ Thumb words: {generator.generate_thumbnail_words(test_topic)}")
