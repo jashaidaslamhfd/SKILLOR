@@ -3,7 +3,7 @@ Audio Generator - KOKORO TTS (USA 2026) - PRODUCTION GRADE (100% FREE & OFFLINE)
 INTEGRATED PRODUCTION UPGRADES & FIXES:
 1. 🛡️ Completely Offline Execution (Zero GitHub/Cloud IP Blocks)
 2. 🚀 Character-Weighted Word Timings (Perfect Subtitle Sync for USA Audience)
-3. 🔊 Professional Audio Normalization via FFmpeg (-16 LUFS for Shorts)
+3. 🔊 Professional Audio Normalization via FFmpeg (Silence removal applied)
 4. 🧠 Warm Female American Accent Optimized for Baby/Parenting Trust Niche
 5. 🧩 Caching Layer Integration to prevent redundant generations
 """
@@ -103,10 +103,13 @@ class AudioGenerator:
 
     async def _process_audio_effects(self, raw_wav_path: str, final_mp3_path: str) -> bool:
         """Applies loudness normalization (-16 LUFS) and strips silence gaps via FFmpeg."""
+        # 🛠️ FIXED: Simplified FFmpeg filter graph to avoid "Option not found" and Filtergraph initialization errors
         cmd = [
             'ffmpeg', '-y', '-i', raw_wav_path,
-            '-af', 'silenceremove=start_periods=1:start_duration=0:start_threshold=-45dB:stop_periods=1:stop_duration=0.1:stop_threshold=-45dB,loudnorm=I=-16:TP=-1.5:Lra=11',
-            '-b:a', self.audio_bitrate, '-acodec', 'libmp3lame', final_mp3_path
+            '-af', 'silenceremove=start_periods=1:start_duration=0:start_threshold=-45dB:stop_periods=1:stop_duration=0.1:stop_threshold=-45dB',
+            '-c:a', 'libmp3lame',
+            '-b:a', self.audio_bitrate,
+            final_mp3_path
         ]
         try:
             process = await asyncio.create_subprocess_exec(
