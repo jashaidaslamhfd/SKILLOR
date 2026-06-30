@@ -48,6 +48,7 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           # Pehle check karega ki main.py kahan hai, phir us folder se run karega
           MAIN_PATH=$(find . -name "main.py" | head -n 1)
@@ -63,15 +64,28 @@ jobs:
           # Injecting Secure Variables Maps from Repository Secrets
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
-          
-          # YouTube OAuth Client Injections (Raw Encrypted Content Mapping)
-          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+
+          # 🐛 FIX: youtube_uploader.py actually reads REFRESH_TOKEN,
+          # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (not YOUTUBE_CLIENT_SECRETS
+          # / YOUTUBE_REFRESH_TOKEN as this file had before) — those names
+          # were never read anywhere, so YouTube auth was silently broken.
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+
+          # 🐛 FIX: cloud_uploader.py reads three separate Cloudinary fields,
+          # not a single CLOUDINARY_URL — that secret was never consumed.
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+
           # Facebook/Instagram Graph API Access Tokens Meta Rings
           FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
-          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
         run: |
           # Dynamic Path Resolution: Yeh automatically main.py ka folder dhoondh kar uske andar enter hoga
           MAIN_PATH=$(find . -name "main.py" | head -n 1)
@@ -84,11 +98,17 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Automation Core"
-          
-          # state.json dhoondh kar git status me append karega
-          STATE_PATH=$(find . -name "state.json" | head -n 1)
-          if [ ! -z "$STATE_PATH" ]; then
-            git add "$STATE_PATH"
-            git commit -m "chore(telemetry): update state matrix registry logs [skip ci]" || true
-            git push origin main || true
-          fi
+
+          # 🐛 FIX: nothing in this codebase ever writes "state.json" — the
+          # real persisted files are state/used_clips.txt (footage de-dupe
+          # history) and metrics.json (run metrics). Committing the wrong
+          # filename meant the used-clips dedupe state was NEVER saved back
+          # to the repo, so every workflow run started from a stale/empty
+          # cache, which also fed the repeated-clip problem.
+          MAIN_PATH=$(find . -name "main.py" | head -n 1)
+          PROJECT_DIR=$(dirname "$MAIN_PATH")
+
+          git add "$PROJECT_DIR/state/used_clips.txt" 2>/dev/null || true
+          git add "$PROJECT_DIR/metrics.json" 2>/dev/null || true
+          git commit -m "chore(telemetry): update state matrix registry logs [skip ci]" || true
+          git push origin main || true
