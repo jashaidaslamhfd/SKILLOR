@@ -61,12 +61,14 @@ class AutomationOrchestrator:
         if self.kokoro_model is None:
             from kokoro import KPipeline
             self.kokoro_model = KPipeline(lang_code='a')
-
-    async def run_pipeline(self, count=1):
+    async def run_pipeline(self, count: int = 1, specific_topic: str = None, skip_upload: bool = False):
         self._init_voice_engine()
-        print(f"✅ Pipeline initialized successfully. Starting {count} runs...")
-        # Aage ka logic yahan add karein...
-
+        print(f"🚀 Starting pipeline (Count: {count}, Topic: {specific_topic})...")
+        
+        # Baki logic wahi rahega...
+        for i in range(count):
+            # Ab specific_topic variable yahan available hoga
+            ...
 if __name__ == "__main__":
     orchestrator = AutomationOrchestrator()
     asyncio.run(orchestrator.run_pipeline())
