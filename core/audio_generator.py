@@ -130,113 +130,152 @@ class AudioGenerator:
 
     async def generate_with_effects(self, script_segments: List[Dict],
                                     output_dir: str, topic: str = "") -> Dict:
-        """Orchestrates Kokoro Offline Generation with server-safe workflow pipeline."""
+        """
+        FIX (exact clip matching): previously rendered the WHOLE script as one
+        TTS blob and only estimated each segment's duration from word count
+        for captions - there was no real per-segment timing anywhere, so
+        footage clips could never be trimmed to match their segment's actual
+        voiceover length. Now each segment is synthesized separately and
+        concatenated, so we know each segment's REAL duration from ffprobe and
+        can hand that exact number to video_assembler.
+        """
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
-        
-        # Unpack script text lines
-        text_parts = []
-        for s in script_segments:
-            text_val = s.get('text', s.get('script', '')).strip()
-            if text_val:
-                text_parts.append(text_val)
-                
-        full_text = " ".join(text_parts)
-        clean_text = self._sanitize_text(full_text)
-        
-        if len(clean_text.split()) <= 1:
-            raise ValueError("❌ No valid script text found to synthesize.")
 
-        # Cache Engine Logic Check
-        script_hash = self._get_cache_hash(clean_text)
-        cached_final_mp3 = os.path.join(self.cache_dir, f"final_{script_hash}.mp3")
-        final_path_mp3 = os.path.join(output_dir, 'final_audio.mp3')
+        segment_audio_paths: List[str] = []
+        segment_durations: List[float] = []
+        segment_texts: List[str] = []
 
-        if os.path.exists(cached_final_mp3) and os.path.getsize(cached_final_mp3) > 1000:
-            logger.info("⏭️ Full audio script cache hit! Copying cached MP3 tracks...")
-            shutil.copy(cached_final_mp3, final_path_mp3)
-        else:
-            # Local Raw WAV rendering via Kokoro Engine
-            temp_raw_wav = os.path.join(output_dir, "raw_voice_temp.wav")
-            logger.info(f"🎙️ Rendering local voice array using Kokoro Model ({self.voice})...")
-            
-            try:
-                # Running block execution safely inside thread-pool to keep event loop unblocked
-                def run_tts():
-                    audio, sample_rate = self.tts.create(clean_text, voice=self.voice, speed=1.0)
-                    sf.write(temp_raw_wav, audio, sample_rate)
-                
-                await asyncio.to_thread(run_tts)
-            except Exception as e:
-                raise RuntimeError(f"❌ Kokoro audio synthesis crashed: {e}")
+        for i, s in enumerate(script_segments):
+            raw_text = s.get('text', s.get('script', '')).strip()
+            clean_text = self._sanitize_text(raw_text)
+            if not clean_text:
+                continue
 
-            # Apply standard loudness mechanics via FFmpeg converter
-            success = await self._process_audio_effects(temp_raw_wav, final_path_mp3)
-            
-            # Clean temporary WAV asset files safely
-            if os.path.exists(temp_raw_wav):
-                try: os.remove(temp_raw_wav)
+            seg_hash = self._get_cache_hash(clean_text)
+            cached_seg_mp3 = os.path.join(self.cache_dir, f"seg_{seg_hash}.mp3")
+            seg_mp3_path = os.path.join(output_dir, f"segment_{i:02d}.mp3")
+
+            if os.path.exists(cached_seg_mp3) and os.path.getsize(cached_seg_mp3) > 500:
+                shutil.copy(cached_seg_mp3, seg_mp3_path)
+            else:
+                temp_raw_wav = os.path.join(output_dir, f"raw_seg_{i:02d}.wav")
+                try:
+                    def run_tts(_text=clean_text, _wav=temp_raw_wav):
+                        audio, sample_rate = self.tts.create(_text, voice=self.voice, speed=1.0)
+                        sf.write(_wav, audio, sample_rate)
+                    await asyncio.to_thread(run_tts)
+                except Exception as e:
+                    raise RuntimeError(f"Kokoro audio synthesis crashed on segment {i}: {e}")
+
+                success = await self._process_audio_effects(temp_raw_wav, seg_mp3_path)
+                if os.path.exists(temp_raw_wav):
+                    try: os.remove(temp_raw_wav)
+                    except Exception: pass
+                if not success:
+                    raise RuntimeError(f"Failed compressing audio for segment {i}.")
+
+                try: shutil.copy(seg_mp3_path, cached_seg_mp3)
                 except Exception: pass
-                
-            if not success:
-                raise RuntimeError("❌ Failed compressing audio stream parameters through FFmpeg processing.")
-            
-            # Populate to local persistent caching directory layout
-            try: shutil.copy(final_path_mp3, cached_final_mp3)
-            except Exception: pass
 
-        # Get final duration
+            seg_duration = await self._get_audio_duration_async(seg_mp3_path)
+            if seg_duration <= 0:
+                logger.warning(f"Segment {i} produced zero-length audio, skipping from timeline.")
+                continue
+
+            segment_audio_paths.append(seg_mp3_path)
+            segment_durations.append(seg_duration)
+            segment_texts.append(clean_text)
+
+        if not segment_audio_paths:
+            raise ValueError("No valid script text found to synthesize.")
+
+        final_path_mp3 = os.path.join(output_dir, 'final_audio.mp3')
+        concat_list_path = os.path.join(output_dir, 'concat_list.txt')
+        with open(concat_list_path, 'w', encoding='utf-8') as f:
+            for p in segment_audio_paths:
+                safe_path = os.path.abspath(p).replace("'", "'\\''")
+                f.write(f"file '{safe_path}'\n")
+
+        concat_cmd = [
+            'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_list_path,
+            '-c:a', 'libmp3lame', '-b:a', self.audio_bitrate, final_path_mp3
+        ]
+        process = await asyncio.create_subprocess_exec(
+            *concat_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        if process.returncode != 0 or not os.path.exists(final_path_mp3):
+            raise RuntimeError(f"Failed concatenating segment audio: {stderr.decode()[-300:]}")
+
         total_duration = await self._get_audio_duration_async(final_path_mp3)
-        
-        # Enforce Character-Weighted Word Timings for perfect sync captions
-        word_timings = self._enforce_strict_word_timings(final_path_mp3, clean_text, total_duration)
-        
-        logger.info(f"✅ Audio Pipeline Complete: {total_duration:.2f}s | Words Tracked: {len(word_timings)}")
-        
+
+        segment_timeline = []
+        cursor = 0.0
+        for i, dur in enumerate(segment_durations):
+            segment_timeline.append({
+                'segment_index': i,
+                'start': round(cursor, 3),
+                'end': round(cursor + dur, 3),
+                'duration': round(dur, 3),
+            })
+            cursor += dur
+        if segment_timeline:
+            segment_timeline[-1]['end'] = round(total_duration, 3)
+            segment_timeline[-1]['duration'] = round(
+                segment_timeline[-1]['end'] - segment_timeline[-1]['start'], 3
+            )
+
+        word_timings = []
+        for seg_info, seg_text in zip(segment_timeline, segment_texts):
+            word_timings.extend(
+                self._segment_word_timings(seg_text, seg_info['duration'], seg_info['start'])
+            )
+
+        clean_text_all = " ".join(segment_texts)
+        logger.info(
+            f"Audio Pipeline Complete: {total_duration:.2f}s across "
+            f"{len(segment_timeline)} segments | Words Tracked: {len(word_timings)}"
+        )
+
         return {
             'audio_path': final_path_mp3,
             'final_audio': final_path_mp3,
             'total_duration': total_duration,
             'word_timings': word_timings,
-            'word_count': len(clean_text.split()),
+            'segment_timeline': segment_timeline,
+            'word_count': len(clean_text_all.split()),
             'voice_used': self.voice,
         }
 
-    def _enforce_strict_word_timings(self, audio_path: str, text: str, total_duration: float) -> List[Dict]:
-        """Character-Length Weighted Distribution for exact voiceovers sync mappings."""
+    def _segment_word_timings(self, text: str, duration: float, offset: float) -> List[Dict]:
+        """Character-Length Weighted Distribution within ONE segment's real
+        duration, offset into the full-track timeline so captions line up
+        with the concatenated voiceover."""
         words = text.split()
-        if not words or total_duration <= 0:
+        if not words or duration <= 0:
             return []
-            
+
         cleaned_words = [w.strip('.,!?;:\'"()[]{}') for w in words]
-        total_chars = sum(len(w) for w in cleaned_words)
-        
-        if total_chars == 0:
-            return []
-            
+        total_chars = sum(len(w) for w in cleaned_words) or 1
+
         timings = []
         current_time = 0.0
-        
         for i, word in enumerate(words):
-            clean_word = cleaned_words[i]
+            clean_word = cleaned_words[i] or word
             word_len = len(clean_word) if len(clean_word) > 0 else 1
-            
-            duration = (word_len / total_chars) * total_duration
-            if i == 0:
-                current_time = 0.0
-                
+            word_dur = (word_len / total_chars) * duration
             timings.append({
                 'word': clean_word,
-                'start': round(current_time, 3),
-                'end': round(current_time + duration, 3),
-                'duration': round(duration, 3)
+                'start': round(offset + current_time, 3),
+                'end': round(offset + current_time + word_dur, 3),
+                'duration': round(word_dur, 3),
             })
-            current_time += duration
-            
+            current_time += word_dur
+
         if timings:
-            timings[-1]['end'] = round(total_duration, 3)
+            timings[-1]['end'] = round(offset + duration, 3)
             timings[-1]['duration'] = round(timings[-1]['end'] - timings[-1]['start'], 3)
-            
         return timings
 
 # ============================================================
