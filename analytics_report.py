@@ -63,7 +63,11 @@ class YouTubeAnalytics:
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 token_uri="https://oauth2.googleapis.com/token",
-                scopes=['https://www.googleapis.com/auth/youtube.readonly']
+                # FIX: same scope mismatch as core/youtube_analytics.py —
+                # this must match what REFRESH_TOKEN was actually consented
+                # with, or Google returns invalid_scope on every refresh.
+                scopes=['https://www.googleapis.com/auth/youtube.upload',
+                        'https://www.googleapis.com/auth/youtube']
             )
             
             # Refresh internal auth tokens execution blocks
