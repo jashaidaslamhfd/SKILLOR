@@ -63,7 +63,16 @@ class YouTubeAnalytics:
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 token_uri="https://oauth2.googleapis.com/token",
-                scopes=['https://www.googleapis.com/auth/youtube.readonly']
+                # FIX: must match the scopes the REFRESH_TOKEN was actually
+                # granted with (same as youtube_uploader.py). Requesting a
+                # scope ('youtube.readonly') that was never consented to
+                # during the original OAuth flow makes Google return
+                # invalid_scope on every refresh — regenerating the token
+                # doesn't help unless the new consent includes this scope too.
+                # 'youtube' is a superset of 'youtube.readonly' so this still
+                # works for analytics/read calls.
+                scopes=['https://www.googleapis.com/auth/youtube.upload',
+                        'https://www.googleapis.com/auth/youtube']
             )
             
             # Refresh internal auth tokens execution blocks
