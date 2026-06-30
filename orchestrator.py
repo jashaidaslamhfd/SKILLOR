@@ -125,23 +125,24 @@ class AutomationOrchestrator:
         audio_path = audio_result["audio_path"]
         word_timings = audio_result["word_timings"]
         total_duration = audio_result["total_duration"]
+        segment_timeline = audio_result["segment_timeline"]
 
         ass_path = os.path.join(run_dir, "captions.ass")
         self.caption_gen.generate_karaoke_ass(word_timings, ass_path, max_duration=total_duration)
 
-        clips_meta = self.footage_fetcher.fetch_footage_for_script(script_segments, topic)
+        clips_by_segment = self.footage_fetcher.fetch_footage_for_script(script_segments, topic)
         clips_dir = os.path.join(run_dir, "clips")
-        downloaded = self.footage_fetcher.download_footage(clips_meta, clips_dir)
-        if not downloaded:
+        downloaded_by_segment = self.footage_fetcher.download_footage(clips_by_segment, clips_dir)
+        if not downloaded_by_segment:
             raise RuntimeError("No footage could be downloaded for this script - aborting render.")
 
         output_path = os.path.join(run_dir, "final_short.mp4")
         self.assembler.assemble_final_video(
-            processed_clips=downloaded,
+            segment_clips=downloaded_by_segment,
             audio_path=audio_path,
             ass_path=ass_path if os.path.exists(ass_path) else None,
             output_path=output_path,
-            metadata_clips=clips_meta,
+            segment_timeline=segment_timeline,
         )
 
         frame_path = self._extract_thumbnail_frame(output_path, run_dir)
