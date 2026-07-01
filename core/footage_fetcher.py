@@ -2,10 +2,10 @@
 Footage Fetcher — Production 2026
 Sources:
   1. Pexels      — paid API (existing)
-  2. Mazwai      — FREE, no key, cinematic creative commons
-  3. Life of Vids — FREE, no key, unique clips
-  4. Dareful     — FREE, no key, 4K stock
-REMOVED: Pixabay (400 error), Coverr (401 — no longer free), Videvo (0 results)
+  2. Life of Vids — FREE, no key, unique clips
+  3. Dareful     — FREE, no key, 4K stock
+REMOVED: Pixabay (400 error), Coverr (401 — no longer free), Videvo (0 results),
+         Mazwai (domain merged into Freepik/Magnific, old API endpoint dead — 403s)
 FIX: Each clip is trimmed to segment_duration so it matches voice EXACTLY
 """
 
@@ -94,7 +94,7 @@ class FootageFetcher:
                 logger.warning(f"⚠️ Groq init bypassed: {e}")
 
         logger.info("📹 FootageFetcher pipeline loaded successfully (Portrait Enforced)")
-        logger.info("🎬 Sources active: Pexels + Mazwai (free) + Life of Vids (free) + Dareful (free)")
+        logger.info("🎬 Sources active: Pexels + Life of Vids (free) + Dareful (free)")
 
     # ──────────────────────────────────────────
     def _load_used_ids(self) -> set:
@@ -186,45 +186,6 @@ class FootageFetcher:
         return videos
 
     # ──────────────────────────────────────────
-    # SOURCE 2: MAZWAI — Free, no API key
-    # Creative Commons cinematic clips
-    # ──────────────────────────────────────────
-    def search_mazwai(self, query: str) -> List[Dict]:
-        """
-        Mazwai serves free CC0 cinematic clips.
-        API: https://mazwai.com/api/v1/search?q=...
-        No API key needed. Very different content from Pexels.
-        """
-        try:
-            params = {"q": query, "per_page": 15}
-            data = self._rate_limited_get(
-                "https://mazwai.com/api/v1/search",
-                params=params, timeout=(8, 20)
-            )
-            if not data:
-                return []
-
-            videos = []
-            for item in data.get('results', data if isinstance(data, list) else []):
-                # Mazwai returns direct video URLs
-                mp4_url = item.get('video', item.get('src', item.get('url', '')))
-                if not mp4_url:
-                    continue
-                w = item.get('width', 1920)
-                h = item.get('height', 1080)
-                clip_id = f"mzw_{item.get('id', random.randint(10000, 99999))}"
-                videos.append({
-                    'url': mp4_url, 'duration': item.get('duration', 8),
-                    'source': 'mazwai', 'id': clip_id,
-                    'width': w, 'height': h, 'is_portrait': h > w
-                })
-            logger.info(f"🎬 Mazwai: {len(videos)} clips for '{query}'")
-            return videos
-        except Exception as e:
-            logger.warning(f"⚠️ Mazwai failed: {e}")
-            return []
-
-    # ──────────────────────────────────────────
     # SOURCE 3: LIFE OF VIDS — Free, no key
     # Unique clips, very low audience overlap
     # ──────────────────────────────────────────
@@ -271,20 +232,17 @@ class FootageFetcher:
             if query in self.query_cache:
                 return self.query_cache[query]
 
-        with ThreadPoolExecutor(max_workers=3) as ex:
+        with ThreadPoolExecutor(max_workers=2) as ex:
             f_pexels   = ex.submit(self.search_pexels,       query)
-            f_mazwai   = ex.submit(self.search_mazwai,       query)
             f_lov      = ex.submit(self.search_life_of_vids, query)
 
             r_pexels   = f_pexels.result()
-            r_mazwai   = f_mazwai.result()
             r_lov      = f_lov.result()
 
         # Interleave so sources alternate
         results = []
-        for i in range(max(len(r_pexels), len(r_mazwai), len(r_lov))):
+        for i in range(max(len(r_pexels), len(r_lov))):
             if i < len(r_pexels):  results.append(r_pexels[i])
-            if i < len(r_mazwai):  results.append(r_mazwai[i])
             if i < len(r_lov):     results.append(r_lov[i])
 
         portraits  = [v for v in results if v['is_portrait']]
@@ -293,7 +251,7 @@ class FootageFetcher:
 
         logger.info(
             f"📊 Clips: {len(ordered)} total "
-            f"(Pexels:{len(r_pexels)} Mazwai:{len(r_mazwai)} LoV:{len(r_lov)})"
+            f"(Pexels:{len(r_pexels)} LoV:{len(r_lov)})"
         )
 
         with self.cache_lock:
