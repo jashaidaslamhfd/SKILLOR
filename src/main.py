@@ -1,5 +1,5 @@
 import os, json
-from groq_generator import generate_script
+from script_generator import generate_script
 from image_generator import generate_images
 from voice_generator import generate_voice # gTTS hata diya
 from caption_generator import add_captions
