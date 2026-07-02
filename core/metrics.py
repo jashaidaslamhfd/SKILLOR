@@ -1,42 +1,33 @@
-"""
-METRICS TRACKER - PRODUCTION STABLE
-FIXED: Removed invalid f-string syntax and implemented robust JSON logging.
-"""
-
-import logging
 import json
-from pathlib import Path
+import os
+from datetime import datetime
 
-class MetricsTracker:
-    def __init__(self):
-        # Metrics file save location
-        self.log_file = Path("metrics.json")
-        self.logger = logging.getLogger("MetricsTracker")
+METRICS_FILE = "metrics.jsonl"
 
-    def log_video_success(self, duration: float, word_count: int, hook_score: float, platforms: list):
-        """Logs successful run data using robust JSON serialization."""
-        data = {
-            "timestamp": "2026-06-30",
-            "duration": duration,
-            "word_count": word_count,
-            "hook_score": hook_score,
-            "platforms": platforms,
-            "status": "success"
-        }
-        try:
-            # Append data to metrics.json in a clean format
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(data) + "\n")
-            self.logger.info("Metrics successfully recorded for successful pipeline run.")
-        except Exception as e:
-            self.logger.error(f"Failed to write metrics: {str(e)}")
+def log_metrics(script_data, result):
+    os.makedirs(os.path.dirname(METRICS_FILE) or '.', exist_ok=True)
 
-    def log_video_failure(self):
-        """Logs failures without syntax-breaking string literals."""
-        try:
-            data = {"timestamp": "2026-06-30", "status": "failed"}
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(data) + "\n")
-            self.logger.info("Failure logged to metrics registry.")
-        except Exception as e:
-            self.logger.error(f"Could not log failure: {str(e)}")
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "title": script_data.get('title'),
+        "niche": script_data.get('niche'),
+        "hook_score": script_data.get('hook_score', 0),
+        "topic": script_data.get('topic'),
+        **result
+    }
+
+    with open(METRICS_FILE, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(entry) + '\n')
+
+def get_all_metrics():
+    if not os.path.exists(METRICS_FILE):
+        return []
+
+    metrics = []
+    with open(METRICS_FILE, 'r', encoding='utf-8') as f:
+        for line in f:
+            try:
+                metrics.append(json.loads(line.strip()))
+            except json.JSONDecodeError:
+                continue
+    return metrics
