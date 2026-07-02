@@ -1,31 +1,32 @@
-import os, json, time
-from script_generator import generate_script
+import os, json
+from groq_generator import generate_script
 from image_generator import generate_images
-from video_editor import make_video
+from voice_generator import generate_voice # gTTS hata diya
+from caption_generator import add_captions
+from video_builder import build_video
 from uploader import upload_all
 
 def main():
-    print("Bismillah... Bot Started")
-    try:
-        # 1. SCRIPT: 40-55 Sec + Shocking Hook + CTA
-        script_data = generate_script(niche="Baby Psychology")
-        assert 40 <= script_data['duration'] <= 55, "Duration Fail: Anti-Spam Rule"
-
-        # 2. IMAGES: 100% AI. Pexels = 0%
-        image_paths = generate_images(script_data['scenes'])
-        assert len(image_paths) >= 9, "Image Count Fail"
-
-        # 3. VIDEO: Ken Burns + Word Level Caption Sync
-        video_path, thumb_path = make_video(script_data, image_paths)
-
-        # 4. UPLOAD: YT + FB + Insta
-        upload_all(video_path, thumb_path, script_data)
-
-        print(f"SUCCESS: {script_data['title']} Uploaded")
-
-    except Exception as e:
-        print(f"FATAL ERROR: {e}") # Log ban jayega GitHub Actions me
-        exit(1) # Fail ho jaye to pata chal jaye
+    print("MrNextep Auto Shorts v3.0 = Kokoro Edition Started")
+    
+    # 1. Script from Groq
+    script_data = generate_script()
+    print(f"Topic: {script_data['title']}")
+    
+    # 2. 9 AI Images from HuggingFace SDXL
+    image_paths = generate_images(script_data['scenes'])
+    
+    # 3. Kokoro Voice = US Male, 10/10 Human
+    audio_path = generate_voice(script_data['voiceover'], voice="am_adam")
+    
+    # 4. WhisperX Captions = Word by Word Sync
+    video_no_cap = build_video(image_paths, audio_path, script_data['title'])
+    final_video = add_captions(video_no_cap, audio_path)
+    
+    # 5. Upload YT + FB
+    upload_all(final_video, script_data['title'], script_data['desc'], script_data['tags'])
+    
+    print("DONE. Video Live on YT + FB")
 
 if __name__ == "__main__":
     main()
