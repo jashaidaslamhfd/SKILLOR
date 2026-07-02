@@ -1,14 +1,14 @@
 name: MrNextep Auto Shorts
 
 on:
-  workflow_dispatch: # Manual Run Button GitHub pe
+  workflow_dispatch:
   schedule:
-    - cron: '0 15 *' # 8:00 PM PKT daily = UTC 15:00
+    - cron: "0 15 * *" # 8:00 PM PKT daily = Ye lagao
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # Kokoro ke liye 15 min diye hain
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Repo
@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache Kokoro Model # <--- 200MB Model sirf 1 baar download hoga
+      - name: Cache Kokoro Model
         uses: actions/cache@v4
         with:
           path: |
@@ -27,7 +27,7 @@ jobs:
             voices-v0.19.bin
           key: kokoro-model-v1 
 
-      - name: Cache Whisper Model # <--- Whisper 1GB bhi cache
+      - name: Cache Whisper Model
         uses: actions/cache@v4
         with:
           path: ~/.cache/whisper
@@ -38,12 +38,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           pip install -r requirements.txt
-          python -m whisperx.download_models # Pehli baar download hoga
+          python -m whisperx.download_models
 
       - name: Set Env Variables & Run Bot
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          HF_API_KEY: ${{ secrets.HF_API_KEY }} # HuggingFace Key
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
