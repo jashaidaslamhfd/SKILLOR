@@ -36,10 +36,12 @@ class SEOConfig:
 # ============================================================
 @dataclass
 class VideoConfig:
-    # YouTube Shorts duration: 45-60 seconds (2026 sweet spot)
-    DURATION_MIN: int = 45
-    DURATION_MAX: int = 60
-    TARGET_DURATION: int = 50
+    # 🐛 FIX: was 45-60s, but the channel's actual target (per creator) is
+    # 35-55s. This value now also directly drives content_generator.py's
+    # dynamic script-length logic, so keep this as the single source of truth.
+    DURATION_MIN: int = 35
+    DURATION_MAX: int = 55
+    TARGET_DURATION: int = 45
 
     # Resolution
     RESOLUTION: tuple = (1080, 1920)
