@@ -1,147 +1,131 @@
 import os
-import requests
-import random
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+import json
+from groq import Groq
 
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-os.makedirs("temp/footage", exist_ok=True)
+# Swap Rate killer prompts - 0-3s me hook
+SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter. Your ONLY job: 0-3 second retention.
 
-def fetch_from_pexels(query, per_page=15):
-    """Pexels se high quality vertical videos"""
+RULES:
+1. First line = Pattern interrupt. NO "Did you know", "Have you ever", "Welcome".
+   Use: "Stop.", "Wait.", "They lied to you.", "This will be deleted..."
+2. Total script: 26-28 seconds only. 65-70 words max.
+3. Every 3 seconds = new hook. Use: "But here's the crazy part...", "Wait, it gets worse...", "Part 2?"
+4. Last line = Comment bait: "Comment 'PART2' if you want the secret" OR "Tag someone who does this"
+5. Write for 12 year old. Simple words. Short sentences.
+6. Output JSON only.
+
+JSON Format:
+{
+  "title": "Curiosity gap, 40-50 chars",
+  "script": "Full script 65-70 words",
+  "thumbnail_text": "3 words max",
+  "search_terms": ["term1", "term2", "term3"],
+  "hook_score": 8-10,
+  "comment_bait": "Exact line to say at end"
+}
+"""
+
+NICHE_PROMPTS = {
+    'mystery': """
+Niche: Unsolved mysteries, government secrets, creepy facts
+Hook examples: "The FBI deleted this video...", "Stop scrolling. This is illegal to know...", "They don't want you to see part 2..."
+Tone: Whisper, suspense, conspiracy
+""",
+    'science': """
+Niche: Mind-blowing science, space, physics that breaks brain
+Hook examples: "Your teacher lied about this...", "Scientists are hiding this...", "This breaks physics..."
+Tone: Excited, fast, "no way" moments
+""",
+    'human_behaviour': """
+Niche: Psychology, why we do weird things, social hacks
+Hook examples: "You do this daily but why?", "Tag someone who does this", "Psychology says you're..."
+Tone: Relatable, "omg that's me", conversational
+"""
+}
+
+def generate_script(topic, hook_data, niche='human_behaviour'):
+    niche_context = NICHE_PROMPTS.get(niche, NICHE_PROMPTS['human_behaviour'])
+
+    user_prompt = f"""
+Topic: {topic}
+Hook to use: {hook_data['hook']}
+Niche rules: {niche_context}
+
+Write the full 28-second script now. Make sure:
+1. First 3 words = hook_data['hook']
+2. 10 second mark = "But here's the crazy part..."
+3. 20 second mark = "Wait, there's more..."
+4. 27 second mark = comment_bait
+5. Total 65-70 words only. Count them.
+
+Give JSON only.
+"""
+
     try:
-        url = "https://api.pexels.com/videos/search"
-        headers = {"Authorization": PEXELS_API_KEY}
-        params = {
-            "query": query,
-            "per_page": per_page,
-            "orientation": "portrait", # Shorts ke liye
-            "size": "medium"
-        }
-        res = requests.get(url, headers=headers, params=params, timeout=10)
-        videos = res.json().get("videos", [])
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile", # Best for creativity
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.9, # High creativity for hooks
+            response_format={"type": "json_object"}
+        )
 
-        valid_urls = []
-        for v in videos:
-            # 1080x1920 ya 720x1280 wala dhundo
-            for file in v["video_files"]:
-                if file["height"] >= 1280 and file["width"] <= file["height"]:
-                    valid_urls.append(file["link"])
-                    break
-        return valid_urls
+        data = json.loads(response.choices[0].message.content)
+
+        # Validation - Swap rate fix
+        words = data['script'].split()
+        if len(words) > 75:
+            data['script'] = ' '.join(words[:70]) # Hard cut at 70 words
+
+        # Force comment bait agar missing hai
+        if 'comment_bait' not in data:
+            data['comment_bait'] = "Comment 'PART2' for the secret"
+
+        # Script ke end me comment bait jod do
+        if data['comment_bait'] not in data['script']:
+            data['script'] = data['script'].rstrip('.') + f"... {data['comment_bait']}"
+
+        data['topic'] = topic
+        data['niche'] = niche
+        data['hook_score'] = data.get('hook_score', 9)
+
+        print(f"[Content] ✅ Script: {len(words)} words | Hook: {data['hook_score']}/10")
+        return data
+
     except Exception as e:
-        print(f"[Footage] Pexels error: {e}")
-        return []
-
-def fetch_from_pixabay(query):
-    """Fallback - Pixabay free hai"""
-    try:
-        url = "https://pixabay.com/api/videos/"
-        params = {
-            "key": PIXABAY_API_KEY,
-            "q": query,
-            "video_type": "film",
-            "per_page": 15
+        print(f"[Content] Groq failed: {e}")
+        # Fallback template - Swap rate proof
+        fallback = {
+            'mystery': {
+                "title": "The FBI Hid This From You",
+                "script": "Stop. The FBI deleted this video in 24 hours. In 1997, they found something in Area 51. But here's the crazy part... it was alive. Wait, there's more... they still hide it today. Comment 'PART2' if you want the truth.",
+                "thumbnail_text": "FBI HID THIS",
+                "search_terms": ["dark fbi", "area 51", "classified"],
+                "hook_score": 9,
+                "comment_bait": "Comment 'PART2' if you want the truth"
+            },
+            'science': {
+                "title": "Your Teacher Lied About Space",
+                "script": "Wait. Your teacher lied about space. It's not empty. NASA found sound in space. But here's the crazy part... it screams. Wait, there's more... black holes sing. Tag someone who needs to know this.",
+                "thumbnail_text": "SPACE SCREAMS",
+                "search_terms": ["space nasa", "black hole", "galaxy"],
+                "hook_score": 9,
+                "comment_bait": "Tag someone who needs to know this"
+            },
+            'human_behaviour': {
+                "title": "Why You Check Phone 144 Times",
+                "script": "Stop. You check your phone 144 times daily. But why? Psychology says it's dopamine addiction. But here's the crazy part... it's worse than cigarettes. Wait, there's more... your brain is rewired. Comment 'ME' if this is you.",
+                "thumbnail_text": "144 TIMES",
+                "search_terms": ["phone addiction", "brain dopamine", "people"],
+                "hook_score": 10,
+                "comment_bait": "Comment 'ME' if this is you"
+            }
         }
-        res = requests.get(url, params=params, timeout=10)
-        hits = res.json().get("hits", [])
-        return [v["videos"]["medium"]["url"] for v in hits if v["videos"].get("medium")]
-    except Exception as e:
-        print(f"[Footage] Pixabay error: {e}")
-        return []
-
-def download_clip(url, idx):
-    """Single clip download with retry"""
-    path = f"temp/footage/clip_{idx}.mp4"
-    for attempt in range(2):
-        try:
-            r = requests.get(url, stream=True, timeout=15)
-            with open(path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=1024*1024):
-                    f.write(chunk)
-            # Check if valid
-            clip = VideoFileClip(path)
-            if clip.duration > 1:
-                clip.close()
-                return path
-            clip.close()
-        except:
-            continue
-    return None
-
-def fetch_stock_footage(niche, search_terms, duration_needed=30):
-    """
-    Swap Rate Fix: Har 0.8-1.2 sec ka clip dega
-    Total 30 sec ke liye 25-35 clips download karega
-    """
-    print(f"[Footage] Searching: {search_terms}")
-
-    all_urls = []
-
-    # 1. Har search term ke liye footage lao
-    for term in search_terms[:3]: # 3 terms max
-        urls = fetch_from_pexels(term)
-        if not urls:
-            urls = fetch_from_pixabay(term) # Fallback
-        all_urls.extend(urls[:5]) # Har term se 5 clips
-
-    if not all_urls:
-        # Last fallback: niche based generic
-        fallback_terms = {
-            'mystery': 'dark fog night',
-            'science': 'space technology abstract',
-            'human_behaviour': 'people city lifestyle'
-        }
-        all_urls = fetch_from_pexels(fallback_terms.get(niche, 'abstract'))
-        if not all_urls:
-            raise Exception("No footage found anywhere")
-
-    # 2. Random shuffle + download 30-35 clips
-    random.shuffle(all_urls)
-    clips = []
-    total_duration = 0
-    target_clips = 35 # Swap rate fix: zyada cuts
-
-    for idx, url in enumerate(all_urls[:target_clips]):
-        path = download_clip(url, idx)
-        if not path:
-            continue
-
-        try:
-            clip = VideoFileClip(path)
-            # BUG FIX: Har clip ko 0.8-1.2 sec kaat do
-            clip_duration = min(clip.duration, random.uniform(0.8, 1.2))
-            clip = clip.subclip(0, clip_duration)
-
-            # Vertical crop agar needed
-            if clip.w > clip.h:
-                clip = clip.crop(x_center=clip.w/2, width=clip.h*9/16)
-
-            clips.append(clip)
-            total_duration += clip_duration
-            print(f"[Footage] Clip {len(clips)}: {clip_duration:.1f}s")
-
-            if total_duration >= duration_needed:
-                break
-
-        except Exception as e:
-            print(f"[Footage] Clip error: {e}")
-            continue
-
-    if not clips:
-        raise Exception("All clips failed to process")
-
-    # 3. Fast cuts ke saath jod do
-    print(f"[Footage] ✅ Total: {len(clips)} clips, {total_duration:.1f}s")
-    final = concatenate_videoclips(clips, method="compose")
-
-    output_path = "temp/footage/final_footage.mp4"
-    final.write_videofile(output_path, fps=30, logger=None, threads=4)
-    final.close()
-
-    # Cleanup
-    for clip in clips:
-        clip.close()
-
-    return output_path
+        result = fallback.get(niche, fallback['human_behaviour'])
+        result['topic'] = topic
+        result['niche'] = niche
+        return result
