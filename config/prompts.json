@@ -1,0 +1,8 @@
+{
+  "topic_prompt": "Give me 1 unexplained mystery about kids age 2-10 related to brain, body, or psychology. Must be shocking for US parents. Must be a question format. Must be searchable. Example: Why do babies stare at corners? Why do kids forget age 3? Output only the question, no explanation.",
+  
+  "hook_prompt": "Write a 6-word hook for YouTube Shorts. Must start with 'Your kid' or 'Doctors found'. Must create fear or curiosity in 1.5 seconds. Must be about the given topic. No question mark. Example: Your kid's brain deletes itself",
+  
+  "script_prompt": "YouTube Short script 40-55 seconds. Target: US parents. Topic: {topic}. Hook: {hook}. Twist: {twist}. Structure: 0-1.5s Hook, 1.5-4s Stakes, 4-15s Mystery setup, 15-35s Science explain with 1 PubMed source, 35-50s Twist, 50-55s Loop CTA. Total 120-140 words. Use simple words. Add [PAUSE] where dramatic pause needed."
+}
+
