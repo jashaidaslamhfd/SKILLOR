@@ -138,11 +138,11 @@ class AutomationOrchestrator:
 
         output_path = os.path.join(run_dir, "final_short.mp4")
         self.assembler.assemble_final_video(
-            segment_clips=downloaded_by_segment,
+            processed_clips=downloaded_by_segment,
             audio_path=audio_path,
             ass_path=ass_path if os.path.exists(ass_path) else None,
             output_path=output_path,
-            segment_timeline=segment_timeline,
+            metadata_clips=clips_by_segment,
         )
 
         frame_path = self._extract_thumbnail_frame(output_path, run_dir)
