@@ -1,114 +1,85 @@
 name: 🎬 USA Peak-Time YouTube Automation Pipeline (2026)
 
+name: NeuroMystery Auto Upload
+
 on:
   schedule:
-    # 1. Video 1: 11:30 AM EST (4:30 PM UTC) - Morning Catch & Lunch Break
-    - cron: '30 16 * * *'
-    
-    # 2. Video 2: 04:30 PM EST (9:30 PM UTC) - Post-Work / School Commute Peak
-    - cron: '30 21 * * *'
-    
-    # 3. Video 3: 09:30 PM EST (02:30 AM UTC Next Day) - Late Night Bedtime Scrolling
-    - cron: '30 2 * * *'
-    
-  # Emergency manual trigger from GitHub UI if needed
-  workflow_dispatch:
+    # USA Eastern Time: 9AM = 13:00 UTC, 3PM = 19:00 UTC, 8PM = 00:00 UTC next day
+    - cron: '0 13 * * *'  # 9AM EST
+    - cron: '0 19 * * *'  # 3PM EST
+    - cron: '0 0 * * *'   # 8PM EST
+  workflow_dispatch: # Manual run ka button bhi dega
 
 jobs:
-  automate_shorts:
+  create-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # Heavy audio rendering and local models safety buffer
-
+    timeout-minutes: 30
+    
     steps:
-      - name: 📥 Checkout System Repository Codes
+      - name: Checkout repo
         uses: actions/checkout@v4
-
-      - name: 🐍 Initialize Python Execution Node (3.11)
+      
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # Speeds up installations over daily multi-runs
-
-      - name: 🎛️ Install Native Core System Binaries (FFmpeg + Espeak)
+      
+      - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y ffmpeg espeak-ng libxml2-dev libxslt-dev
-
-      - name: 📦 Build Deep Dependency Cache & Modules Lock
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      
+      - name: Install Python packages
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          # Yeh check karega ki agar requirements.txt directly root par nahi hai toh sub-folders dhoondhe
-          if [ -f requirements.txt ]; then 
-            pip install -r requirements.txt
-          else
-            find . -name "requirements.txt" -exec pip install -r {} \;
-          fi
-
-      - name: 🔍 Perform Pre-Flight Systemic Health Check Verification
+          pip install groq==0.9.0
+          pip install google-auth==2.29.0 google-auth-oauthlib==1.2.0 google-api-python-client==2.126.0
+          pip install requests==2.31.0
+          pip install cloudinary==1.36.0
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install git+https://github.com/hexgrad/kokoro.git
+      
+      - name: Create output folders
+        run: |
+          mkdir -p output
+          mkdir -p assets
+          mkdir -p config
+      
+      - name: Run Step 1 - Generate Topic
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-        run: |
-          # Pehle check karega ki main.py kahan hai, phir us folder se run karega
-          MAIN_PATH=$(find . -name "main.py" | head -n 1)
-          if [ -z "$MAIN_PATH" ]; then
-            echo "❌ CRITICAL ERROR: main.py file poore project me kahin nahi mili!"
-            exit 1
-          fi
-          cd $(dirname "$MAIN_PATH")
-          python main.py --health-check
-
-      - name: 🚀 Run Content Creation & Upload Pipeline
+        run: python core/1_topic_gen.py
+      
+      - name: Run Step 2 - Script + Voice
         env:
-          # Injecting Secure Variables Maps from Repository Secrets
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python core/2_script_voice.py
+      
+      - name: Run Step 3 - Assemble Video
+        env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-
-          # 🐛 FIX: youtube_uploader.py actually reads REFRESH_TOKEN,
-          # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (not YOUTUBE_CLIENT_SECRETS
-          # / YOUTUBE_REFRESH_TOKEN as this file had before) — those names
-          # were never read anywhere, so YouTube auth was silently broken.
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-
-          # 🐛 FIX: cloud_uploader.py reads three separate Cloudinary fields,
-          # not a single CLOUDINARY_URL — that secret was never consumed.
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-
-          # Facebook/Instagram Graph API Access Tokens Meta Rings
+        run: python core/3_video_assemble.py
+      
+      - name: Run Step 4 - Upload to YouTube
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        run: python core/4_uploader.py --platform youtube
+      
+      - name: Run Step 4 - Upload to Facebook
+        env:
           FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
-        run: |
-          # Dynamic Path Resolution: Yeh automatically main.py ka folder dhoondh kar uske andar enter hoga
-          MAIN_PATH=$(find . -name "main.py" | head -n 1)
-          cd $(dirname "$MAIN_PATH")
+        run: python core/4_uploader.py --platform facebook
+      
+      - name: Upload logs if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs
+          path: output/
           
-          # Run final single script pipeline automation
-          python main.py --count 1
-
-      - name: 🛡️ Safely Commit & Persist System State Registry Updates
-        run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions Automation Core"
-
-          # 🐛 FIX: nothing in this codebase ever writes "state.json" — the
-          # real persisted files are state/used_clips.txt (footage de-dupe
-          # history) and metrics.json (run metrics). Committing the wrong
-          # filename meant the used-clips dedupe state was NEVER saved back
-          # to the repo, so every workflow run started from a stale/empty
-          # cache, which also fed the repeated-clip problem.
-          MAIN_PATH=$(find . -name "main.py" | head -n 1)
-          PROJECT_DIR=$(dirname "$MAIN_PATH")
-
-          git add "$PROJECT_DIR/state/used_clips.txt" 2>/dev/null || true
-          git add "$PROJECT_DIR/metrics.json" 2>/dev/null || true
-          git commit -m "chore(telemetry): update state matrix registry logs [skip ci]" || true
-          git push origin main || true
