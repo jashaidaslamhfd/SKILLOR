@@ -1,84 +1,59 @@
-"""
-YouTube Automation System — MAIN ENTRY POINT (PRODUCTION ROUTER 2026)
-INTEGRATED PATH & SUB-MODULE ENGINE FIX:
-- Solves 'ModuleNotFoundError: No module named core.topic_engine' permanently.
-"""
-
 import os
 import sys
-import shutil
-import asyncio
 import argparse
-import json
-from pathlib import Path
+from core.topic_engine import select_topic
+from core.hook_engine import generate_hook
+from core.content_generator import generate_script
+from core.audio_generator import generate_voiceover
+from core.footage_fetcher import fetch_stock_footage
+from core.caption_generator import generate_captions
+from core.thumbnail_generator import create_thumbnail
+from core.video_assembler import assemble_video
+from core.cloud_uploader import upload_to_cloudinary
+from uploader.youtube_uploader import upload_to_youtube
+from uploader.instagram_uploader import upload_to_instagram
+from uploader.facebook_uploader import upload_to_facebook
+from core.metrics import log_metrics
 
-# 🚀 THE CRITICAL FIX: Absolute Multi-Layer Path Resolution
-current_file_path = Path(__file__).resolve()
-project_root = current_file_path.parent
+def run_pipeline(niche="auto", batch=1, dry_run=False):
+    for i in range(batch):
+        print(f"\n=== Batch {i+1}/{batch} ===")
+        try:
+            topic = select_topic(niche)
+            hook_data = generate_hook(topic, niche)
+            script_data = generate_script(topic, hook_data, niche)
+            script_data['niche'] = niche
 
-# Inject the folder containing main.py as primary lookup index
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+            audio_path = generate_voiceover(script_data['script'])
+            footage_path = fetch_stock_footage(niche, script_data['search_terms'])
+            captions = generate_captions(script_data['script'], audio_path)
+            thumb_path = create_thumbnail(script_data['thumbnail_text'], niche)
+            video_path = assemble_video(footage_path, audio_path, captions, hook_data, script_data)
 
-# Forcefully find and append the parent folder of 'core' and 'config' to avoid import breaks
-for folder_candidate in project_root.rglob('core'):
-    if folder_candidate.is_dir():
-        parent_dir = str(folder_candidate.parent)
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-        break
+            if dry_run:
+                print(" [Dry Run] Skipping uploads")
+                continue
 
-# Load env configurations BEFORE any internal core engines boot up
-from dotenv import load_dotenv
-load_dotenv()
+            video_url = upload_to_cloudinary(video_path, script_data['title'])
+            thumb_url = upload_to_cloudinary(thumb_path, script_data['title'], resource_type="image")
 
-# Enforce system level core binary checks at entry point
-if not shutil.which("ffmpeg"):
-    raise RuntimeError("🚨 CRITICAL DEPENDENCY MISSING: FFmpeg is required for the video automation stack.")
+            yt_url = upload_to_youtube(video_url, script_data)
+            caption = f"{script_data['title']}\n\n#shorts #viral"
+            ig_url = upload_to_instagram(video_url, caption, thumb_url)
+            fb_url = upload_to_facebook(video_url, caption)
 
-# Import the native orchestrator class exactly as architected
-try:
-    from orchestrator import AutomationOrchestrator
-except ImportError as e:
-    print(f"❌ Core engine import map resolution failure: {e}")
-    sys.exit(1)
+            log_metrics(script_data, {"youtube": yt_url, "instagram": ig_url, "facebook": fb_url})
+            print(f"✅ Success: {yt_url}")
 
-async def main():
-    parser = argparse.ArgumentParser(description="🚀 ENTERPRISE SHORTS AUTOMATION FRAMEWORK MASTER CONSOLE (USA 2026)")
-    parser.add_argument("--count", type=int, default=1, help="Total videos to batch produce.")
-    parser.add_argument("--topic", type=str, default=None, help="Force override engine to target explicit topic query string.")
-    parser.add_argument("--skip-upload", action="store_true", help="Generate only without publishing.")
-    parser.add_argument("--health-check", action="store_true", help="Check system parameters configuration and exit.")
-    
-    args = parser.parse_args()
-    
-    # Initialize the actual master orchestrator suite
-    orchestrator = AutomationOrchestrator()
-    
-    if args.health_check:
-        print("\n📊 RUNNING HEALTH CHECK VERIFICATION...")
-        if hasattr(orchestrator, 'health_check'):
-            print(json.dumps(orchestrator.health_check(), indent=4, default=str))
-        else:
-            print("✅ System Core Binaries found in PATH. Ready for action.")
-        return
-
-    print(f"⚙️ Dispatching execution loops to AutomationOrchestrator.run_pipeline... Count: [{args.count}]")
-    
-    # Calling the exact function name and signature present inside your orchestrator.py
-    results = await orchestrator.run_pipeline(
-        count=args.count,
-        specific_topic=args.topic,
-        skip_upload=args.skip_upload
-    )
-    
-    print("\n📊 PIPELINE RUN RESULTS SUMMARY:")
-    print(json.dumps(results, indent=2, default=str))
-
+        except Exception as e:
+            print(f"❌ Failed: {e}")
+            import traceback
+            traceback.print_exc()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n⏹️ Manual execution sequence halted via core interrupt breakout keys.")
-        sys.exit(0)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--niche", default="auto")
+    parser.add_argument("--batch", type=int, default=1)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    run_pipeline(args.niche, args.batch, args.dry_run)
