@@ -1,9 +1,7 @@
 name: MrNextep Auto Shorts
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 15 * *" # 8:00 PM PKT daily = Ye lagao
+  workflow_dispatch: # Sirf Manual Button. Auto nahi chalega abhi
 
 jobs:
   build:
