@@ -3,7 +3,7 @@ from script_generator import generate_script
 from image_generator import generate_images
 from voice_generator import generate_voice # gTTS hata diya
 from caption_generator import add_captions
-from video_builder import build_video
+from video_generator import generate_video
 from uploader import upload_all
 
 def main():
