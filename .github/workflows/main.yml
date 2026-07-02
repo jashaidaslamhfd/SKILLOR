@@ -1,0 +1,42 @@
+name: MrNextep Auto Shorts
+
+on:
+  workflow_dispatch: # Manual Run Button
+  schedule:
+    - cron: '0 15 *' # 8:00 PM PKT daily
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # 6 se barha ke 15 min kar diya Kokoro ke liye
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Kokoro Model # <--- YE SABSE ZAROORI STEP HAI
+        uses: actions/cache@v4
+        with:
+          path: |
+            kokoro-v0.19.onnx
+            voices-v0.19.bin
+          key: kokoro-model-v1 # Version change karo agar model update karna ho
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m whisperx.download_models # Whisper model bhi 1 baar
+
+      - name: Set Env Variables
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }} # HuggingFace Key
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: python main.py
