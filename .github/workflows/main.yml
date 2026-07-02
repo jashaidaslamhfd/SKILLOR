@@ -1,14 +1,14 @@
 name: MrNextep Auto Shorts
 
 on:
-  workflow_dispatch: # Manual Run Button
+  workflow_dispatch: # Manual Run Button GitHub pe
   schedule:
-    - cron: '0 15 *' # 8:00 PM PKT daily
+    - cron: '0 15 *' # 8:00 PM PKT daily = UTC 15:00
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # 6 se barha ke 15 min kar diya Kokoro ke liye
+    timeout-minutes: 15 # Kokoro ke liye 15 min diye hain
 
     steps:
       - name: Checkout Repo
@@ -19,20 +19,28 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache Kokoro Model # <--- YE SABSE ZAROORI STEP HAI
+      - name: Cache Kokoro Model # <--- 200MB Model sirf 1 baar download hoga
         uses: actions/cache@v4
         with:
           path: |
             kokoro-v0.19.onnx
             voices-v0.19.bin
-          key: kokoro-model-v1 # Version change karo agar model update karna ho
+          key: kokoro-model-v1 
+
+      - name: Cache Whisper Model # <--- Whisper 1GB bhi cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/whisper
+          key: whisper-model-v1
 
       - name: Install Dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           pip install -r requirements.txt
-          python -m whisperx.download_models # Whisper model bhi 1 baar
+          python -m whisperx.download_models # Pehli baar download hoga
 
-      - name: Set Env Variables
+      - name: Set Env Variables & Run Bot
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }} # HuggingFace Key
