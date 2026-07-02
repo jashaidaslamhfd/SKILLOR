@@ -1,0 +1,6 @@
+{
+  "high_ctr": ["why", "secret", "doctors", "warning", "hidden", "your kid", "shocking", "parents", "found", "never"],
+  "banned": ["death", "danger", "die", "kill"],
+  "fallback_footage": ["brain", "neurons", "science", "child", "medical", "abstract", "psychology"],
+  "usa_sources": ["Stanford", "Harvard", "Mayo Clinic", "CDC", "NIH"]
+}
