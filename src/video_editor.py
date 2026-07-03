@@ -1,6 +1,11 @@
 from moviepy.editor import *
 import whisperx, os
 from PIL import Image
+import torch
+from omegaconf import ListConfig, DictConfig
+
+# PyTorch 2.6+ security fix: allowlist omegaconf types
+torch.serialization.add_safe_globals([ListConfig, DictConfig])
 
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
