@@ -29,7 +29,8 @@ def build_video(image_paths, audio_path, scenes):
 
     os.makedirs("output", exist_ok=True)
     out_path = "output/video_no_captions.mp4"
-    video.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac", preset="medium")
+    import torch
+    torch.serialization.add_safe_globals([__import__('omegaconf').listconfig.ListConfig])    video.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac", preset="medium")
     return out_path
 
 
