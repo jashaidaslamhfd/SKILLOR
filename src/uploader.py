@@ -9,9 +9,6 @@ def upload_all(video_path, thumb_path, script_data):
     desc = f"{script_data['voiceover'][:200]}...\n\n#babypsychology #parenting #shorts"
 
     # 1. YOUTUBE UPLOAD
-    # NOTE: YT_CLIENT_SECRET GitHub Secret ek JSON string honi chahiye jisme
-    # token, refresh_token, client_id, client_secret, token_uri fields ho
-    # (standard google-auth OAuth credentials format).
     yt_key_raw = os.environ.get("YT_CLIENT_SECRET")
     if not yt_key_raw:
         raise ValueError("YT_CLIENT_SECRET missing hai. GitHub Secrets check karo.")
@@ -44,7 +41,14 @@ def upload_all(video_path, thumb_path, script_data):
         files = {'source': video_file}
         data = {'description': title, 'access_token': fb_token}
         r = requests.post(f"https://graph.facebook.com/v19.0/{fb_page}/videos", files=files, data=data)
-    print(f"Facebook Uploaded: {r.json()}")
+
+    fb_result = r.json()
+    # Pehle ye response check kiye bina hi "Uploaded" print kar deta tha,
+    # is se FB upload fail hone par bhi pipeline "success" dikhata tha.
+    if r.status_code != 200 or "error" in fb_result:
+        print(f"Facebook Upload FAILED: {fb_result}")
+    else:
+        print(f"Facebook Uploaded: {fb_result}")
 
     # 3. INSTA REELS: FB ke through hi hota hai
     # Iske liye pehle FB pe upload phir IG container banana parta hai.
