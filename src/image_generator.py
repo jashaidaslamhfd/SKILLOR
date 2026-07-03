@@ -2,6 +2,11 @@ import os
 import time
 import shutil
 import requests
+import logging
+from typing import List, Optional
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # PRIORITY 1: Google Gemini (Nano Banana - gemini-2.5-flash-image)
@@ -17,6 +22,8 @@ GEMINI_MODEL = "gemini-2.5-flash-image"
 # ---------------------------------------------------------------------------
 HF_API_KEY = os.environ.get("HF_API_KEY")
 HF_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+HF_TIMEOUT = 120  # Increased timeout for image generation
+HF_MAX_RETRIES = 3
 
 # PRIORITY 3 (last resort): local placeholder image, taake image count
 # hamesha scene count ke barabar rahe (index/caption misalignment na ho)
@@ -24,12 +31,15 @@ PLACEHOLDER = "assets/placeholder.png"
 
 
 def _try_gemini(prompt: str, path: str) -> bool:
+    """Try generating image with Google Gemini API."""
     if not GEMINI_API_KEY:
+        logger.debug("Gemini API key not configured")
         return False
     try:
         from google import genai
         from google.genai import types
 
+        logger.info("Attempting Gemini image generation...")
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -43,42 +53,86 @@ def _try_gemini(prompt: str, path: str) -> bool:
             if part.inline_data is not None:
                 with open(path, "wb") as f:
                     f.write(part.inline_data.data)
+                logger.info(f"Gemini image saved to {path}")
                 return True
-        print("Gemini ne image return nahi ki (empty response, shayad safety filter)")
+        logger.warning("Gemini ne image return nahi ki (empty response, shayad safety filter)")
         return False
     except Exception as e:
-        print(f"Gemini error: {e}")
+        logger.error(f"Gemini error: {e}")
         return False
 
 
-def _try_huggingface(prompt: str, path: str, retries: int = 2) -> bool:
+def _try_huggingface(prompt: str, path: str, retries: int = HF_MAX_RETRIES) -> bool:
+    """Try generating image with Hugging Face API with improved error handling."""
     if not HF_API_KEY:
+        logger.debug("Hugging Face API key not configured")
         return False
+    
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    payload = {"inputs": prompt}
+    
     for attempt in range(1, retries + 1):
         try:
+            logger.info(f"HF attempt {attempt}/{retries}")
             response = requests.post(
-                HF_URL, headers=headers, json={"inputs": prompt}, timeout=60
+                HF_URL, 
+                headers=headers, 
+                json=payload, 
+                timeout=HF_TIMEOUT
             )
+            
             if response.status_code == 200:
                 with open(path, "wb") as f:
                     f.write(response.content)
+                logger.info(f"Hugging Face image saved to {path}")
                 return True
+            
             elif response.status_code == 503:
-                wait = 10 * attempt
-                print(f"HF model load ho raha hai, {wait}s wait kar rahe hain (attempt {attempt}/{retries})")
+                # Model loading - retry with backoff
+                wait = 15 * attempt  # Increased wait time
+                logger.warning(f"HF model loading (503), waiting {wait}s before retry (attempt {attempt}/{retries})")
                 time.sleep(wait)
                 continue
+            
+            elif response.status_code == 429:
+                # Rate limited - wait longer
+                wait = 30 * attempt
+                logger.warning(f"HF rate limited (429), waiting {wait}s before retry")
+                time.sleep(wait)
+                continue
+            
             else:
-                print(f"HF Error: {response.status_code} - {response.text[:200]}")
+                error_msg = response.text[:200] if response.text else f"HTTP {response.status_code}"
+                logger.error(f"HF Error: {response.status_code} - {error_msg}")
+                if response.status_code >= 500:
+                    # Server error - retry
+                    if attempt < retries:
+                        time.sleep(5 * attempt)
+                        continue
                 return False
+        
+        except requests.Timeout:
+            logger.error(f"HF request timeout (attempt {attempt}/{retries})")
+            if attempt < retries:
+                time.sleep(5 * attempt)
+                continue
+        
+        except requests.ConnectionError as e:
+            logger.error(f"HF connection error: {e} (attempt {attempt}/{retries})")
+            if attempt < retries:
+                time.sleep(5 * attempt)
+                continue
+        
         except Exception as e:
-            print(f"HF exception: {e}")
-            time.sleep(3)
+            logger.error(f"HF exception: {e} (attempt {attempt}/{retries})")
+            if attempt < retries:
+                time.sleep(3 * attempt)
+                continue
+    
     return False
 
 
-def generate_images(scenes):
+def generate_images(scenes: List[str]) -> List[str]:
     """
     Har scene ke liye:
       1. Pehle Google Gemini (Nano Banana) try hota hai — first priority
@@ -91,30 +145,75 @@ def generate_images(scenes):
     paths = []
 
     for i, scene in enumerate(scenes):
-        prompt = (
-            f"Cinematic 3D render, {scene}, high quality, photorealistic, "
-            f"vertical 9:16 shorts frame, dramatic lighting"
-        )
-        path = f"scene_{i}.png"
-        success = _try_gemini(prompt, path)
-        source = "Gemini"
+        try:
+            prompt = (
+                f"Cinematic 3D render, {scene}, high quality, photorealistic, "
+                f"vertical 9:16 shorts frame, dramatic lighting, vibrant colors"
+            )
+            path = f"scene_{i}.png"
+            
+            logger.info(f"Generating image {i+1}/{len(scenes)}: {scene[:50]}...")
+            
+            # Try Gemini first
+            success = _try_gemini(prompt, path)
+            source = "Gemini"
 
-        if not success:
-            success = _try_huggingface(prompt, path)
-            source = "Hugging Face (fallback)"
+            # Fallback to Hugging Face
+            if not success:
+                success = _try_huggingface(prompt, path)
+                source = "Hugging Face (fallback)"
 
-        if not success:
-            source = "Placeholder (dono APIs fail)"
-            if os.path.exists(PLACEHOLDER):
-                shutil.copy(PLACEHOLDER, path)
-                success = True
+            # Last resort: placeholder
+            if not success:
+                source = "Placeholder (dono APIs fail)"
+                if os.path.exists(PLACEHOLDER):
+                    try:
+                        shutil.copy(PLACEHOLDER, path)
+                        success = True
+                        logger.info(f"Used placeholder for scene {i+1}")
+                    except Exception as e:
+                        logger.error(f"Failed to copy placeholder: {e}")
+                else:
+                    logger.warning(f"Placeholder image missing at {PLACEHOLDER}")
+
+            if success:
+                paths.append(path)
+                logger.info(f"Scene {i+1}/{len(scenes)} generated ✅ [{source}]")
             else:
-                print(f"WARNING: Scene {i+1} skip ho rahi hai — placeholder image bhi missing hai ({PLACEHOLDER})")
+                logger.error(f"Failed to generate image for scene {i+1}")
 
-        if success:
-            paths.append(path)
-            print(f"Scene {i+1}/{len(scenes)} ban gayi ✅ [{source}]")
+            # Rate limiting
+            time.sleep(2)
 
-        time.sleep(1)  # rate limit se bachne ke liye
+        except Exception as e:
+            logger.error(f"Error processing scene {i+1}: {e}")
+            # Try to use placeholder as fallback
+            if os.path.exists(PLACEHOLDER):
+                try:
+                    path = f"scene_{i}.png"
+                    shutil.copy(PLACEHOLDER, path)
+                    paths.append(path)
+                    logger.info(f"Scene {i+1} - used placeholder as fallback")
+                except Exception as copy_error:
+                    logger.error(f"Could not use placeholder: {copy_error}")
+
+    if not paths:
+        logger.error("No images generated at all")
+        raise RuntimeError(
+            "Koi bhi image nahi bani (Gemini, Hugging Face, placeholder sab fail) — "
+            "pipeline rok rahe hain. GEMINI_API_KEY / HF_API_KEY aur assets/placeholder.png check karo."
+        )
+
+    # Ensure we have exactly len(scenes) images
+    if len(paths) < len(scenes):
+        logger.warning(f"Only {len(paths)}/{len(scenes)} images generated, filling with placeholder")
+        while len(paths) < len(scenes):
+            if os.path.exists(PLACEHOLDER):
+                idx = len(paths)
+                path = f"scene_{idx}.png"
+                shutil.copy(PLACEHOLDER, path)
+                paths.append(path)
+            else:
+                raise RuntimeError(f"Cannot fill missing images - placeholder not found")
 
     return paths
