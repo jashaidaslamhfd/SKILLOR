@@ -1,47 +1,65 @@
-import requests, os, time
+from moviepy.editor import *
+import whisperx, os
+from PIL import Image
 
-API = os.environ.get("HF_API_KEY") # GitHub Secret wala naam
-# HuggingFace ne api-inference.huggingface.co retire kar diya hai (July 2025).
-# Naya endpoint router.huggingface.co hai, aur model bhi FLUX.1-schnell mein
-# switch kiya hai kyunki SDXL jaise heavy models ab CPU-focused free tier
-# (hf-inference) par unreliable/slow ho sakte hain.
-API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-HEADERS = {"Authorization": f"Bearer {API}"}
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
 
-def query(payload):
-    response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=60)
-    return response.content # Direct image bytes mil jati hain
+CAPTION_FONT = "DejaVu-Sans-Bold"
 
-def generate_images(scenes):
-    paths = []
-    print(f"Generating {len(scenes)} AI Images from HuggingFace...")
 
-    for i, scene in enumerate(scenes):
-        # PROMPT = Anti-Spam + Unique. Pexels jesa kuch nahi.
-        prompt = f"cinematic 3D render, {scene}, 9:16 vertical, ultra detailed, 8k, photorealistic, no watermark, no text"
+def build_video(image_paths, audio_path, scenes):
+    audio = AudioFileClip(audio_path)
+    clip_duration = audio.duration / len(image_paths)
 
-        try:
-            image_bytes = query({"inputs": prompt})
+    clips = []
+    for img_path in image_paths:
+        img = ImageClip(img_path).set_duration(clip_duration).resize(height=1920)
+        img = img.resize(lambda t: 1 + 0.3 * t / clip_duration)
+        img = img.set_position('center')
+        clips.append(img)
 
-            if b"loading" in image_bytes or b"error" in image_bytes[:200].lower():
-                print(f"Scene {i} response abnormal lagi, 20 sec wait karke retry...")
-                time.sleep(20)
-                image_bytes = query({"inputs": prompt})
+    video = concatenate_videoclips(clips, method="compose").set_audio(audio)
 
-            if len(image_bytes) < 1000:
-                raise ValueError(f"Response valid image nahi lagti: {image_bytes[:200]}")
+    os.makedirs("output", exist_ok=True)
+    out_path = "output/video_no_captions.mp4"
+    video.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac", preset="medium")
+    return out_path
 
-            path = f"scene_{i}.png"
-            with open(path, "wb") as f:
-                f.write(image_bytes)
-            paths.append(path)
-            print(f"Image {i+1}/{len(scenes)} Done")
-            time.sleep(3)
 
-        except Exception as e:
-            print(f"Image {i} Fail: {e}")
+def add_captions(video_path, audio_path):
+    device = "cpu"
+    compute_type = "int8"
+
+    model = whisperx.load_model("tiny", device=device, compute_type=compute_type)
+    audio_array = whisperx.load_audio(audio_path)
+    result = model.transcribe(audio_array, batch_size=16)
+
+    model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
+    result = whisperx.align(result["segments"], model_a, metadata, audio_array, device, return_char_alignments=False)
+
+    words = [w for seg in result["segments"] for w in seg.get("words", [])]
+
+    video = VideoFileClip(video_path)
+    caption_clips = []
+    for w in words:
+        if w.get("start") is None or w.get("end") is None:
             continue
+        txt = TextClip(w['word'], fontsize=70, color='white', stroke_color='black',
+                        stroke_width=2, font=CAPTION_FONT)
+        txt = txt.set_position(('center', 0.8), relative=True).set_start(w['start']).set_duration(w['end'] - w['start'])
+        caption_clips.append(txt)
 
-    min_required = max(5, int(len(scenes) * 0.7))
-    assert len(paths) >= min_required, f"Image Fail: Kam se kam {min_required} images chahiye ({len(paths)}/{len(scenes)} bani)"
-    return paths
+    final = CompositeVideoClip([video] + caption_clips)
+    out_path = "output/final_short.mp4"
+    final.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac", preset="medium")
+    return out_path
+
+
+def generate_thumbnail(image_path, title, out_path="output/thumb.jpg"):
+    img = ImageClip(image_path).resize(height=1920)
+    title_txt = TextClip(title, fontsize=100, color='yellow', stroke_color='black',
+                          stroke_width=3, font=CAPTION_FONT).set_position('center')
+    thumb = CompositeVideoClip([img, title_txt])
+    thumb.save_frame(out_path, t=0.1)
+    return out_path
