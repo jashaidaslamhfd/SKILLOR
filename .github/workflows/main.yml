@@ -16,7 +16,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          
+
       - name: Free Up Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -45,9 +45,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
-          # ImageMagick ki default security policy TextClip ke liye zaroori
-          # operations block karti hai (Ubuntu par "not authorized" error deti hai).
-          # Isko relax kar rahe hain taake MoviePy TextClip kaam kar sake.
           sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml || true
           sudo sed -i '/pattern="path"/d' /etc/ImageMagick-6/policy.xml || true
           pip install -r requirements.txt
@@ -55,6 +52,7 @@ jobs:
       - name: Set Env Variables & Run Bot
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
