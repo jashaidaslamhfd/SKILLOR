@@ -24,6 +24,7 @@ def generate_script(topic: str) -> dict:
         messages=[{"role": "user", "content": prompt}],
         model="openai/gpt-oss-20b",
         response_format={"type": "json_object"},
-        max_tokens=400
+        reasoning_effort="low",   # kam reasoning = kam tokens waste, JSON ke liye zyada space
+        max_tokens=1500,          # reasoning + actual JSON dono ke liye kaafi jagah
     )
     return json.loads(chat_completion.choices[0].message.content)
