@@ -13,8 +13,9 @@ def generate_images(scenes):
     print(f"Generating {len(scenes)} AI Images from HuggingFace...")
     
     for i, scene in enumerate(scenes):
-        # PROMPT = Anti-Spam + Unique. Pexels jesa kuch nahi
-        prompt = f"3D scientific render, baby brain anatomy, {scene}, 9:16 vertical, white background, ultra detailed, 8k, photorealistic, no watermark, no text"
+        # PROMPT = Anti-Spam + Unique. Pexels jesa kuch nahi.
+        # Niche-specific hardcoding hata di, ab har topic ke liye generic/cinematic prompt banega.
+        prompt = f"cinematic 3D render, {scene}, 9:16 vertical, ultra detailed, 8k, photorealistic, no watermark, no text"
         
         try:
             image_bytes = query({"inputs": prompt})
