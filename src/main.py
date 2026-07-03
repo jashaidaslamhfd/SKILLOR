@@ -15,16 +15,21 @@ def main():
 
     # 1. Script
     script_data = generate_script(topic)
-    
-    # 2. AI Images
+
+    # 2. AI Images (Gemini first priority, HF fallback, placeholder as last resort)
     image_paths = generate_images(script_data['scenes'])
+    if not image_paths:
+        raise RuntimeError(
+            "Koi bhi image nahi bani (Gemini, Hugging Face, placeholder sab fail) — "
+            "pipeline rok rahe hain. GEMINI_API_KEY / HF_API_KEY aur assets/placeholder.png check karo."
+        )
 
     # 3. Voice
     audio_path = generate_voice(script_data['voiceover'], voice="am_michael")
 
     # 4. Video build
     final_video = build_video(image_paths, audio_path, script_data['scenes'])
-    
+
     # 5. Thumbnail
     thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
 
