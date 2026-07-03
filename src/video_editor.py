@@ -1,7 +1,6 @@
 from moviepy.editor import *
-import whisperx, os
+import whisperx, os, torch
 from PIL import Image
-import torch
 from omegaconf import ListConfig, DictConfig
 
 # PyTorch 2.6+ security fix: allowlist omegaconf types
@@ -11,7 +10,6 @@ if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
 
 CAPTION_FONT = "DejaVu-Sans-Bold"
-
 
 def build_video(image_paths, audio_path, scenes):
     audio = AudioFileClip(audio_path)
@@ -30,7 +28,6 @@ def build_video(image_paths, audio_path, scenes):
     out_path = "output/video_no_captions.mp4"
     video.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac", preset="medium")
     return out_path
-
 
 def add_captions(video_path, audio_path):
     device = "cpu"
@@ -51,7 +48,7 @@ def add_captions(video_path, audio_path):
         if w.get("start") is None or w.get("end") is None:
             continue
         txt = TextClip(w['word'], fontsize=70, color='white', stroke_color='black',
-                        stroke_width=2, font=CAPTION_FONT)
+                       stroke_width=2, font=CAPTION_FONT)
         txt = txt.set_position(('center', 0.8), relative=True).set_start(w['start']).set_duration(w['end'] - w['start'])
         caption_clips.append(txt)
 
@@ -60,11 +57,10 @@ def add_captions(video_path, audio_path):
     final.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac", preset="medium")
     return out_path
 
-
 def generate_thumbnail(image_path, title, out_path="output/thumb.jpg"):
     img = ImageClip(image_path).resize(height=1920)
     title_txt = TextClip(title, fontsize=100, color='yellow', stroke_color='black',
-                          stroke_width=3, font=CAPTION_FONT).set_position('center')
+                         stroke_width=3, font=CAPTION_FONT).set_position('center')
     thumb = CompositeVideoClip([img, title_txt])
     thumb.save_frame(out_path, t=0.1)
     return out_path
