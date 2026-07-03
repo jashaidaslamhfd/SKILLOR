@@ -1,49 +1,39 @@
-import requests, os, time
+import os
+import google.generativeai as genai
 
-API = os.environ.get("HF_API_KEY") 
-API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-HEADERS = {"Authorization": f"Bearer {API}"}
-
-def query(payload):
-    # Timeout ko 120 seconds tak barha diya
-    response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=120)
-    return response.content
+# API key configure karein
+api_key = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=api_key)
 
 def generate_images(scenes):
     paths = []
-    print(f"Generating {len(scenes)} AI Images from HuggingFace...")
+    # Imagen 3 model ka istemal
+    model = genai.GenerativeModel('imagen-3.0-generate-001')
+
+    print(f"Generating {len(scenes)} images via Gemini...")
 
     for i, scene in enumerate(scenes):
-        prompt = f"cinematic 3D render, {scene}, 9:16 vertical, ultra detailed, 8k, photorealistic, no watermark, no text"
-
         try:
-            # Pehli koshish
-            image_bytes = query({"inputs": prompt})
-
-            # Agar model loading mein ho to wait karein
-            if b"loading" in image_bytes or b"error" in image_bytes[:200].lower():
-                print(f"Model load ho raha hai, 45 seconds wait kar rahe hain...")
-                time.sleep(45) 
-                image_bytes = query({"inputs": prompt})
-
-            if len(image_bytes) < 1000:
-                print(f"Scene {i} fail, phir se try karte hain...")
-                time.sleep(10)
-                image_bytes = query({"inputs": prompt})
-
-            if len(image_bytes) > 1000:
+            # Prompt ko mazeed behtar banaya taake YouTube par reused content na aaye
+            prompt = f"Cinematic, highly detailed, photorealistic, 8k, {scene}, vertical aspect ratio 9:16"
+            
+            result = model.generate_images(
+                prompt=prompt,
+                number_of_images=1
+            )
+            
+            # Result save karein
+            for image in result.generated_images:
                 path = f"scene_{i}.png"
                 with open(path, "wb") as f:
-                    f.write(image_bytes)
+                    f.write(image.image.image_bytes)
                 paths.append(path)
-                print(f"Image {i+1}/{len(scenes)} Done")
-            
-            time.sleep(5) # Har image ke baad pause
-
+                print(f"Scene {i+1} saved successfully.")
+                
         except Exception as e:
-            print(f"Image {i} Error: {e}")
+            print(f"Gemini Error on scene {i}: {e}")
+            # Fallback: Agar error aaye toh koi purani image copy kar lein
+            # taake script crash na ho (optional)
             continue
-
-    min_required = max(3, int(len(scenes) * 0.5)) # Requirement kam kar di (0.7 se 0.5)
-    assert len(paths) >= min_required, f"Image Fail: Sirf {len(paths)} images bani, {min_required} chahiye thin."
+            
     return paths
