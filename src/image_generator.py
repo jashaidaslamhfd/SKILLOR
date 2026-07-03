@@ -45,5 +45,8 @@ def generate_images(scenes):
             # Fail hua to bot rukega nahi. Khali jagah skip.
             continue
 
-    assert len(paths) >= 8, "Image Fail: Kam se kam 8 images chahiye Anti-Spam ke liye"
+    # Threshold dynamic hai: scenes ki actual count (6-9 ho sakti hai, LLM decide karta hai)
+    # ke 70% ke barabar, kam se kam 5. Hardcoded '8' se bug tha jab LLM sirf 6 scenes deta tha.
+    min_required = max(5, int(len(scenes) * 0.7))
+    assert len(paths) >= min_required, f"Image Fail: Kam se kam {min_required} images chahiye ({len(paths)}/{len(scenes)} bani)"
     return paths
