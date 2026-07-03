@@ -2,10 +2,6 @@ name: MrNextep Auto Shorts
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 13 * * *'   # 9:00 AM ET - Morning peak (US audience)
-    - cron: '0 16 * * *'   # 12:00 PM ET - Lunch peak (US audience)
-    - cron: '0 23 * * *'   # 7:00 PM ET - Evening peak (US audience, highest engagement)
 
 jobs:
   build:
@@ -48,7 +44,12 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
+          # ImageMagick ki default security policy TextClip ke liye zaroori
+          # operations block karti hai (Ubuntu par "not authorized" error deti hai).
+          # Isko relax kar rahe hain taake MoviePy TextClip kaam kar sake.
+          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i '/pattern="path"/d' /etc/ImageMagick-6/policy.xml || true
           pip install -r requirements.txt
 
       - name: Set Env Variables & Run Bot
