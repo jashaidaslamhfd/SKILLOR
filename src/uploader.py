@@ -1,4 +1,5 @@
-import json, os, google.oauth2.credentials
+import json, os
+import google.oauth2.credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import requests
@@ -8,25 +9,43 @@ def upload_all(video_path, thumb_path, script_data):
     desc = f"{script_data['voiceover'][:200]}...\n\n#babypsychology #parenting #shorts"
 
     # 1. YOUTUBE UPLOAD
-    yt_key = json.loads(os.environ.get("YOUTUBE_JSON_KEY"))
-    creds = google.oauth2.credentials.Credentials(token=None, **yt_key)
+    # NOTE: YT_CLIENT_SECRET GitHub Secret ek JSON string honi chahiye jisme
+    # token, refresh_token, client_id, client_secret, token_uri fields ho
+    # (standard google-auth OAuth credentials format).
+    yt_key_raw = os.environ.get("YT_CLIENT_SECRET")
+    if not yt_key_raw:
+        raise ValueError("YT_CLIENT_SECRET missing hai. GitHub Secrets check karo.")
+
+    yt_key = json.loads(yt_key_raw)
+    creds = google.oauth2.credentials.Credentials(**yt_key)
     yt = build('youtube', 'v3', credentials=creds)
-    body = {'snippet':{'title':title, 'description':desc, 'categoryId':'22'}, 'status':{'privacyStatus':'public'}}
+    body = {
+        'snippet': {'title': title, 'description': desc, 'categoryId': '22'},
+        'status': {'privacyStatus': 'public'}
+    }
     req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(video_path))
     res = req.execute()
     vid_id = res['id']
-    yt.thumbnails().set(videoId=vid_id, media_body=MediaFileUpload(thumb_path)).execute()
+
+    if thumb_path and os.path.exists(thumb_path):
+        yt.thumbnails().set(videoId=vid_id, media_body=MediaFileUpload(thumb_path)).execute()
+
     print(f"YouTube Uploaded: https://youtu.be/{vid_id}")
 
     # 2. FACEBOOK REELS UPLOAD
-    fb_token = os.environ.get("FACEBOOK_ACCESS_TOKEN")
-    fb_page = os.environ.get("FACEBOOK_PAGE_ID")
-    files = {'source': open(video_path, 'rb')}
-    data = {'description': title, 'access_token': fb_token}
-    r = requests.post(f"https://graph.facebook.com/v19.0/{fb_page}/videos", files=files, data=data)
+    fb_token = os.environ.get("FB_ACCESS_TOKEN")
+    fb_page = os.environ.get("FB_PAGE_ID")
+
+    if not fb_token or not fb_page:
+        print("FB_ACCESS_TOKEN / FB_PAGE_ID missing hai, Facebook upload skip kar diya.")
+        return
+
+    with open(video_path, 'rb') as video_file:
+        files = {'source': video_file}
+        data = {'description': title, 'access_token': fb_token}
+        r = requests.post(f"https://graph.facebook.com/v19.0/{fb_page}/videos", files=files, data=data)
     print(f"Facebook Uploaded: {r.json()}")
 
     # 3. INSTA REELS: FB ke through hi hota hai
-    ig_user = os.environ.get("INSTAGRAM_USER_ID")
-    # Iske liye pehle FB pe upload phir IG container banana parta hai. Code lamba hai.
-    # Filhal FB kaam kar raha hai to Insta baad me add kar dena. Priority YT+FB.
+    # Iske liye pehle FB pe upload phir IG container banana parta hai.
+    # Filhal YT+FB priority hai, IG baad me add karna.
