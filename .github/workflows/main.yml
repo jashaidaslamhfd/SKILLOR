@@ -1,60 +1,36 @@
-name: MrNextep Auto Shorts
+name: "🚀 SKILLOR - 3x Daily YouTube Shorts Upload"
 
 on:
+  schedule:
+    - cron: '0 11 * * *'
+    - cron: '30 17 * * *'
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 jobs:
-  build:
+  generate-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 120
+    
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-
-      - name: Free Up Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf "/usr/local/share/boost"
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          docker system prune --all --force
-          df -h
-
-      - name: Cache Kokoro Model
-        uses: actions/cache@v4
-        with:
-          path: |
-            kokoro-v0.19.onnx
-            voices-v0.19.bin
-          key: kokoro-model-v1 
-
-      - name: Cache Whisper Model
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/whisper
-          key: whisper-model-v1
-
-      - name: Install Dependencies
-        run: |
+          python-version: '3.10'
+      
+      - run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
-          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml || true
-          sudo sed -i '/pattern="path"/d' /etc/ImageMagick-6/policy.xml || true
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
           pip install -r requirements.txt
-
-      - name: Set Env Variables & Run Bot
+        
+      - run: python src/main.py
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-        run: python src/main.py
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
