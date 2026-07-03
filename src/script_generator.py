@@ -1,16 +1,29 @@
+import os
+import json
 from groq import Groq
+
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-def generate_script(niche):
-    prompt = f"""
-    Act as a Baby Psychologist. Write a {niche} YouTube Short script.
-    RULES FOR ANTI-SPAM + HIGH RETENTION:
-    1. Duration: 40-55 seconds only.
-    2. Hook Line 1: Start with a shocking question. Ex: "Your baby forgets your face in 2 seconds?"
-    3. No Emoji. No CAPS SPAM. Sound 100% human.
-    4. End with CTA: "Comment if this happened. Subscribe for Part 2."
-    5. Break into 9-11 short scenes for images.
-    Return JSON: {{"title": "...", "duration": 48, "scenes": ["scene1", "scene2"], "voiceover": "full text"}}
+def generate_script(topic: str) -> dict:
     """
-    resp = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":prompt}], response_format={"type":"json_object"})
-    return json.loads(resp.choices[0].message.content)
+    Groq API se USA audience ke liye English script banata hai
+    """
+    if not os.environ.get("GROQ_API_KEY"):
+        raise ValueError("GROQ_API_KEY missing hai. GitHub Secrets check karo.")
+
+    prompt = f"""
+    You are a viral YouTube Shorts scriptwriter for a USA audience.
+    Topic: "{topic}".
+    Write a 50-60 second, high-retention, fast-paced script in ENGLISH ONLY.
+    Use a strong hook in the first 3 seconds.
+    Output ONLY valid JSON: {{"title": "...", "voiceover": "...", "scenes": ["...", "...", "..."]}}
+    Make 6-9 scenes for 9 images.
+    """
+
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama3-8b-8192",
+        response_format={"type": "json_object"},
+        max_tokens=400
+    )
+    return json.loads(chat_completion.choices[0].message.content)
