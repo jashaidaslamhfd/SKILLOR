@@ -1,4 +1,4 @@
-import os, json
+import os
 from groq import Groq 
 # Baaki code neeche jese hai
 from script_generator import generate_script
