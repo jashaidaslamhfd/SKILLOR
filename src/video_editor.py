@@ -1,5 +1,14 @@
 from moviepy.editor import *
 import whisperx, os
+from PIL import Image
+
+# Pillow 10+ ne Image.ANTIALIAS remove kar diya (LANCZOS ka purana alias tha).
+# MoviePy 1.x ka resize() abhi bhi ANTIALIAS use karta hai, isliye yahan
+# compatibility shim laga rahe hain taake purani Pillow build karne ki
+# zaroorat na pade (jo Python 3.12 par source se build hoti hai aur fail hoti hai).
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
+
 
 def build_video(image_paths, audio_path, scenes):
     """
