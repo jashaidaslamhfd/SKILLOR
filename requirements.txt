@@ -1,5 +1,5 @@
 groq
-kokoro>=0.9.3
+kokoro==0.9.4
 soundfile
 torch>=2.1.0
 torchaudio>=2.1.0
