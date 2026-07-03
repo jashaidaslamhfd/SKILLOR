@@ -1,11 +1,10 @@
 from moviepy.editor import *
 import whisperx, os, torch
 from PIL import Image
-from omegaconf import ListConfig, DictConfig
-from omegaconf.base import ContainerMetadata
 
-# PyTorch 2.6+ security fix: allowlist omegaconf types
-torch.serialization.add_safe_globals([ListConfig, DictConfig, ContainerMetadata])
+# Permanent Fix: PyTorch 2.6+ security check ko disable karna taake 
+# pyannote/whisperx models bina UnpicklingError ke load ho sakein.
+torch.serialization.weights_only = False
 
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
