@@ -3,6 +3,17 @@ import re
 import json
 import logging
 from typing import Dict, List
+# src/niche_strategy.py
+
+PAIN_POINTS = {
+    "Sleep": ["Baby not sleeping through the night", "Waking up every hour", "Parents feeling exhausted"],
+    "Brain": ["Is my baby hitting milestones?", "Why does baby cry at night?", "Brain development signs"],
+    "Body": ["Is my baby eating enough?", "Growth spurts explained", "Safe tummy time tips"]
+}
+
+def get_script_prompt_for_niche(topic):
+    # Ab yahan PAIN_POINTS ka use safely ho jayega
+    # ... baki code wahi rehne dein
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
