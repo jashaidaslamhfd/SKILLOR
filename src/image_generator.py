@@ -104,15 +104,25 @@ def _layer5_placeholder(index):
     raise RuntimeError("assets/placeholder.png missing - no fallback left")
 
 
+def _scene_text(scene) -> str:
+    """Scenes may be a plain string (old format) or a dict like
+    {"visual": "...", "caption": "..."} (current script_generator format).
+    Always resolve to the descriptive text used for image prompts."""
+    if isinstance(scene, dict):
+        return scene.get('visual') or scene.get('description') or scene.get('scene') or scene.get('caption') or ''
+    return str(scene)
+
+
 def _generate_one(index, scene, used_hashes: set):
-    prompt = scene.replace(' ', '_')
+    scene_text = _scene_text(scene)
+    prompt = scene_text.replace(' ', '_')
     seed = random.randint(1000, 9999)
 
     layers = [
         ("Pollinations-flux", lambda: _layer1_pollinations_flux(index, prompt, seed)),
         ("Pollinations-turbo", lambda: _layer2_pollinations_turbo(index, prompt, seed)),
-        ("HuggingFace", lambda: _layer3_huggingface(index, scene)),
-        ("Gemini", lambda: _layer4_gemini(index, scene)),
+        ("HuggingFace", lambda: _layer3_huggingface(index, scene_text)),
+        ("Gemini", lambda: _layer4_gemini(index, scene_text)),
         ("Placeholder", lambda: _layer5_placeholder(index)),
     ]
 
