@@ -15,8 +15,8 @@ def get_script_prompt_for_niche(topic):
     # Ab yahan PAIN_POINTS ka use safely ho jayega
     # ... baki code wahi rehne dein
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 # Brain & Body Science for Babies/Children Topics
 BRAIN_SCIENCE_TOPICS = [
