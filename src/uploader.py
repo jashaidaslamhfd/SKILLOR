@@ -22,16 +22,11 @@ RETRY_DELAY = 5
 # does not accept service-account fields at all - this was the reason
 # YouTube upload was always failing.
 #
-# YT_CLIENT_SECRET must now be a JSON blob shaped like:
-# {
-#   "token": "<any placeholder, refreshed automatically>",
-#   "refresh_token": "...",
-#   "token_uri": "https://oauth2.googleapis.com/token",
-#   "client_id": "...",
-#   "client_secret": "...",
-#   "scopes": ["https://www.googleapis.com/auth/youtube.upload"]
-# }
-# Get refresh_token once via the OAuth consent flow (Google Cloud Console ->
+# Credentials are read from THREE separate secrets/env vars:
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REFRESH_TOKEN
+# (instead of one combined YT_CLIENT_SECRET JSON blob). token_uri and scopes
+# are filled in automatically since they're always the same for this flow.
+# Get REFRESH_TOKEN once via the OAuth consent flow (Google Cloud Console ->
 # OAuth 2.0 Client ID -> local run of the standard installed-app flow).
 # ---------------------------------------------------------------------------
 
@@ -72,31 +67,27 @@ def upload_all(video_path, thumb_path, script_data):
     yt_video_id = None
 
     try:
-        yt_key_raw = os.environ.get("YT_CLIENT_SECRET")
-        if not yt_key_raw:
-            logger.error("YT_CLIENT_SECRET missing - YouTube upload skipped")
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
+        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        refresh_token = os.environ.get("REFRESH_TOKEN")
+
+        missing = [
+            name for name, val in {
+                "GOOGLE_CLIENT_ID": google_client_id,
+                "GOOGLE_CLIENT_SECRET": google_client_secret,
+                "REFRESH_TOKEN": refresh_token,
+            }.items() if not val
+        ]
+        if missing:
+            logger.error(f"YouTube upload skipped - missing secrets: {missing}")
         else:
-            try:
-                yt_key = json.loads(yt_key_raw)
-            except json.JSONDecodeError:
-                logger.error("Invalid YT_CLIENT_SECRET JSON format")
-                raise ValueError("YT_CLIENT_SECRET is not valid JSON")
-
-            required_fields = {"refresh_token", "token_uri", "client_id", "client_secret"}
-            missing = required_fields - yt_key.keys()
-            if missing:
-                raise ValueError(
-                    f"YT_CLIENT_SECRET missing OAuth fields: {missing}. "
-                    "This must be OAuth user credentials, not a service-account key."
-                )
-
             creds = google.oauth2.credentials.Credentials(
-                token=yt_key.get("token"),
-                refresh_token=yt_key["refresh_token"],
-                token_uri=yt_key["token_uri"],
-                client_id=yt_key["client_id"],
-                client_secret=yt_key["client_secret"],
-                scopes=yt_key.get("scopes", ["https://www.googleapis.com/auth/youtube.upload"]),
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=google_client_id,
+                client_secret=google_client_secret,
+                scopes=["https://www.googleapis.com/auth/youtube.upload"],
             )
 
             yt = build('youtube', 'v3', credentials=creds)
