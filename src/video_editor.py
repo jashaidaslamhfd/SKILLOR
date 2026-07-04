@@ -1,6 +1,7 @@
 from moviepy.editor import *
 import os
 import logging
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -9,24 +10,91 @@ logger = logging.getLogger(__name__)
 PLACEHOLDER = "assets/placeholder.png"
 
 
+def _load_font(size):
+    """Load TrueType font with fallback to default."""
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansBold.ttf",
+        "/System/Library/Fonts/Arial Bold.ttf",  # macOS
+        "C:\\Windows\\Fonts\\arialbd.ttf",  # Windows
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception as e:
+                logger.warning(f"Failed to load font {path}: {e}")
+    logger.warning("Using default font (no TrueType available)")
+    return ImageFont.load_default()
+
+
+def _wrap_text(draw, text, font, max_width):
+    """Word-wrap text so each line fits within max_width pixels."""
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        test = (current + " " + word).strip()
+        bbox = draw.textbbox((0, 0), test, font=font)
+        width = bbox[2] - bbox[0]
+        if width <= max_width or not current:
+            current = test
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
 def add_captions(video_clip, text):
-    """Add captions to video clip with proper text wrapping and styling."""
+    """
+    Add captions to video clip by rendering text with PIL and overlaying
+    it as a transparent ImageClip. Deliberately avoids moviepy's TextClip,
+    which requires ImageMagick to be installed and its security policy
+    configured correctly - a fragile dependency on CI runners. This PIL
+    approach only needs Pillow, which is already a hard requirement.
+    """
     if not text:
         return video_clip
-    
+
     try:
-        txt_clip = TextClip(
-            text,
-            fontsize=50,
-            color='white',
-            font='DejaVu-Sans-Bold',
-            stroke_color='black',
-            stroke_width=2,
-            method='caption',
-            size=(int(video_clip.w * 0.9), None),
-            align='center',
+        font_size = 50
+        font = _load_font(font_size)
+        max_width = int(video_clip.w * 0.9)
+        padding = 20
+        line_gap = 10
+
+        # Use a throwaway image just to measure text with this font
+        measure_img = Image.new("RGBA", (10, 10))
+        measure_draw = ImageDraw.Draw(measure_img)
+        lines = _wrap_text(measure_draw, text, font, max_width)
+
+        line_sizes = []
+        for line in lines:
+            bbox = measure_draw.textbbox((0, 0), line, font=font)
+            line_sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1]))
+
+        total_h = sum(h for _, h in line_sizes) + line_gap * (len(lines) - 1) + padding * 2
+
+        canvas = Image.new("RGBA", (video_clip.w, total_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+
+        y = padding
+        for line, (lw, lh) in zip(lines, line_sizes):
+            x = (video_clip.w - lw) // 2
+            draw.text(
+                (x, y), line, font=font, fill="white",
+                stroke_width=3, stroke_fill="black",
+            )
+            y += lh + line_gap
+
+        txt_array = np.array(canvas)
+        txt_clip = (
+            ImageClip(txt_array, transparent=True)
+            .set_duration(video_clip.duration)
+            .set_position(("center", "bottom"))
         )
-        txt_clip = txt_clip.set_position(('center', 'bottom')).set_duration(video_clip.duration)
         return CompositeVideoClip([video_clip, txt_clip])
     except Exception as e:
         logger.error(f"Error adding captions: {e}")
@@ -105,24 +173,6 @@ def build_video(image_paths, audio_path, scenes):
     except Exception as e:
         logger.error(f"Video building failed: {e}")
         raise RuntimeError(f"Video building error: {e}")
-
-
-def _load_font(size):
-    """Load TrueType font with fallback to default."""
-    candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansBold.ttf",
-        "/System/Library/Fonts/Arial Bold.ttf",  # macOS
-        "C:\\Windows\\Fonts\\arialbd.ttf",  # Windows
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except Exception as e:
-                logger.warning(f"Failed to load font {path}: {e}")
-    logger.warning("Using default font (no TrueType available)")
-    return ImageFont.load_default()
 
 
 def generate_thumbnail(image_path, title):
