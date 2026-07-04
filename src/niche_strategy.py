@@ -3,20 +3,14 @@ import re
 import json
 import logging
 from typing import Dict, List
-# src/niche_strategy.py
 
-PAIN_POINTS = {
-    "Sleep": ["Baby not sleeping through the night", "Waking up every hour", "Parents feeling exhausted"],
-    "Brain": ["Is my baby hitting milestones?", "Why does baby cry at night?", "Brain development signs"],
-    "Body": ["Is my baby eating enough?", "Growth spurts explained", "Safe tummy time tips"]
-}
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def get_script_prompt_for_niche(topic):
-    # Ab yahan PAIN_POINTS ka use safely ho jayega
-    # ... baki code wahi rehne dein
-
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
+# NOTE: This file previously had a BROKEN, incomplete duplicate definition of
+# get_script_prompt_for_niche() and a duplicate PAIN_POINTS (as a dict) near
+# the top of the file. Python silently used the second (bottom) definitions
+# and ignored the broken ones, but it was dead/confusing code - removed.
 
 # Brain & Body Science for Babies/Children Topics
 BRAIN_SCIENCE_TOPICS = [
@@ -94,14 +88,33 @@ FEAR_WORDS = ['dangerous', 'toxic', 'poison', 'kill', 'harm', 'damage', 'permane
 TARGET_WORD_RANGE = (110, 150)   # ~2.5-2.8 wps -> ~40-55s spoken
 TARGET_SCENE_COUNT = (6, 8)      # fast cuts every ~6-8s
 
+# ---------------------------------------------------------------------------
+# SEO: evergreen tags per category + always-on base tags. Used by
+# generate_seo_tags() below so every video gets a topic-relevant, VARIED tag
+# set instead of the old hardcoded identical list on every upload (which was
+# itself an anti-spam duplicate-metadata risk).
+# ---------------------------------------------------------------------------
+CATEGORY_TAGS = {
+    "Sleep": ["babysleep", "sleepregression", "sleeptraining", "babysleepschedule"],
+    "Development": ["babymilestones", "childdevelopment", "motorskills", "babydevelopment"],
+    "Brain": ["braindevelopment", "babybrain", "neuroscience", "cognitivedevelopment"],
+    "Communication": ["languagedevelopment", "babytalk", "speechdevelopment", "babybabbling"],
+    "Nutrition": ["babynutrition", "toddlernutrition", "babyfeeding", "braingrowth"],
+    "Emotion": ["emotionalintelligence", "attachmentparenting", "toddleremotions"],
+    "Sensory": ["sensorydevelopment", "sensoryplay", "babysenses"],
+    "Play": ["learningthroughplay", "babyplayideas", "toddleractivities"],
+    "General": ["parentingtips", "childdevelopment"],
+}
+BASE_TAGS = ["parentingtips", "shorts", "parentsofinstagram", "scienceofbaby"]
+
 
 def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
     """
     Domain-specific script prompt for parenting/brain-science content.
-    Scenes are now returned as {"visual": ..., "caption": ...} pairs so that
-    the caption shown on-screen is the EXACT spoken line for that scene
-    (not an image description) - required for accurate captions and for
-    per-scene TTS generation used to keep voice/caption/clip in sync.
+    Scenes are returned as {"visual": ..., "caption": ...} pairs so that the
+    caption shown on-screen is the EXACT spoken line for that scene (not an
+    image description) - required for accurate captions and for per-scene
+    TTS generation used to keep voice/caption/clip in sync.
     """
     if not hook_preference:
         hook_preference = HOOK_FORMULAS[0]
@@ -182,11 +195,32 @@ def get_topic_category(topic: str) -> str:
     return "General"
 
 
+def generate_seo_tags(topic: str, category: str, title: str = "") -> List[str]:
+    """
+    NEW - fixes the 'no SEO' gap: builds a topic/category-aware tag list
+    instead of a single hardcoded list reused on every video. Combines:
+      - category-specific tags (relevant search terms for this content type)
+      - always-on base tags
+      - individual meaningful words pulled straight from the topic/title
+    Deduplicated, capped at 15 (YouTube's practical sweet spot).
+    """
+    tags = set(CATEGORY_TAGS.get(category, CATEGORY_TAGS["General"]))
+    tags.update(BASE_TAGS)
+
+    words = re.findall(r"[a-zA-Z]{4,}", f"{topic} {title}".lower())
+    stopwords = {"your", "with", "what", "this", "that", "baby's", "babys", "need", "needs"}
+    for w in words:
+        clean = w.strip()
+        if clean not in stopwords:
+            tags.add(clean)
+
+    return list(tags)[:15]
+
+
 def validate_script_for_medical_accuracy(script_data: Dict) -> Dict:
     """
     Validate script for medical accuracy, fear-mongering, and COPPA-adjacent
-    concerns. This is now actually CALLED from main.py's pipeline (previously
-    it was defined but never invoked).
+    concerns. Actually wired into main.py's pipeline now (see fixed main.py).
     """
     issues = []
     warnings = []
