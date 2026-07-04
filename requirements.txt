@@ -19,6 +19,7 @@ imageio-ffmpeg>=0.4.8
 
 # Image Processing
 Pillow>=9.0.0,<10.0.0
+numpy>=1.24.0
 
 # HTTP/API Requests
 requests>=2.31.0
