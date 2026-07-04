@@ -25,7 +25,14 @@ HF_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FL
 HF_TIMEOUT = 120  # Increased timeout for image generation
 HF_MAX_RETRIES = 3
 
-# PRIORITY 3 (last resort): local placeholder image, taake image count
+# PRIORITY 3 (fallback): Pollinations.ai — free, no API key, effectively
+# unlimited (fair-use rate limit only). Used when Gemini + Hugging Face
+# both fail (quota/credits exhausted), so we still get a real AI image
+# instead of repeating the same placeholder for every scene.
+POLLINATIONS_URL = "https://image.pollinations.ai/prompt"
+POLLINATIONS_TIMEOUT = 60
+
+# PRIORITY 4 (last resort): local placeholder image, taake image count
 # hamesha scene count ke barabar rahe (index/caption misalignment na ho)
 PLACEHOLDER = "assets/placeholder.png"
 
@@ -132,12 +139,54 @@ def _try_huggingface(prompt: str, path: str, retries: int = HF_MAX_RETRIES) -> b
     return False
 
 
+def _try_pollinations(prompt: str, path: str, retries: int = 2) -> bool:
+    """
+    Try generating image with Pollinations.ai — free, no API key needed.
+    Practically unlimited (fair-use rate limits, no hard quota/credits).
+    """
+    import urllib.parse
+    encoded_prompt = urllib.parse.quote(prompt)
+    # width/height tuned for a 9:16 vertical Shorts frame
+    url = f"{POLLINATIONS_URL}/{encoded_prompt}?width=1080&height=1920&nologo=true"
+
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(f"Pollinations attempt {attempt}/{retries}")
+            response = requests.get(url, timeout=POLLINATIONS_TIMEOUT)
+
+            if response.status_code == 200 and response.content:
+                with open(path, "wb") as f:
+                    f.write(response.content)
+                logger.info(f"Pollinations image saved to {path}")
+                return True
+
+            logger.warning(
+                f"Pollinations returned {response.status_code}, "
+                f"attempt {attempt}/{retries}"
+            )
+            if attempt < retries:
+                time.sleep(3 * attempt)
+
+        except requests.Timeout:
+            logger.error(f"Pollinations request timeout (attempt {attempt}/{retries})")
+            if attempt < retries:
+                time.sleep(3 * attempt)
+
+        except Exception as e:
+            logger.error(f"Pollinations exception: {e} (attempt {attempt}/{retries})")
+            if attempt < retries:
+                time.sleep(3 * attempt)
+
+    return False
+
+
 def generate_images(scenes: List[str]) -> List[str]:
     """
     Har scene ke liye:
       1. Pehle Google Gemini (Nano Banana) try hota hai — first priority
       2. Fail ho to Hugging Face FLUX.1-schnell fallback
-      3. Dono fail ho to local placeholder image copy hoti hai
+      3. Fail ho to Pollinations.ai (free, unlimited, no API key) fallback
+      4. Sab fail ho to local placeholder image copy hoti hai
 
     Return list HAMESHA len(scenes) ke barabar hogi, taake video_editor.py
     mein caption <-> image index kabhi bhi misalign na ho.
@@ -162,6 +211,11 @@ def generate_images(scenes: List[str]) -> List[str]:
             if not success:
                 success = _try_huggingface(prompt, path)
                 source = "Hugging Face (fallback)"
+
+            # Fallback to Pollinations.ai (free, unlimited, no key needed)
+            if not success:
+                success = _try_pollinations(prompt, path)
+                source = "Pollinations.ai (fallback)"
 
             # Last resort: placeholder
             if not success:
@@ -200,8 +254,9 @@ def generate_images(scenes: List[str]) -> List[str]:
     if not paths:
         logger.error("No images generated at all")
         raise RuntimeError(
-            "Koi bhi image nahi bani (Gemini, Hugging Face, placeholder sab fail) — "
-            "pipeline rok rahe hain. GEMINI_API_KEY / HF_API_KEY aur assets/placeholder.png check karo."
+            "Koi bhi image nahi bani (Gemini, Hugging Face, Pollinations, placeholder sab fail) — "
+            "pipeline rok rahe hain. Internet/network access ya GEMINI_API_KEY / HF_API_KEY "
+            "aur assets/placeholder.png check karo."
         )
 
     # Ensure we have exactly len(scenes) images
