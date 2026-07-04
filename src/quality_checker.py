@@ -131,7 +131,8 @@ class QualityChecker:
         return min(score, 100)
     
     def _analyze_pacing(self, voiceover: str) -> tuple:
-        """Analyze script pacing (should take 50-60 seconds)."""
+        """Analyze script pacing - target video length is now 40-55 seconds
+        (matches video_editor.py's TARGET_MIN_SEC/TARGET_MAX_SEC)."""
         if not voiceover:
             return 0, []
         
@@ -143,16 +144,16 @@ class QualityChecker:
         
         score = 100
         
-        if estimated_duration < 40:
+        if estimated_duration < 35:
             score -= 20
             issues.append(f"❌ Script too short ({estimated_duration:.0f}s) - Expand with more details")
-        elif estimated_duration > 70:
+        elif estimated_duration > 60:
             score -= 20
-            issues.append(f"⚠️ Script too long ({estimated_duration:.0f}s) - Edit down to 50-60s")
-        elif estimated_duration < 50:
+            issues.append(f"⚠️ Script too long ({estimated_duration:.0f}s) - Edit down to 40-55s")
+        elif estimated_duration < 40:
             score -= 10
             issues.append(f"⚠️ Script slightly short ({estimated_duration:.0f}s) - Add depth")
-        elif estimated_duration > 65:
+        elif estimated_duration > 55:
             score -= 10
             issues.append(f"⚠️ Script slightly long ({estimated_duration:.0f}s) - Trim a bit")
         
