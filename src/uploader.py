@@ -1,4 +1,3 @@
-import json
 import os
 import logging
 import time
@@ -16,35 +15,200 @@ RETRY_DELAY = 5
 
 # ---------------------------------------------------------------------------
 # IMPORTANT: YouTube video uploads require OAuth 2.0 USER credentials, not a
-# service-account key. A service account cannot upload to a personal/brand
-# YouTube channel without domain-wide delegation (which YouTube doesn't
-# support for this use case), and google.oauth2.credentials.Credentials()
-# does not accept service-account fields at all - this was the reason
-# YouTube upload was always failing.
-#
-# Credentials are read from THREE separate secrets/env vars:
-#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REFRESH_TOKEN
-# (instead of one combined YT_CLIENT_SECRET JSON blob). token_uri and scopes
-# are filled in automatically since they're always the same for this flow.
-# Get REFRESH_TOKEN once via the OAuth consent flow (Google Cloud Console ->
-# OAuth 2.0 Client ID -> local run of the standard installed-app flow).
+# service-account key. Credentials are read from THREE separate secrets/env
+# vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REFRESH_TOKEN.
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # YOUTUBE "MADE FOR KIDS" (COPPA) - READ BEFORE CHANGING
 # This channel's content is ABOUT babies/children but is SPOKEN TO parents,
-# which is why MADE_FOR_KIDS defaults to False below. This is a legal
-# self-declaration under COPPA, not just a checkbox - YouTube considers
-# audience, characters, subject matter, and more when auto-detecting the
-# actual status regardless of what you declare. Do not flip this default
-# without manually re-reading YouTube's "Made for Kids" guidance and
-# confirming the content genuinely targets adults.
+# which is why MADE_FOR_KIDS defaults to False below.
 # ---------------------------------------------------------------------------
 MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
 
 
+def _build_description(script_data: dict, hashtags: list) -> str:
+    voiceover = script_data.get('voiceover', '')
+    cta = script_data.get('cta', '')
+    hashtag_line = ' '.join(f"#{h}" for h in hashtags)
+    return f"{voiceover[:180]}...\n\n{cta}\n\n{hashtag_line}"
+
+
+def _upload_youtube(video_path, thumb_path, script_data, tags):
+    """Returns (success: bool, video_id: str|None)."""
+    google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    refresh_token = os.environ.get("REFRESH_TOKEN")
+
+    missing = [
+        name for name, val in {
+            "GOOGLE_CLIENT_ID": google_client_id,
+            "GOOGLE_CLIENT_SECRET": google_client_secret,
+            "REFRESH_TOKEN": refresh_token,
+        }.items() if not val
+    ]
+    if missing:
+        logger.error(f"YouTube upload skipped - missing secrets: {missing}")
+        return False, None
+
+    title = script_data.get('title', 'Untitled')
+    desc = _build_description(script_data, tags)
+
+    creds = google.oauth2.credentials.Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=google_client_id,
+        client_secret=google_client_secret,
+        scopes=["https://www.googleapis.com/auth/youtube.upload"],
+    )
+    yt = build('youtube', 'v3', credentials=creds)
+
+    body = {
+        'snippet': {
+            'title': title[:100],
+            'description': desc[:5000],
+            'categoryId': '22',
+            # FIX: was a fixed hardcoded list on every single video - now
+            # topic/category-aware tags from niche_strategy.generate_seo_tags,
+            # which also helps SEO reach and avoids duplicate-metadata spam risk.
+            'tags': tags,
+            'defaultLanguage': 'en',
+            'defaultAudioLanguage': 'en',
+        },
+        'status': {
+            'privacyStatus': 'public',
+            'selfDeclaredMadeForKids': MADE_FOR_KIDS,
+        }
+    }
+
+    logger.info("Uploading to YouTube...")
+    yt_video_id = None
+    youtube_success = False
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            req = yt.videos().insert(
+                part="snippet,status",
+                body=body,
+                media_body=MediaFileUpload(video_path, chunksize=1024 * 1024, resumable=True)
+            )
+            res = req.execute()
+            yt_video_id = res.get('id')
+            logger.info(f"YouTube upload successful: https://youtu.be/{yt_video_id}")
+            youtube_success = True
+
+            if thumb_path and os.path.exists(thumb_path):
+                try:
+                    yt.thumbnails().set(
+                        videoId=yt_video_id,
+                        media_body=MediaFileUpload(thumb_path)
+                    ).execute()
+                    logger.info("Thumbnail uploaded successfully")
+                except Exception as thumb_error:
+                    logger.warning(f"Thumbnail upload failed: {thumb_error}")
+            break
+
+        except HttpError as e:
+            if e.resp.status in [429, 500, 502, 503]:
+                logger.warning(f"YouTube API error {e.resp.status} (attempt {attempt}/{MAX_RETRIES})")
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
+                continue
+            else:
+                logger.error(f"YouTube upload failed: {e}")
+                break
+        except Exception as e:
+            logger.error(f"YouTube upload failed: {e}")
+            break
+
+    return youtube_success, yt_video_id
+
+
+def _upload_facebook_reels(video_path, script_data, tags):
+    """
+    FIX: previously this posted to /{page-id}/videos as a plain video post.
+    Facebook's 2026 recommendation algorithm gives materially better organic
+    reach to content published through the actual Reels pipeline. This now
+    uses the correct 3-phase Reels publishing flow:
+      1. upload_phase=start   -> get video_id + upload_url
+      2. POST binary to upload_url (rupload host)
+      3. upload_phase=finish  -> attach description/hashtags and publish
+    Returns success: bool.
+    """
+    fb_token = os.environ.get("FB_ACCESS_TOKEN")
+    fb_page = os.environ.get("FB_PAGE_ID")
+
+    if not fb_token or not fb_page:
+        logger.warning("FB_ACCESS_TOKEN or FB_PAGE_ID missing - Facebook upload skipped")
+        return False
+
+    title = script_data.get('title', 'Untitled')
+    description = _build_description(script_data, tags)[:2200]  # FB Reels description limit is generous, not 63 chars
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            # ---- Phase 1: start ----
+            start_resp = requests.post(
+                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                data={"upload_phase": "start", "access_token": fb_token},
+                timeout=30,
+            )
+            start_data = start_resp.json()
+            if "error" in start_data or "video_id" not in start_data:
+                raise RuntimeError(f"Reels start phase failed: {start_data}")
+
+            video_id = start_data["video_id"]
+            upload_url = start_data["upload_url"]
+
+            # ---- Phase 2: upload binary ----
+            file_size = os.path.getsize(video_path)
+            with open(video_path, "rb") as f:
+                upload_resp = requests.post(
+                    upload_url,
+                    headers={
+                        "Authorization": f"OAuth {fb_token}",
+                        "offset": "0",
+                        "file_size": str(file_size),
+                    },
+                    data=f,
+                    timeout=300,
+                )
+            upload_data = upload_resp.json() if upload_resp.content else {}
+            if upload_resp.status_code != 200 or upload_data.get("success") is False:
+                raise RuntimeError(f"Reels upload phase failed: {upload_resp.status_code} {upload_data}")
+
+            # ---- Phase 3: finish/publish ----
+            finish_resp = requests.post(
+                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                data={
+                    "upload_phase": "finish",
+                    "video_id": video_id,
+                    "description": description,
+                    "video_state": "PUBLISHED",
+                    "access_token": fb_token,
+                },
+                timeout=60,
+            )
+            finish_data = finish_resp.json()
+            if finish_resp.status_code == 200 and finish_data.get("success", True) and "error" not in finish_data:
+                logger.info(f"Facebook Reels published successfully: video_id={video_id}")
+                return True
+            else:
+                raise RuntimeError(f"Reels finish phase failed: {finish_data}")
+
+        except Exception as e:
+            logger.warning(f"Facebook Reels upload attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
+            continue
+
+    logger.error("Facebook Reels upload failed after all retries")
+    return False
+
+
 def upload_all(video_path, thumb_path, script_data):
-    """Upload video to YouTube and Facebook with comprehensive error handling."""
+    """Upload video to YouTube and Facebook Reels with comprehensive error handling."""
 
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -53,155 +217,16 @@ def upload_all(video_path, thumb_path, script_data):
         raise ValueError("Invalid script data - missing title")
 
     title = script_data.get('title', 'Untitled')
-    voiceover = script_data.get('voiceover', '')
-    cta = script_data.get('cta', '')
-    desc = f"{voiceover[:180]}...\n\n{cta}\n\n#shorts #parentingtips #babybrain"
+    # FIX: tags now come from script_data (set by main.py via
+    # niche_strategy.generate_seo_tags) instead of one fixed hardcoded list.
+    tags = script_data.get('tags') or ['parenting', 'babydevelopment', 'shorts', 'brainscience']
 
     logger.info(f"Starting upload process for: {title}")
     logger.info(f"selfDeclaredMadeForKids = {MADE_FOR_KIDS} (verify this is correct for your content!)")
+    logger.info(f"SEO tags for this video: {tags}")
 
-    # ============================================================================
-    # 1. YOUTUBE UPLOAD
-    # ============================================================================
-    youtube_success = False
-    yt_video_id = None
-
-    try:
-        google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
-        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-        refresh_token = os.environ.get("REFRESH_TOKEN")
-
-        missing = [
-            name for name, val in {
-                "GOOGLE_CLIENT_ID": google_client_id,
-                "GOOGLE_CLIENT_SECRET": google_client_secret,
-                "REFRESH_TOKEN": refresh_token,
-            }.items() if not val
-        ]
-        if missing:
-            logger.error(f"YouTube upload skipped - missing secrets: {missing}")
-        else:
-            creds = google.oauth2.credentials.Credentials(
-                token=None,
-                refresh_token=refresh_token,
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=google_client_id,
-                client_secret=google_client_secret,
-                scopes=["https://www.googleapis.com/auth/youtube.upload"],
-            )
-
-            yt = build('youtube', 'v3', credentials=creds)
-
-            body = {
-                'snippet': {
-                    'title': title[:100],
-                    'description': desc[:5000],
-                    'categoryId': '22',
-                    'tags': ['parenting', 'babydevelopment', 'shorts', 'brainscience'],
-                },
-                'status': {
-                    'privacyStatus': 'public',
-                    'selfDeclaredMadeForKids': MADE_FOR_KIDS,
-                }
-            }
-
-            logger.info("Uploading to YouTube...")
-
-            for attempt in range(1, MAX_RETRIES + 1):
-                try:
-                    req = yt.videos().insert(
-                        part="snippet,status",
-                        body=body,
-                        media_body=MediaFileUpload(video_path, chunksize=1024 * 1024, resumable=True)
-                    )
-                    res = req.execute()
-                    yt_video_id = res.get('id')
-                    logger.info(f"YouTube upload successful: https://youtu.be/{yt_video_id}")
-                    youtube_success = True
-
-                    if thumb_path and os.path.exists(thumb_path):
-                        try:
-                            yt.thumbnails().set(
-                                videoId=yt_video_id,
-                                media_body=MediaFileUpload(thumb_path)
-                            ).execute()
-                            logger.info("Thumbnail uploaded successfully")
-                        except Exception as thumb_error:
-                            logger.warning(f"Thumbnail upload failed: {thumb_error}")
-
-                    break
-
-                except HttpError as e:
-                    if e.resp.status in [429, 500, 502, 503]:
-                        logger.warning(f"YouTube API error {e.resp.status} (attempt {attempt}/{MAX_RETRIES})")
-                        if attempt < MAX_RETRIES:
-                            time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
-                        continue
-                    else:
-                        logger.error(f"YouTube upload failed: {e}")
-                        raise
-
-            if not youtube_success:
-                logger.error("YouTube upload failed after retries")
-
-    except Exception as e:
-        logger.error(f"YouTube upload process failed: {e}")
-
-    # ============================================================================
-    # 2. FACEBOOK REELS UPLOAD
-    # ============================================================================
-    facebook_success = False
-
-    try:
-        fb_token = os.environ.get("FB_ACCESS_TOKEN")
-        fb_page = os.environ.get("FB_PAGE_ID")
-
-        if not fb_token or not fb_page:
-            logger.warning("FB_ACCESS_TOKEN or FB_PAGE_ID missing - Facebook upload skipped")
-        else:
-            fb_url = f"https://graph.facebook.com/v19.0/{fb_page}/videos"
-
-            for attempt in range(1, MAX_RETRIES + 1):
-                try:
-                    with open(video_path, 'rb') as video_file:
-                        files = {'source': video_file}
-                        data = {
-                            'description': title[:63],
-                            'access_token': fb_token,
-                        }
-                        logger.info(f"Posting to Facebook (attempt {attempt}/{MAX_RETRIES})...")
-                        r = requests.post(fb_url, files=files, data=data, timeout=300)
-
-                    fb_result = r.json()
-
-                    if r.status_code == 200 and "error" not in fb_result:
-                        logger.info(f"Facebook Upload Successful: {fb_result}")
-                        facebook_success = True
-                        break
-                    else:
-                        error_msg = fb_result.get('error', {}).get('message', str(fb_result))
-                        logger.warning(f"Facebook error (attempt {attempt}/{MAX_RETRIES}): {error_msg}")
-                        if "temporarily_blocked" in error_msg or "rate" in error_msg.lower():
-                            if attempt < MAX_RETRIES:
-                                time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
-                                continue
-                        else:
-                            logger.error(f"Facebook Upload FAILED: {error_msg}")
-                            break
-
-                except requests.Timeout:
-                    logger.warning(f"Facebook upload timeout (attempt {attempt}/{MAX_RETRIES})")
-                    if attempt < MAX_RETRIES:
-                        time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
-                    continue
-                except Exception as e:
-                    logger.error(f"Facebook upload exception (attempt {attempt}/{MAX_RETRIES}): {e}")
-                    if attempt < MAX_RETRIES:
-                        time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
-                    continue
-
-    except Exception as e:
-        logger.error(f"Facebook upload process failed: {e}")
+    youtube_success, yt_video_id = _upload_youtube(video_path, thumb_path, script_data, tags)
+    facebook_success = _upload_facebook_reels(video_path, script_data, tags)
 
     logger.info(f"YouTube Upload: {'SUCCESS' if youtube_success else 'FAILED/SKIPPED'}")
     if yt_video_id:
