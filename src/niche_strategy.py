@@ -45,7 +45,7 @@ HOOK_FORMULAS = [
 ]
 
 # Problem-Solution framework for parents
-PAINT_POINTS = [
+PAIN_POINTS = [
     "Worried about baby's development",
     "Don't know if baby is hitting milestones",
     "Confused about baby sleep",
