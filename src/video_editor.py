@@ -1,8 +1,9 @@
 import os
 import random
 import logging
+import numpy as np
 from moviepy.editor import (
-    ImageClip, ColorClip, CompositeVideoClip, TextClip,
+    ImageClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
 )
 import moviepy.video.fx.all as vfx
@@ -83,18 +84,59 @@ def _ken_burns_clip(img_path: str, duration: float, direction: str) -> Composite
     return CompositeVideoClip([bg, zoomed], size=(CANVAS_W, CANVAS_H)).set_duration(duration)
 
 
-def _caption_clip(text: str, duration: float) -> TextClip:
-    txt = TextClip(
-        text,
-        fontsize=58,
-        color='white',
-        font='DejaVu-Sans-Bold',
-        stroke_color='black',
-        stroke_width=2.5,
-        method='caption',
-        size=(int(CANVAS_W * 0.82), None),
-        align='center',
-    ).set_duration(duration)
+CAPTION_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+CAPTION_FONT_SIZE = 58
+CAPTION_STROKE_W = 3
+
+
+def _wrap_text(draw, text, font, max_width):
+    """Word-wrap text to fit within max_width pixels."""
+    words = text.split()
+    lines, current = [], ""
+    for w in words:
+        test = (current + " " + w).strip()
+        bbox = draw.textbbox((0, 0), test, font=font, stroke_width=CAPTION_STROKE_W)
+        if bbox[2] - bbox[0] > max_width and current:
+            lines.append(current)
+            current = w
+        else:
+            current = test
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _caption_clip(text: str, duration: float) -> ImageClip:
+    """Renders the caption with PIL (transparent RGBA) instead of MoviePy's
+    ImageMagick-dependent TextClip - avoids CI/environment fragility
+    (missing ImageMagick binary, policy.xml 'not authorized' errors, etc.)."""
+    max_width = int(CANVAS_W * 0.82)
+
+    try:
+        font = ImageFont.truetype(CAPTION_FONT_PATH, CAPTION_FONT_SIZE)
+    except Exception:
+        font = ImageFont.load_default()
+
+    dummy = Image.new("RGBA", (10, 10), (0, 0, 0, 0))
+    dummy_draw = ImageDraw.Draw(dummy)
+    lines = _wrap_text(dummy_draw, text, font, max_width)
+
+    line_height = int(CAPTION_FONT_SIZE * 1.3)
+    img_h = max(line_height * len(lines) + 20, line_height)
+    canvas = Image.new("RGBA", (max_width + 40, img_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    y = 10
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font, stroke_width=CAPTION_STROKE_W)
+        line_w = bbox[2] - bbox[0]
+        x = (canvas.width - line_w) / 2
+        draw.text((x, y), line, font=font, fill="white",
+                   stroke_width=CAPTION_STROKE_W, stroke_fill="black")
+        y += line_height
+
+    frame = np.array(canvas)
+    txt = ImageClip(frame).set_duration(duration)
     return txt.set_position(('center', CAPTION_Y_FRACTION), relative=True)
 
 
