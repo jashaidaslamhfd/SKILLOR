@@ -67,7 +67,14 @@ Topic: {topic}
 Target spoken length: {min_w}-{max_w} words total (~40-55 seconds)
 SCRIPT REQUIREMENTS: 1. DARK HOOK: "{hook_preference}" 2. RELATE 3. SCIENCE 4. RELIEF 5. CTA: "{cta}"
 TONE: Dark, mysterious, factual. PAIN POINT: {pain_point}
-Return ONLY valid JSON with keys: hook, scenes[], cta, description
+
+Split the script into 6-8 scenes. Each scene needs:
+  - "visual": 5-8 word description for image generation (what should be shown on screen)
+  - "caption": the EXACT spoken text for that scene (captions concatenated in
+    order must reconstruct the full voiceover word-for-word, total {min_w}-{max_w} words)
+
+Return ONLY valid JSON, no other text, in exactly this shape:
+{{"title": "short catchy video title", "hook": "{hook_preference}", "scenes": [{{"visual": "...", "caption": "..."}}], "cta": "{cta}", "description": "1-2 sentence video description"}}
 """
     return prompt
 
