@@ -9,7 +9,6 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
 from script_generator import generate_script
-# Import fixed: yahan se hum _generate_one ko as generate_images import kar rahe hain
 from image_generator import _generate_one as generate_images
 from voice_generator import generate_voice_segments
 from video_editor import build_video, generate_thumbnail
@@ -54,22 +53,22 @@ class SKILLORPipeline:
 
     def _generate_and_check_once(self, topic: str) -> dict:
         category = get_topic_category(topic)
-        specialized_prompt = get_script_prompt_for_niche(topic)
+        specialized_prompt = get_script_prompt_for_niche(topic) # Ab Dark prompt aayega
         script_data = generate_script(topic, custom_prompt=specialized_prompt)
-        
+
         med_check = validate_script_for_medical_accuracy(script_data)
         if not med_check['valid']:
-            script_data = auto_add_disclaimer(script_data)
-            
+            script_data = auto_add_disclaimer(script_data) # Medical disclaimer auto lag jayega
+
         quality_result = self.quality_checker.check_script_quality(script_data)
         spam_result = self.anti_spam.check_for_spam_risks(script_data, self.video_history)
-        tags = generate_seo_tags(topic, category, script_data.get('title', ''))
+        tags = generate_seo_tags(topic, category, script_data.get('title', '')) # SEO har video ka alag
 
         script_data['topic'] = topic
         script_data['category'] = category
         script_data['quality_scores'] = quality_result['scores']
         script_data['spam_risk'] = spam_result['spam_risk_level']
-        script_data['tags'] = tags
+        script_data['tags'] = tags # Tags upload me use honge
 
         return {
             "script_data": script_data,
@@ -83,7 +82,7 @@ class SKILLORPipeline:
         fixed_topic = topic
         best_attempt = None
         for attempt in range(1, MAX_SCRIPT_ATTEMPTS + 1):
-            current_topic = fixed_topic or get_random_topic()
+            current_topic = fixed_topic or get_random_topic() # Dark topics list se
             try:
                 result = self._generate_and_check_once(current_topic)
             except Exception as e:
@@ -96,10 +95,9 @@ class SKILLORPipeline:
         return best_attempt['script_data']
 
     def run_pipeline(self, topic: str = None) -> dict:
-        logger.info("\n🚀 STARTING SKILLOR PIPELINE")
+        logger.info("\n🚀 STARTING SKILLOR - DARK BODY MYSTERY PIPELINE")
         script_data = self.generate_with_niche_strategy(topic)
 
-        # --- FIX: IMAGE GENERATION LOOP ---
         logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
         image_paths = []
         used_hashes = set()
@@ -107,30 +105,34 @@ class SKILLORPipeline:
 
         for i, scene in enumerate(script_data['scenes']):
             try:
-                # generate_images ab loop mein sahi arguments le raha hai
                 res = generate_images(i, scene, used_hashes, used_fallbacks)
                 image_paths.append(res['path'])
             except Exception as e:
                 logger.error(f"Scene {i} image failed: {e}")
 
-        # --- VOICE & VIDEO ---
-        audio_segments = generate_voice_segments(script_data['scenes'], voice="am_michael")
+        logger.info("\n🔊 PHASE 3: VOICE GENERATION - DARK MALE")
+        # CRITICAL CHANGE: am_adam + slow speed
+        audio_segments = generate_voice_segments(script_data['scenes'], voice="am_adam", speed=0.95)
+
+        logger.info("\n🎬 PHASE 4: BUILD VIDEO")
         final_video = build_video(image_paths, audio_segments, script_data['scenes'])
         thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
-        
-        upload_result = upload_all(final_video, thumb_path, script_data)
+
+        logger.info("\n📤 PHASE 5: UPLOAD WITH SEO TAGS")
+        upload_result = upload_all(final_video, thumb_path, script_data) # tags auto jayenge
         self._save_video_history({'title': script_data['title'], 'posted_at': datetime.now().isoformat()})
-        
+
+        logger.info(f"\n✅ DONE: {script_data['title']}")
         return {'success': True}
 
     def run_daily_batch(self, num_videos: int = 3):
         for i in range(num_videos):
             self.run_pipeline()
-            if i < num_videos - 1: time.sleep(5)
+            if i < num_videos - 1: time.sleep(300) # 5 min gap
 
 def main():
     pipeline = SKILLORPipeline()
-    topic = os.environ.get("VIDEO_TOPIC")
+    topic = os.environ.get("VIDEO_TOPIC") # Agar specific topic dena ho
     pipeline.run_pipeline(topic=topic)
 
 if __name__ == "__main__":
