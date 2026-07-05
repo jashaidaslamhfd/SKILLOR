@@ -76,3 +76,39 @@ def get_seo_tags(topic: str, category: str = "Body") -> list:
     tags.extend(CATEGORY_TAGS.get(category, []))
     tags.extend(topic.lower().split()[:3])
     return list(dict.fromkeys(tags))
+
+
+def generate_seo_tags(topic: str, category: str = "Body", title: str = "") -> list:
+    """main.py imports this exact name (`generate_seo_tags`, 3 args: topic,
+    category, title) - this was missing, which is what crashed the pipeline
+    with 'ImportError: cannot import name generate_seo_tags'. `title` isn't
+    needed for tag generation itself but is accepted for call compatibility."""
+    return get_seo_tags(topic, category)
+
+
+_MEDICAL_ADVICE_RED_FLAGS = [
+    "cure", "diagnose", "you have", "stop taking", "don't need a doctor",
+    "instead of medication", "guaranteed to heal", "definitely means you have",
+]
+
+
+def validate_script_for_medical_accuracy(script_data: dict) -> dict:
+    """This channel presents body/brain 'facts' to a general audience, so
+    scripts must not read as an actual medical diagnosis or instruction to
+    ignore professional care. Flags a short list of red-flag phrases;
+    if any are found, auto_add_disclaimer() below adds a disclaimer."""
+    voiceover = script_data.get('voiceover', '') or ' '.join(
+        s.get('caption', '') for s in script_data.get('scenes', []) if isinstance(s, dict)
+    )
+    lowered = voiceover.lower()
+    flags = [phrase for phrase in _MEDICAL_ADVICE_RED_FLAGS if phrase in lowered]
+    return {"valid": len(flags) == 0, "flags": flags}
+
+
+def auto_add_disclaimer(script_data: dict) -> dict:
+    """Appends a short educational-only disclaimer to the CTA/description so
+    a flagged script doesn't read as medical advice."""
+    disclaimer = "This video is for educational/entertainment purposes only and is not medical advice. Consult a doctor for any health concerns."
+    script_data['cta'] = (script_data.get('cta', '') + " " + disclaimer).strip()
+    script_data['disclaimer_added'] = True
+    return script_data
