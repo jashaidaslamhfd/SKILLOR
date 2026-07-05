@@ -20,13 +20,19 @@ SAMPLE_RATE = 24000
 SILENCE_PAD_SEC = 0.25 # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
 
 def add_mystery_pauses(text: str) -> str:
-    """Add <break> tags after dark hooks for retention"""
-    # "you too?" ke baad pause
-    text = re.sub(r'you too\?', 'you too? <break time="0.5s"/>', text, flags=re.IGNORECASE)
-    # "..." ke baad pause
-    text = re.sub(r'\.\.', '... <break time="0.3s"/>', text)
-    # "right now" ke baad pause
-    text = re.sub(r'right now\.', 'right now. <break time="0.4s"/>', text, flags=re.IGNORECASE)
+    """Adds a beat of suspense after dark hooks/reveals for retention.
+
+    Kokoro TTS reads plain text/punctuation, not SSML - it has no idea what
+    '<break time="0.5s"/>' means, so it was likely reading those tags aloud
+    as literal words. Real neural TTS models DO respect punctuation-driven
+    pauses though, so we use an ellipsis (natural trailing-off pause) or a
+    short standalone clause instead - actually audible, not spoken as text."""
+    # "you too?" -> trailing pause via ellipsis
+    text = re.sub(r'you too\?', 'you too?..', text, flags=re.IGNORECASE)
+    # already-present ".." -> stretch into a longer natural pause
+    text = re.sub(r'(?<!\.)\.\.(?!\.)', '...', text)
+    # "right now." -> comma-separated beat before continuing
+    text = re.sub(r'right now\.', 'right now...', text, flags=re.IGNORECASE)
     return text
 
 def _synthesize(text: str, voice: str, speed: float) -> np.ndarray:
