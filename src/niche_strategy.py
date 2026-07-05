@@ -1,5 +1,30 @@
 # src/niche_strategy.py
 # Dark Anatomy - USA Male 25-34 Strategy
+import random
+
+# 50+ DARK ANATOMY TOPICS - USA VIRAL
+DARK_TOPICS = [
+    "Your Heart Has Its Own Brain",
+    "Your Body Has 100,000 km of Veins",
+    "Why Your Heart Skips a Beat",
+    "This Happens Inside Your Brain When You Sleep",
+    "Your Lungs Can Drown You From Inside",
+    "The Bone That Breaks Most in Fights",
+    "Your Blood Has a Secret Weapon",
+    "Why You Get Goosebumps",
+    "Your Stomach Can Digest Itself",
+    "The Organ You Can Live Without",
+    "Why Your Body Shakes When You're Scared",
+    "Your Brain Eats Itself Every Night",
+    "The Vein That Can Kill You in 5 Minutes",
+    "Why You Twitch Before Sleeping",
+    "Your Body Makes Electricity",
+    "The Pain Signal That Never Stops",
+    "Why You Feel Butterflies in Your Stomach",
+    "Your Kidneys Filter Blood 60 Times a Day",
+    "The Muscle Stronger Than Steel",
+    "Why Your Fingers Wrinkle in Water",
+]
 
 # HOOK FORMULAS - Dark Body Mystery
 HOOK_FORMULAS = [
@@ -19,7 +44,7 @@ PAIN_POINTS = [
     "Scared you're not normal",
     "Wondering why your body does weird things",
     "Tired of not understanding your own body",
-    "Think you might have ADHD or anxiety",
+    "Think you might have anxiety",
     "Stress is affecting your health",
     "Feel like your body is betraying you",
     "Want to know what doctors aren't telling you",
@@ -35,13 +60,10 @@ CTAS = [
     "Which fact shocked you the most?",
     "Follow for part 2",
     "Does your body do this too? Comment",
-    "This changed how I see my body",
-    "Send this to someone who worries a lot",
 ]
 
 # Words that trigger disclaimer
 MEDICAL_TRIGGERS = ['disorder', 'disease', 'adhd', 'anxiety', 'depression', 'diagnos', 'symptom', 'condition']
-FEAR_WORDS = ['dangerous', 'toxic', 'kill', 'die', 'harm', 'damage', 'burst', 'bleed']
 
 # Target pacing for Shorts/Reels
 TARGET_WORD_RANGE = (110, 150)  # ~40-55s
@@ -57,6 +79,16 @@ CATEGORY_TAGS = {
     "General": ["factsofInstagram", "darkpsychology", "mindblown"],
 }
 BASE_TAGS = ["facts", "shorts", "science", "darkfacts"]
+
+
+def get_random_topic() -> str:
+    """Pick random Dark Anatomy topic for USA audience"""
+    return random.choice(DARK_TOPICS)
+
+
+def get_random_category() -> str:
+    """Pick random category for tags"""
+    return random.choice(["Brain", "Body", "Mystery", "Health"])
 
 
 def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
