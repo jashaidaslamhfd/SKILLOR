@@ -7,117 +7,99 @@ from typing import Dict, List
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# NOTE: This file previously had a BROKEN, incomplete duplicate definition of
-# get_script_prompt_for_niche() and a duplicate PAIN_POINTS (as a dict) near
-# the top of the file. Python silently used the second (bottom) definitions
-# and ignored the broken ones, but it was dead/confusing code - removed.
+# ---------------------------------------------------------------------------
+# NEW NICHE: DARK BODY & BRAIN MYSTERY FOR USA ADULTS 18+
+# COPPA Risk = 0% | High Retention | High CPM
+# ---------------------------------------------------------------------------
 
-# Brain & Body Science for Babies/Children Topics
+# Dark Body & Brain Science Topics for USA
 BRAIN_SCIENCE_TOPICS = [
-    "Why Babies Need to Crawl Before Walking",
-    "The 3 Sleep Stages Every Baby Parent Must Know",
-    "Brain Development Milestones: 0-6 Months",
-    "Right Brain vs Left Brain: How Parents Can Help",
-    "The Science Behind Baby Babbling",
-    "Motor Skill Development Timeline",
-    "How Touch Develops Baby's Brain",
-    "Language Development: What Parents Miss",
-    "Sensory Development in First Year",
-    "Why Babies Cry: The Neuroscience",
-    "Attachment Theory: Science Explained",
-    "Brain Growth Nutrition for Babies",
-    "The 4 Month Sleep Regression Explained",
-    "How Play Develops Your Baby's Brain",
-    "Emotional Intelligence in Toddlers",
-    "Why Babies Love Repetition: Brain Science",
-    "Object Permanence Development Explained",
-    "Mirror Neurons and Baby Learning",
-    "Bilingual Brain Development in Babies",
-    "How Music Helps Baby Brain Development",
+    "How Many Veins Are In The Human Body And The Danger",
+    "Why Your Brain Shuts Down For 2 Seconds When You Enter A Room",
+    "Your Bones Are Making 2 Million Blood Cells Right Now",
+    "Why You Stop Breathing 20 Times Every Night",
+    "The Parasite That Controls 50% Of People In USA",
+    "Your Heart Can Beat Outside Your Body For 3 Minutes",
+    "Why You Get Goosebumps From Music - Brain Science",
+    "The Hidden Organ Doctors Missed For 200 Years",
+    "You Shed Skin Every 3 Seconds And Don't Notice",
+    "Your Stomach Has A Second Brain Controlling Your Mood",
+    "Why You Wake Up At 3AM - Brain Science Explained",
+    "Your DNA Is Long Enough To Reach The Moon",
+    "The 30 Second Brain Glitch Everyone Has",
+    "Why You Blink When You Sneeze - The Real Reason",
+    "Your Body Is Eating Itself Right Now And It's Normal",
 ]
 
+# DARK MYSTERY HOOK FORMULAS - High Retention
 HOOK_FORMULAS = [
-    "Most parents don't know this about {topic}...",
-    "Science shows that babies who {action} develop {benefit}...",
-    "Here's what pediatricians wish all parents knew about {topic}...",
-    "This {topic} mistake is happening in 95% of households...",
-    "Your baby's brain needs this {topic}... and here's why...",
-    "One simple {topic} change can boost your baby's development by {percent}%...",
-    "Brain scientists discovered something shocking about {topic}...",
-    "If your baby {symptom}, this is what's really happening...",
-    "The {topic} myth that's hurting your baby's development...",
-    "Your baby's future depends on understanding {topic}...",
+    "There's something hiding inside you right now. Does this happen to you too?",
+    "Scientists discovered this about your body... and it's terrifying.",
+    "Your body is doing this without telling you. Has this happened to you?",
+    "There's a {topic} inside you right now. And you don't even know it.",
+    "This happens to your body every night... and you have no idea.",
+    "Doctors don't want you to know this about {topic}...",
+    "Your body is lying to you about {topic}. Here's the truth.",
+    "If you {symptom}, your body is warning you about this...",
+    "The {topic} fact that will keep you up at night...",
+    "Your body is hiding a secret about {topic}. And it's scary.",
 ]
 
+# ADULT PAIN POINTS - USA 18-45
 PAIN_POINTS = [
-    "Worried about baby's development",
-    "Don't know if baby is hitting milestones",
-    "Confused about baby sleep",
-    "Wondering if baby needs intervention",
-    "Unsure about nutrition for brain",
-    "Baby seems behind peers",
-    "Worried about language delay",
-    "Baby won't eat certain foods",
-    "Sleep schedule is chaotic",
-    "Baby seems less social than others",
+    "Worried something is wrong with your body",
+    "Can't sleep because your mind won't shut off",
+    "Feel anxious about random body symptoms",
+    "Scared you're not normal",
+    "Wondering why your body does weird things",
+    "Tired of not understanding your own body",
+    "Think you might have ADHD or anxiety",
+    "Stress is affecting your health",
+    "Feel like your body is betraying you",
+    "Want to know what doctors aren't telling you",
 ]
 
-# CTAs - deliberately parent-directed (adult audience), never addressed to the
-# child watching. Important for YouTube "Made for Kids" self-classification:
-# a video ABOUT children that speaks TO parents is treated differently than
-# content that speaks/plays directly to children.
+# CTAs - Adult focused
 CTAS = [
-    "Save this video - you'll need it for reference",
-    "Share this with someone raising a baby",
-    "Comment: Did your baby do this?",
-    "Follow for more research-backed parenting tips",
-    "Tag a parent who needs to see this",
-    "Send this to your pediatrician",
-    "Save and share with your partner",
-    "Which milestone surprised you the most?",
-    "Does your baby do this? Comment below",
-    "This changed how I parent - share if it helps you too",
+    "Follow for more dark body secrets",
+    "Share this if it blew your mind",
+    "Comment: Did this happen to you?",
+    "Save this before you forget",
+    "Tag someone who needs to know this",
+    "Which fact shocked you the most?",
+    "Follow for part 2",
+    "Does your body do this too? Comment",
+    "This changed how I see my body",
+    "Send this to someone who worries a lot",
 ]
 
-# Words that trigger a mandatory disclaimer / soften pass before publishing
-MEDICAL_TRIGGERS = ['disorder', 'disease', 'autism', 'adhd', 'delay', 'disability', 'diagnos']
-FEAR_WORDS = ['dangerous', 'toxic', 'poison', 'kill', 'harm', 'damage', 'permanently']
+# Words that trigger disclaimer
+MEDICAL_TRIGGERS = ['disorder', 'disease', 'adhd', 'anxiety', 'depression', 'diagnos', 'symptom', 'condition']
+FEAR_WORDS = ['dangerous', 'toxic', 'kill', 'die', 'harm', 'damage', 'burst', 'bleed']
 
-# Target pacing for Shorts/Reels retention: short scripts hold attention
-# better and match the 40-55s target duration used across the pipeline.
-TARGET_WORD_RANGE = (110, 150)   # ~2.5-2.8 wps -> ~40-55s spoken
-TARGET_SCENE_COUNT = (6, 8)      # fast cuts every ~6-8s
+# Target pacing for Shorts/Reels
+TARGET_WORD_RANGE = (110, 150)   # ~40-55s
+TARGET_SCENE_COUNT = (6, 8)
 
 # ---------------------------------------------------------------------------
-# SEO: evergreen tags per category + always-on base tags. Used by
-# generate_seo_tags() below so every video gets a topic-relevant, VARIED tag
-# set instead of the old hardcoded identical list on every upload (which was
-# itself an anti-spam duplicate-metadata risk).
+# SEO TAGS FOR USA DARK SCIENCE NICHE
 # ---------------------------------------------------------------------------
 CATEGORY_TAGS = {
-    "Sleep": ["babysleep", "sleepregression", "sleeptraining", "babysleepschedule"],
-    "Development": ["babymilestones", "childdevelopment", "motorskills", "babydevelopment"],
-    "Brain": ["braindevelopment", "babybrain", "neuroscience", "cognitivedevelopment"],
-    "Communication": ["languagedevelopment", "babytalk", "speechdevelopment", "babybabbling"],
-    "Nutrition": ["babynutrition", "toddlernutrition", "babyfeeding", "braingrowth"],
-    "Emotion": ["emotionalintelligence", "attachmentparenting", "toddleremotions"],
-    "Sensory": ["sensorydevelopment", "sensoryplay", "babysenses"],
-    "Play": ["learningthroughplay", "babyplayideas", "toddleractivities"],
-    "General": ["parentingtips", "childdevelopment"],
+    "Brain": ["neuroscience", "brainfacts", "psychologyfacts", "mindscience"],
+    "Body": ["humanbody", "bodyfacts", "anatomy", "medicalfacts"],
+    "Mystery": ["darkfacts", "mysteryscience", "weirdfacts", "scaryfacts"],
+    "Health": ["healthfacts", "bodyhacks", "sciencefacts", "didyouknow"],
+    "General": ["factsofinstagram", "darkpsychology", "mindblown"],
 }
-BASE_TAGS = ["parentingtips", "shorts", "parentsofinstagram", "scienceofbaby"]
-
+BASE_TAGS = ["facts", "shorts", "science", "darkfacts"]
 
 def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
     """
-    Domain-specific script prompt for parenting/brain-science content.
-    Scenes are returned as {"visual": ..., "caption": ...} pairs so that the
-    caption shown on-screen is the EXACT spoken line for that scene (not an
-    image description) - required for accurate captions and for per-scene
-    TTS generation used to keep voice/caption/clip in sync.
+    Domain-specific script prompt for DARK BODY MYSTERY content.
+    Format: Dark Hook > Relate > Science > Relief > CTA
     """
     if not hook_preference:
-        hook_preference = HOOK_FORMULAS[0]
+        hook_preference = HOOK_FORMULAS[hash(topic) % len(HOOK_FORMULAS)]
 
     pain_point = PAIN_POINTS[hash(topic) % len(PAIN_POINTS)]
     cta = CTAS[hash(topic) % len(CTAS)]
@@ -125,146 +107,13 @@ def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
     min_s, max_s = TARGET_SCENE_COUNT
 
     prompt = f"""
-    You are an expert parenting educator specializing in baby brain and body science,
-    writing for a YouTube Shorts / Facebook Reels audience of PARENTS (not children).
+    You are an expert mystery science communicator creating DARK MYSTERY YouTube Shorts for USA adults 18+.
 
     Topic: {topic}
-    Target Audience: USA parents (concerned about child development) - the video
-    speaks TO the parent watching, never to a child.
-    Target spoken length: {min_w}-{max_w} words total (~40-55 seconds at natural pace).
+    Target Audience: USA adults who love science and mystery
+    Target spoken length: {min_w}-{max_w} words total (~40-55 seconds)
 
-    SCRIPT REQUIREMENTS:
-    1. Start with this hook: "{hook_preference}"
-    2. Address this parent pain point: {pain_point}
-    3. Give a scientific explanation (cite brain science/pediatric research in plain terms)
-    4. Offer 1-2 actionable tips parents can implement TODAY
-    5. End with this CTA, addressed to the parent: "{cta}"
-
-    SAFETY / MONETIZATION GUIDELINES (must follow):
-    - Do not use fear-mongering language (e.g. "dangerous", "toxic", "your baby will suffer").
-    - If mentioning any developmental disorder, delay, or diagnosis, include a brief
-      disclaimer to consult a pediatrician - do not present it as a diagnosis.
-    - No clickbait medical claims presented as fact; use "research suggests" framing.
-    - Keep tone reassuring and empowering, not guilt-inducing.
-    - Content must be clearly FOR the parent audience, not designed to be watched
-      or interacted with by children themselves.
-
-    SCENE / CAPTION REQUIREMENTS:
-    - Produce {min_s}-{max_s} scenes.
-    - Each scene must have:
-        "visual": a 5-8 word description of the image to generate for that scene
-        "caption": the EXACT segment of the voiceover spoken during that scene
-          (captions across all scenes, concatenated in order, must reconstruct
-          the full voiceover word-for-word)
-
-    FORMAT (JSON ONLY, no markdown, no preamble):
-    {{
-        "title": "Engaging 5-6 word title",
-        "hook": "First 3 seconds - attention grabber",
-        "scenes": [
-            {{"visual": "...", "caption": "..."}},
-            {{"visual": "...", "caption": "..."}}
-        ],
-        "cta": "{cta}",
-        "key_message": "One-line takeaway",
-        "sources": ["Research or source reference"]
-    }}
-    """
-    return prompt
-
-
-def get_random_topic() -> str:
-    return BRAIN_SCIENCE_TOPICS[hash(os.urandom(8)) % len(BRAIN_SCIENCE_TOPICS)]
-
-
-def get_topic_category(topic: str) -> str:
-    categories = {
-        "Sleep": ["sleep", "regression", "tired"],
-        "Development": ["milestone", "development", "motor", "crawl", "walk"],
-        "Brain": ["brain", "cognitive", "learning"],
-        "Communication": ["language", "babbling", "talk", "speech"],
-        "Nutrition": ["nutrition", "eat", "food", "brain growth"],
-        "Emotion": ["emotional", "attachment", "cry"],
-        "Sensory": ["sensory", "touch", "sound"],
-        "Play": ["play", "learn", "activity"],
-    }
-    topic_lower = topic.lower()
-    for category, keywords in categories.items():
-        if any(kw in topic_lower for kw in keywords):
-            return category
-    return "General"
-
-
-def generate_seo_tags(topic: str, category: str, title: str = "") -> List[str]:
-    """
-    NEW - fixes the 'no SEO' gap: builds a topic/category-aware tag list
-    instead of a single hardcoded list reused on every video. Combines:
-      - category-specific tags (relevant search terms for this content type)
-      - always-on base tags
-      - individual meaningful words pulled straight from the topic/title
-    Deduplicated, capped at 15 (YouTube's practical sweet spot).
-    """
-    tags = set(CATEGORY_TAGS.get(category, CATEGORY_TAGS["General"]))
-    tags.update(BASE_TAGS)
-
-    words = re.findall(r"[a-zA-Z]{4,}", f"{topic} {title}".lower())
-    stopwords = {"your", "with", "what", "this", "that", "baby's", "babys", "need", "needs"}
-    for w in words:
-        clean = w.strip()
-        if clean not in stopwords:
-            tags.add(clean)
-
-    return list(tags)[:15]
-
-
-def validate_script_for_medical_accuracy(script_data: Dict) -> Dict:
-    """
-    Validate script for medical accuracy, fear-mongering, and COPPA-adjacent
-    concerns. Actually wired into main.py's pipeline now (see fixed main.py).
-    """
-    issues = []
-    warnings = []
-
-    full_text = script_data.get('voiceover', '')
-    if not full_text and script_data.get('scenes'):
-        full_text = ' '.join(
-            s.get('caption', '') if isinstance(s, dict) else str(s)
-            for s in script_data['scenes']
-        )
-    script_text = (full_text + ' ' + script_data.get('title', '')).lower()
-
-    if any(trigger in script_text for trigger in MEDICAL_TRIGGERS):
-        if 'consult' not in script_text and 'doctor' not in script_text and 'pediatrician' not in script_text:
-            issues.append("Medical/diagnostic term used without a doctor-consultation disclaimer")
-
-    if any(word in script_text for word in FEAR_WORDS):
-        warnings.append("Fear-inducing language detected - may hurt watch-time and violate tone guidelines")
-
-    word_count = len(full_text.split())
-    if word_count < TARGET_WORD_RANGE[0]:
-        warnings.append(f"Script shorter than target ({word_count} words) - risks video under 40s")
-    elif word_count > TARGET_WORD_RANGE[1] + 20:
-        warnings.append(f"Script longer than target ({word_count} words) - risks video over 55s")
-
-    return {
-        "valid": len(issues) == 0,
-        "issues": issues,
-        "warnings": warnings,
-        "recommendation": "Approved" if len(issues) == 0 else "Needs revision - add disclaimer"
-    }
-
-
-def auto_add_disclaimer(script_data: Dict) -> Dict:
-    """
-    If a medical trigger word is present without a disclaimer, append a short
-    disclaimer as a final scene rather than rejecting the whole script outright.
-    """
-    disclaimer_caption = "This is general information, not medical advice - always check with your pediatrician."
-    scenes = script_data.get('scenes', [])
-    scenes.append({
-        "visual": "a warm illustration of a parent and pediatrician talking",
-        "caption": disclaimer_caption
-    })
-    script_data['scenes'] = scenes
-    script_data['voiceover'] = script_data.get('voiceover', '') + ' ' + disclaimer_caption
-    return script_data
+    SCRIPT REQUIREMENTS - DARK MYSTERY FORMAT:
+    1. DARK HOOK: Start scary. "{hook_preference}"
+    2. RELATE: "Does this happen to you too?" Connect to viewer
+    3. SCIENCE: Explain the science in simple,
