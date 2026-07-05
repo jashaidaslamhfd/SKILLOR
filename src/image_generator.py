@@ -2,6 +2,7 @@ import os
 import time
 import random
 import hashlib
+import threading
 import requests
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,14 +20,44 @@ logger = logging.getLogger(__name__)
 #                                             exact same failing request)
 #   3. Hugging Face Inference API           (needs HF_API_KEY env var)
 #   4. Google Gemini image generation       (needs GEMINI_API_KEY env var)
-#   5. Local placeholder (assets/placeholder.png) - guaranteed final fallback
+#   5. Local fallback pool (assets/fallback_images/*, random non-repeating)
+#                                             - guaranteed final fallback
 # ---------------------------------------------------------------------------
 
 POLLINATIONS_URL = "https://image.pollinations.ai/prompt"
-HF_API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent"
 
 REQUEST_TIMEOUT = 30
+
+# ---------------------------------------------------------------------------
+# Fallback image pool: instead of ONE static placeholder.png, keep a large
+# folder of stock images (e.g. ~500). Every time layer 5 has to be used, a
+# random image is picked that hasn't already been used elsewhere in this
+# same run - this drastically cuts down "identical reused image" risk vs a
+# single static file, without needing scenes to be categorized/tagged.
+# ---------------------------------------------------------------------------
+FALLBACK_DIR = "assets/fallback_images"
+LEGACY_PLACEHOLDER = "assets/placeholder.png"
+_FALLBACK_POOL_CACHE = None
+_fallback_lock = threading.Lock()
+
+
+def _load_fallback_pool():
+    """Scans FALLBACK_DIR once and caches the list of image paths."""
+    global _FALLBACK_POOL_CACHE
+    if _FALLBACK_POOL_CACHE is not None:
+        return _FALLBACK_POOL_CACHE
+
+    valid_ext = (".jpg", ".jpeg", ".png", ".webp")
+    pool = []
+    if os.path.isdir(FALLBACK_DIR):
+        for fname in os.listdir(FALLBACK_DIR):
+            if fname.lower().endswith(valid_ext):
+                pool.append(os.path.join(FALLBACK_DIR, fname))
+
+    _FALLBACK_POOL_CACHE = pool
+    return pool
 
 
 def _save_bytes(content: bytes, index: int, ext: str = "jpg") -> str:
@@ -37,24 +68,35 @@ def _save_bytes(content: bytes, index: int, ext: str = "jpg") -> str:
     return path
 
 
+def _pollinations_request(prompt, seed, model, index):
+    """Shared helper: request an image from Pollinations, retrying briefly on
+    429 (rate limit) instead of immediately giving up - this cuts down how
+    often scenes fall through to the placeholder pool just because two
+    threads happened to hit Pollinations at the same moment."""
+    url = f"{POLLINATIONS_URL}/{prompt}?width=1080&height=1920&seed={seed}&model={model}&nologo=true"
+    last_status = None
+    for attempt in range(3):
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 200 and len(response.content) > 2000:
+            return _save_bytes(response.content, index)
+        last_status = response.status_code
+        if response.status_code == 429:
+            time.sleep(2 + attempt * 3)  # 2s, 5s, 8s backoff
+            continue
+        break  # non-429 failure - no point retrying the same request
+    raise RuntimeError(f"Pollinations({model}) bad response: {last_status}")
+
+
 def _layer1_pollinations_flux(index, prompt, seed):
     """Layer 1: Pollinations.ai, flux model (primary, free, no key)."""
-    url = f"{POLLINATIONS_URL}/{prompt}?width=1080&height=1920&seed={seed}&model=flux&nologo=true"
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
-    if response.status_code == 200 and len(response.content) > 2000:
-        return _save_bytes(response.content, index)
-    raise RuntimeError(f"Pollinations(flux) bad response: {response.status_code}")
+    return _pollinations_request(prompt, seed, "flux", index)
 
 
 def _layer2_pollinations_turbo(index, prompt, seed):
     """Layer 2: Pollinations.ai, turbo model + a fresh seed - a genuinely
     different request, not a duplicate retry of layer 1."""
     new_seed = random.randint(10000, 99999)
-    url = f"{POLLINATIONS_URL}/{prompt}?width=1080&height=1920&seed={new_seed}&model=turbo&nologo=true"
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
-    if response.status_code == 200 and len(response.content) > 2000:
-        return _save_bytes(response.content, index)
-    raise RuntimeError(f"Pollinations(turbo) bad response: {response.status_code}")
+    return _pollinations_request(prompt, new_seed, "turbo", index)
 
 
 def _layer3_huggingface(index, scene_text):
@@ -96,12 +138,28 @@ def _layer4_gemini(index, scene_text):
     raise RuntimeError("Gemini response contained no image data")
 
 
-def _layer5_placeholder(index):
-    """Layer 5: Local placeholder image - the guaranteed last resort."""
-    placeholder = "assets/placeholder.png"
-    if os.path.exists(placeholder):
-        return placeholder
-    raise RuntimeError("assets/placeholder.png missing - no fallback left")
+def _layer5_placeholder(index, used_fallbacks: set):
+    """Layer 5: guaranteed last resort. Picks a random, not-yet-used image
+    from the assets/fallback_images/ pool (thread-safe). Falls back to the
+    old single assets/placeholder.png if that pool doesn't exist/is empty."""
+    pool = _load_fallback_pool()
+
+    if pool:
+        with _fallback_lock:
+            available = [p for p in pool if p not in used_fallbacks]
+            if not available:
+                # Pool exhausted (more scenes than unique images) - allow
+                # repeats rather than failing the scene entirely.
+                logger.warning("Fallback pool exhausted for this run - reusing an already-used fallback image.")
+                available = pool
+            choice = random.choice(available)
+            used_fallbacks.add(choice)
+        return choice
+
+    # Legacy behavior if no pool folder is set up yet.
+    if os.path.exists(LEGACY_PLACEHOLDER):
+        return LEGACY_PLACEHOLDER
+    raise RuntimeError(f"No fallback available: '{FALLBACK_DIR}' is empty/missing and '{LEGACY_PLACEHOLDER}' also missing")
 
 
 def _scene_text(scene) -> str:
@@ -113,7 +171,7 @@ def _scene_text(scene) -> str:
     return str(scene)
 
 
-def _generate_one(index, scene, used_hashes: set):
+def _generate_one(index, scene, used_hashes: set, used_fallbacks: set):
     scene_text = _scene_text(scene)
     prompt = scene_text.replace(' ', '_')
     seed = random.randint(1000, 9999)
@@ -123,7 +181,7 @@ def _generate_one(index, scene, used_hashes: set):
         ("Pollinations-turbo", lambda: _layer2_pollinations_turbo(index, prompt, seed)),
         ("HuggingFace", lambda: _layer3_huggingface(index, scene_text)),
         ("Gemini", lambda: _layer4_gemini(index, scene_text)),
-        ("Placeholder", lambda: _layer5_placeholder(index)),
+        ("Placeholder", lambda: _layer5_placeholder(index, used_fallbacks)),
     ]
 
     for name, fn in layers:
@@ -161,9 +219,10 @@ def generate_images(scenes, max_workers=2):
     """
     results = [None] * len(scenes)
     used_hashes = set()
+    used_fallbacks = set()
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_generate_one, i, scene, used_hashes): i for i, scene in enumerate(scenes)}
+        futures = {executor.submit(_generate_one, i, scene, used_hashes, used_fallbacks): i for i, scene in enumerate(scenes)}
         for future in as_completed(futures):
             r = future.result()
             results[r["index"]] = r
