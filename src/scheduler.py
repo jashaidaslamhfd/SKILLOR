@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 class USAPeakTimeScheduler:
     """
     Intelligent scheduler for posting at USA peak times.
-    Focuses on parenting content audience behavior.
+    Tuned for general adult short-form video audience behavior.
     """
     
-    # USA peak times for parenting content (EST)
+    # USA peak times for short-form video engagement (EST)
     PEAK_TIMES = [
         {'hour': 6, 'minute': 0, 'zone': 'EST', 'name': 'Early Morning'},   # 6:00 AM EST
         {'hour': 12, 'minute': 30, 'zone': 'EST', 'name': 'Lunch Time'},     # 12:30 PM EST
@@ -77,12 +77,12 @@ class USAPeakTimeScheduler:
     
     def _get_posting_reason(self, peak_name: str) -> str:
         """
-        Get reason why this is a peak time for parenting content.
+        Get reason why this is a peak time for this content.
         """
         reasons = {
-            'Early Morning': 'Parents checking phones while preparing kids for school',
-            'Lunch Time': 'Lunch break browsing (parents at work)',
-            'Evening': 'Wind-down time while kids nap or bedtime',
+            'Early Morning': 'Commute/coffee scrolling before work',
+            'Lunch Time': 'Lunch break browsing',
+            'Evening': 'Wind-down scrolling before bed',
         }
         return reasons.get(peak_name, 'Peak engagement time')
     
@@ -104,16 +104,23 @@ class USAPeakTimeScheduler:
     def validate_posting_interval(self, last_post_time: datetime) -> bool:
         """
         Validate minimum 2-hour interval between posts to avoid spam flagging.
+        Accepts either a naive or timezone-aware datetime - naive datetimes
+        are assumed to already be UTC (matches how video_history.json stores
+        them) and are localized before comparing, so this never crashes with
+        a "can't subtract offset-naive and offset-aware datetimes" error.
         """
+        if last_post_time.tzinfo is None:
+            last_post_time = last_post_time.replace(tzinfo=pytz.UTC)
+
         now = datetime.now(self.est_tz)
         time_since_last = (now - last_post_time).total_seconds() / 3600
-        
+
         if time_since_last < 2:
             logger.warning(f"⚠️ Only {time_since_last:.1f} hours since last post")
             return False
-        
+
         return True
-    
+
     def get_daily_schedule(self) -> str:
         """
         Get formatted daily schedule.
@@ -147,11 +154,12 @@ class USAPeakTimeScheduler:
     def suggest_optimal_schedule(self) -> List[Dict]:
         """
         Suggest optimal posting schedule based on engagement patterns.
-        
-        For parenting content:
-        - Early morning: Parents preparing kids
-        - Lunch: Working parents on break
-        - Evening: Relaxation/bedtime routine help
+
+        For this niche (dark/mystery body-science facts, general adult
+        audience):
+        - Early morning: commute/coffee scrolling
+        - Lunch: work-break browsing
+        - Evening: wind-down scrolling before bed
         """
         schedule = []
         
@@ -159,23 +167,23 @@ class USAPeakTimeScheduler:
             {
                 'slot': 1,
                 'time': '6:00 AM EST',
-                'audience': 'Morning routine preparation',
+                'audience': 'Morning commute/coffee scrolling',
                 'expected_engagement': 'High (time-sensitive content)',
-                'reason': 'Parents looking for quick tips while getting ready'
+                'reason': 'Catching people during their morning scroll before work'
             },
             {
                 'slot': 2,
                 'time': '12:30 PM EST',
                 'audience': 'Lunch break browsers',
-                'expected_engagement': 'Very High (working parents)',
-                'reason': 'Work break viewing, likely to share later'
+                'expected_engagement': 'Very High (widest audience online)',
+                'reason': 'Work break viewing, likely to share/comment'
             },
             {
                 'slot': 3,
                 'time': '8:00 PM EST',
-                'audience': 'Evening relaxation',
-                'expected_engagement': 'High (family time)',
-                'reason': 'Preparation for bedtime routines, good for longer content'
+                'audience': 'Evening wind-down scrolling',
+                'expected_engagement': 'High (relaxed, receptive to longer content)',
+                'reason': 'Prime-time scrolling before bed'
             }
         ]
         
@@ -193,4 +201,4 @@ if __name__ == "__main__":
         print(f"Slot {rec['slot']}: {rec['time']}")
         print(f"  Audience: {rec['audience']}")
         print(f"  Expected Engagement: {rec['expected_engagement']}")
-        print(f"  Reason: {rec['reason']}\n")
+        print(f"  Reason: {rec['reason']}\n")on']}\n")
