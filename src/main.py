@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
 from script_generator import generate_script
-from image_generator import generate_images
+from image_generator import _generate_one as generate_images
 from voice_generator import generate_voice_segments          # FIX: was generate_voice (single-file)
 from video_editor import build_video, generate_thumbnail
 from uploader import upload_all
