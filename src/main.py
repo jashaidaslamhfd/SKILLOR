@@ -81,17 +81,25 @@ class SKILLORPipeline:
     def generate_with_niche_strategy(self, topic: str = None) -> dict:
         fixed_topic = topic
         best_attempt = None
+        last_error = None
         for attempt in range(1, MAX_SCRIPT_ATTEMPTS + 1):
             current_topic = fixed_topic or get_random_topic() # Dark topics list se
             try:
                 result = self._generate_and_check_once(current_topic)
             except Exception as e:
+                last_error = e
                 logger.error(f"Attempt {attempt} failed: {e}")
                 continue
             if best_attempt is None or result['quality_score'] > best_attempt['quality_score']:
                 best_attempt = result
             if result['quality_approved'] and result['spam_ok']:
                 return result['script_data']
+
+        if best_attempt is None:
+            raise RuntimeError(
+                f"All {MAX_SCRIPT_ATTEMPTS} script-generation attempts failed - "
+                f"last error: {last_error}"
+            )
         return best_attempt['script_data']
 
     def run_pipeline(self, topic: str = None) -> dict:
