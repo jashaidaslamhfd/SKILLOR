@@ -201,4 +201,4 @@ if __name__ == "__main__":
         print(f"Slot {rec['slot']}: {rec['time']}")
         print(f"  Audience: {rec['audience']}")
         print(f"  Expected Engagement: {rec['expected_engagement']}")
-        print(f"  Reason: {rec['reason']}\n")on']}\n")
+        print(f"  Reason: {rec['reason']}\n")
