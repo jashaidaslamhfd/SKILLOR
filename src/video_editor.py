@@ -14,7 +14,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 CANVAS_W, CANVAS_H = 1080, 1920
-CROSSFADE_SEC = 0.4          # visual overlap between scenes
 AUDIO_EDGE_FADE = 0.05       # tiny click-removal fade, does NOT change timing
 ZOOM_AMOUNT = 0.18           # 1.0 -> 1.18 (or reverse) - clearly visible but not jarring
 PAN_PX = 50                  # subtle horizontal drift in pixels
@@ -253,15 +252,13 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
 
         combined = CompositeVideoClip([scene_visual] + word_clips, size=(CANVAS_W, CANVAS_H)).set_duration(duration)
 
-        if i > 0:
-            combined = combined.crossfadein(CROSSFADE_SEC)
         video_clips.append(combined)
 
         seg_audio = AudioFileClip(seg['path']).fx(afx.audio_fadein, AUDIO_EDGE_FADE).fx(afx.audio_fadeout, AUDIO_EDGE_FADE)
         audio_clips.append(seg_audio)
 
-    logger.info("Concatenating video clips (with crossfade overlap)...")
-    final_video = concatenate_videoclips(video_clips, method="compose", padding=-CROSSFADE_SEC)
+    logger.info("Concatenating video clips (hard-cut, matches the audio's hard-cut timing)...")
+    final_video = concatenate_videoclips(video_clips, method="compose")
 
     logger.info("Concatenating audio segments (hard-cut, preserves exact voice timing)...")
     final_audio = concatenate_audioclips(audio_clips)
