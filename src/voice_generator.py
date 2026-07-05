@@ -2,6 +2,7 @@ import os
 import numpy as np
 import soundfile as sf
 import logging
+import re
 from typing import List, Dict
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -10,20 +11,32 @@ logger = logging.getLogger(__name__)
 try:
     from kokoro import KPipeline
     logger.info("Loading Kokoro TTS Model...")
-    tts = KPipeline(lang_code='a')  # 'a' = American English
+    tts = KPipeline(lang_code='a') # 'a' = American English
 except ImportError as e:
     logger.error(f"Failed to import Kokoro: {e}")
     tts = None
 
-SAMPLE_RATE = 24000  # Kokoro hamesha 24kHz audio deta hai
-SILENCE_PAD_SEC = 0.15  # chhota sa gap har scene ke beech, taake voice cramped na lage
+SAMPLE_RATE = 24000
+SILENCE_PAD_SEC = 0.25 # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
 
+def add_mystery_pauses(text: str) -> str:
+    """Add <break> tags after dark hooks for retention"""
+    # "you too?" ke baad pause
+    text = re.sub(r'you too\?', 'you too? <break time="0.5s"/>', text, flags=re.IGNORECASE)
+    # "..." ke baad pause
+    text = re.sub(r'\.\.', '... <break time="0.3s"/>', text)
+    # "right now" ke baad pause
+    text = re.sub(r'right now\.', 'right now. <break time="0.4s"/>', text, flags=re.IGNORECASE)
+    return text
 
 def _synthesize(text: str, voice: str, speed: float) -> np.ndarray:
     if not tts:
         raise RuntimeError("Kokoro TTS model not loaded. Check Kokoro installation.")
     if not text or not text.strip():
         raise ValueError("Text cannot be empty")
+
+    # NEW: Add mystery pauses before TTS
+    text = add_mystery_pauses(text)
 
     generator = tts(text, voice=voice, speed=speed)
     chunks = []
@@ -44,12 +57,10 @@ def _synthesize(text: str, voice: str, speed: float) -> np.ndarray:
 
     return full_audio
 
-
-def generate_voice(text: str, voice: str = "am_michael", output_path: str = "output/voice.wav", speed: float = 1.0) -> str:
-    """Original single-file API - kept for backward compatibility (thumbnail/
-    description generation, or any place still expecting one full voiceover file)."""
+def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
+    """USA Dark Science Voice: Deep, Slow, Mysterious"""
     try:
-        logger.info(f"Generating full voiceover with: {voice}...")
+        logger.info(f"Generating DARK voiceover with: {voice} at speed {speed}...")
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         audio = _synthesize(text, voice, speed)
         sf.write(output_path, audio, SAMPLE_RATE)
@@ -59,20 +70,14 @@ def generate_voice(text: str, voice: str = "am_michael", output_path: str = "out
         logger.error(f"Voice generation failed: {e}")
         raise RuntimeError(f"Voice generation error: {e}")
 
-
 def generate_voice_segments(
     scenes: List[dict],
-    voice: str = "am_michael",
+    voice: str = "am_adam", # CHANGE 1: am_michael se am_adam
     output_dir: str = "output/segments",
-    speed: float = 1.0,
+    speed: float = 0.95, # CHANGE 2: 1.0 se 0.95. Thora slow
 ) -> List[Dict]:
     """
-    Generates ONE audio file PER SCENE caption. This is what makes voice +
-    caption + clip line up exactly: each image/Ken-Burns clip is shown for
-    precisely the duration of the audio that speaks its own caption - no
-    guessing, no even-splitting of total duration.
-
-    Returns: [{"path": "...", "duration": float, "caption": str}, ...]
+    Each scene gets its own audio with mystery pauses
     """
     os.makedirs(output_dir, exist_ok=True)
     segments = []
@@ -83,7 +88,7 @@ def generate_voice_segments(
             caption = " "
 
         try:
-            audio = _synthesize(caption, voice, speed)
+            audio = _synthesize(caption, voice, speed) # Pauses auto add ho jaenge
         except Exception as e:
             logger.error(f"Segment {i+1} TTS failed: {e} - inserting short silence instead")
             audio = np.zeros(int(SAMPLE_RATE * 1.5), dtype=np.float32)
@@ -96,5 +101,5 @@ def generate_voice_segments(
         logger.info(f"Segment {i+1}/{len(scenes)}: {duration:.2f}s - \"{caption[:50]}...\"")
 
     total = sum(s['duration'] for s in segments)
-    logger.info(f"Total voiceover duration across {len(segments)} segments: {total:.2f}s")
+    logger.info(f"Total DARK voiceover duration: {total:.2f}s")
     return segments
