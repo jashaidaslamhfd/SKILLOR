@@ -1,211 +1,90 @@
-# SKILLOR - YouTube/Facebook Automation System
+# Image Fallback System — Duniya ke Bade Platforms, 50 tak
 
-**Skillor** is an IT HUB automation system for generating and uploading AI-powered short-form video content to YouTube and Facebook.
+## Ab kya hai (8 providers, sab real aur working code)
 
-## Features
+| # | Provider | Key chahiye? | Notes |
+|---|----------|-------------|-------|
+| 1 | Pollinations (flux) | ❌ | free, no signup |
+| 2 | Pollinations (turbo) | ❌ | free, no signup, alag seed/model |
+| 3 | Hugging Face | ✅ `HF_API_KEY` | free monthly credit |
+| 4 | Google Gemini | ✅ `GEMINI_API_KEY` | ~50 free req/day, no card |
+| 5 | DeepAI | ✅ `DEEPAI_API_KEY` | free tier |
+| 6 | Craiyon | ❌ | free, no signup |
+| 7 | ModelsLab | ✅ `MODELSLAB_API_KEY` | 10,000+ models, free key, no card |
+| 8 | Replicate | ✅ `REPLICATE_API_TOKEN` | bada platform, free trial credits |
 
-✅ **Automated Script Generation** - AI-powered script writing with Groq LLM
-✅ **Dual Image Generation** - Google Gemini + Hugging Face FLUX.1 with fallback
-✅ **Professional Voice Generation** - Kokoro TTS for natural-sounding voiceovers
-✅ **Smart Video Editing** - Automated video composition with effects and captions
-✅ **Batch Upload** - Direct upload to YouTube and Facebook Reels
-✅ **Robust Error Handling** - Retry logic, timeouts, and comprehensive logging
-✅ **Rate Limiting** - Built-in throttling for API stability
+Ye sab `src/image_providers.py` mein ek hi `PROVIDER_REGISTRY` list mein hain.
+Jaise hi ek fail/rate-limit ho, agla try hota hai — dono `image_generator.py`
+(live per-video generation) aur `generate_fallback_images.py` (500-image pool
+builder) isi list ko use karte hain.
 
-## System Architecture
+## Honest reality check — "50 tools" ka matlab
 
+Duniya mein 50 image-gen platforms exist karte hain, lekin:
+- Har ek ki apni free-tier policy hai, aur ye policies har 2-3 mahine mein
+  badalti rehti hain (jaisa aapke log mein dikha — HuggingFace credits khatam
+  ho gaye, Gemini quota exceed ho gaya).
+- Kuch (Stability AI, OpenAI DALL-E, Adobe Firefly) ab **bilkul free nahi**
+  hain — sirf trial credit dete hain, phir paid ho jate hain.
+- Isliye "50 simultaneously free" ka wada koi bhi honestly nahi de sakta.
+
+**Jo maine banaya hai wo isse behtar hai**: ek architecture jahan aap jitne
+bhi free-tier keys bana sakte hain (zyada tar sirf email se free milti hain),
+unhe 5 minute mein registry mein daal sakte hain — system khud unke beech
+rotate karega. Neeche list hai kis tarah 50 tak pahunchein.
+
+## 50 tak kaise pahunchein — agle candidates
+
+Inme se har ek ki free/trial key bana kar `PROVIDER_REGISTRY` mein TEMPLATE
+pattern se add kar dein (`src/image_providers.py` ke end mein `gen_TEMPLATE`
+copy karke):
+
+| Platform | Free access | Env var suggestion |
+|----------|-------------|---------------------|
+| Stability AI | $5-25 one-time trial credit | `STABILITY_API_KEY` |
+| Leonardo AI | daily free tokens | `LEONARDO_API_KEY` |
+| Segmind | free credits on signup | `SEGMIND_API_KEY` |
+| Together AI | free trial credit | `TOGETHER_API_KEY` |
+| Fireworks AI | free trial credit | `FIREWORKS_API_KEY` |
+| Cloudflare Workers AI | free tier on Cloudflare account | `CF_API_TOKEN` |
+| Ideogram | 10 free credits/week | `IDEOGRAM_API_KEY` |
+| Getimg.ai | free daily credits | `GETIMG_API_KEY` |
+| Fal.ai | free trial credit | `FAL_API_KEY` |
+| Playground AI | free daily generations | `PLAYGROUND_API_KEY` |
+| StableDiffusionAPI.com | free trial credits | `SDAPI_KEY` |
+| OpenAI DALL-E | paid only, last-resort layer if you already pay for GPT | `OPENAI_API_KEY` |
+
+Har naye provider ke liye docs check karein (endpoints/format waqt ke sath
+badalte hain) — is repo mein maujood 8 providers ka code hi pattern hai
+jise copy karna hai.
+
+## GitHub Actions Secrets
+
+Repo → **Settings → Secrets and variables → Actions** → jo bhi keys banayein
+unhe wahan add karein, phir workflow YAML mein:
+
+```yaml
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  HF_API_KEY: ${{ secrets.HF_API_KEY }}
+  DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
+  MODELSLAB_API_KEY: ${{ secrets.MODELSLAB_API_KEY }}
+  REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
 ```
-┌─────────────────┐
-│  Topic Input    │
-└────────┬────────┘
-         ↓
-┌─────────────────────────┐
-│  Script Generation      │ (Groq LLM)
-│  - Title               │
-│  - Voiceover           │
-│  - Scenes (6-9)        │
-└────────┬────────────────┘
-         ↓
-┌──────────────────────────────────────────┐
-│  Image Generation (Per Scene)            │
-│  1. Try Google Gemini                    │
-│  2. Fallback to Hugging Face FLUX.1      │
-│  3. Last resort: Placeholder             │
-└────────┬─────────────────────────────────┘
-         ↓
-┌─────────────────┐
-│  Voice Gen      │ (Kokoro TTS)
-└────────┬────────┘
-         ↓
-┌──────────────────────────────────────┐
-│  Video Composition                   │
-│  - Sync audio with images            │
-│  - Add captions                      │
-│  - Apply effects (zoom, etc)         │
-│  - Generate thumbnail                │
-└────────┬─────────────────────────────┘
-         ↓
-┌────────────────────────────┐
-│  Upload to Platforms       │
-│  - YouTube (primary)       │
-│  - Facebook Reels          │
-└────────────────────────────┘
-```
 
-## Installation
+Jo key set nahi hogi uska provider automatically skip ho jayega
+(`available_providers()` khud check karta hai) — kuch bhi crash nahi hoga.
 
-### Requirements
-- Python 3.9+
-- FFmpeg
-- Git
+## Fallback pool bhi zaroor banayein
 
-### Setup
+Live providers fail hone par final safety net `assets/fallback_images/`
+folder hai. Ye khali hai to system same `assets/placeholder.png` baar baar
+use karta hai (yehi aapke channel ka masla tha). Ek baar chalayein:
 
 ```bash
-# Clone repository
-git clone https://github.com/jashaidaslamhfd/SKILLOR.git
-cd SKILLOR
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy environment template
-cp .env.example .env
-
-# Configure your API keys in .env
+python scripts/generate_fallback_images.py
 ```
 
-## Configuration
-
-### Required API Keys
-
-1. **YouTube API**
-   - Create service account at [Google Cloud Console](https://console.cloud.google.com)
-   - Download JSON credentials
-   - Set `YT_CLIENT_SECRET` environment variable
-
-2. **Facebook API**
-   - Get access token from [Facebook Developers](https://developers.facebook.com)
-   - Set `FB_ACCESS_TOKEN` and `FB_PAGE_ID`
-
-3. **Image Generation**
-   - Google Gemini: [Get API key](https://ai.google.dev)
-   - Hugging Face: [Get API key](https://huggingface.co/settings/tokens)
-
-4. **LLM**
-   - Groq: [Get API key](https://console.groq.com)
-
-## Usage
-
-### Basic Usage
-
-```bash
-# Export API keys
-export GROQ_API_KEY="your_groq_key"
-export GEMINI_API_KEY="your_gemini_key"
-export HF_API_KEY="your_hf_key"
-export YT_CLIENT_SECRET='{...}'
-export FB_ACCESS_TOKEN="your_fb_token"
-export FB_PAGE_ID="your_page_id"
-
-# Run with custom topic
-export VIDEO_TOPIC="Amazing Facts About Space"
-python src/main.py
-```
-
-### With Docker
-
-```bash
-docker build -t skillor .
-docker run --env-file .env skillor
-```
-
-## Troubleshooting
-
-### Image Generation Fails
-- **Check:** Verify GEMINI_API_KEY and HF_API_KEY are valid
-- **Fallback:** Ensure `assets/placeholder.png` exists
-- **Solution:** Try with placeholder images first
-
-### Audio Generation Issues
-- **Check:** Kokoro model is properly installed
-- **Solution:** `pip install kokoro --upgrade`
-
-### YouTube Upload Fails
-- **Check:** Service account has YouTube Data API v3 enabled
-- **Solution:** Enable API in Google Cloud Console
-- **Credentials:** Verify YT_CLIENT_SECRET is valid JSON
-
-### Facebook Upload Fails
-- **Check:** Access token has necessary permissions
-- **Permissions Needed:**
-  - `pages_manage_metadata`
-  - `pages_read_user_profile`
-  - `pages_manage_posts`
-  - `video_upload`
-
-## File Structure
-
-```
-SKILLOR/
-├── src/
-│   ├── main.py                # Main pipeline entry point
-│   ├── script_generator.py    # Script generation with Groq
-│   ├── image_generator.py     # Image generation (Gemini/HF)
-│   ├── voice_generator.py     # Voice generation (Kokoro TTS)
-│   ├── video_editor.py        # Video composition & editing
-│   └── uploader.py            # YouTube & Facebook upload
-├── assets/
-│   └── placeholder.png        # Fallback image for videos
-├── output/                     # Generated videos & thumbnails
-├── requirements.txt           # Python dependencies
-├── .env.example              # Environment variables template
-└── README.md                 # This file
-```
-
-## Error Handling
-
-### Retry Logic
-- Script generation: 3 attempts with exponential backoff
-- Hugging Face API: 3 attempts with rate limit handling
-- YouTube upload: 3 attempts with 429/500+ error recovery
-- Facebook upload: 3 attempts with throttling support
-
-### Fallback Mechanisms
-1. **Image Generation:**
-   - Primary: Google Gemini
-   - Fallback: Hugging Face FLUX.1
-   - Last resort: Placeholder image
-
-2. **Video Composition:**
-   - Missing images → Placeholder
-   - Missing audio → Runtime error
-   - Invalid captions → Skip gracefully
-
-## Performance Tips
-
-1. **Parallel Processing:** Use multiple instances for batch operations
-2. **Image Generation:** Hugging Face is faster; Gemini is higher quality
-3. **Video Encoding:** Reduce resolution for faster rendering
-4. **Rate Limiting:** Respect API quotas; use scheduled uploads
-
-## Limitations
-
-- YouTube Shorts: Max 60 seconds
-- Facebook Reels: Max 90 seconds
-- Thumbnail: 1280x720px recommended
-- Description: YouTube max 5000 chars, Facebook max 63 chars
-
-## Support
-
-For issues and feature requests, visit:
-- **GitHub Issues:** https://github.com/jashaidaslamhfd/SKILLOR/issues
-- **Documentation:** Check logs in `output/` directory
-
-## License
-
-This project is open source and available under the MIT License.
-
----
-
-**Made with ❤️ for content creators**
+Ye sab 8 providers ke beech rotate karke 500 unique images banayega. Inhe
+commit kar dein — ab final fallback bhi kabhi repeat nahi hoga (jab tak
+scenes > 500 na ho jayein ek hi run mein).
