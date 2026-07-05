@@ -20,9 +20,10 @@ RETRY_DELAY = 5
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# YOUTUBE "MADE FOR KIDS" (COPPA) - READ BEFORE CHANGING
-# This channel's content is ABOUT babies/children but is SPOKEN TO parents,
-# which is why MADE_FOR_KIDS defaults to False below.
+# YOUTUBE "MADE FOR KIDS" (COPPA)
+# This channel's content is dark/mystery body-science facts aimed at adults
+# (18+), so MADE_FOR_KIDS defaults to False. If your niche or audience
+# changes again, re-verify this setting - COPPA fines are no joke.
 # ---------------------------------------------------------------------------
 MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
 
@@ -217,9 +218,10 @@ def upload_all(video_path, thumb_path, script_data):
         raise ValueError("Invalid script data - missing title")
 
     title = script_data.get('title', 'Untitled')
-    # FIX: tags now come from script_data (set by main.py via
-    # niche_strategy.generate_seo_tags) instead of one fixed hardcoded list.
-    tags = script_data.get('tags') or ['parenting', 'babydevelopment', 'shorts', 'brainscience']
+    # Tags come from script_data (set by main.py via niche_strategy.generate_seo_tags).
+    # Fallback below only fires if that ever comes back empty - matches the
+    # current dark-facts niche, not the old parenting-channel tags.
+    tags = script_data.get('tags') or ['facts', 'shorts', 'science', 'darkfacts', 'bodyfacts']
 
     logger.info(f"Starting upload process for: {title}")
     logger.info(f"selfDeclaredMadeForKids = {MADE_FOR_KIDS} (verify this is correct for your content!)")
@@ -240,4 +242,4 @@ def upload_all(video_path, thumb_path, script_data):
         "youtube_success": youtube_success,
         "youtube_video_id": yt_video_id,
         "facebook_success": facebook_success
-    }
+                    }
