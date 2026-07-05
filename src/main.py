@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 
@@ -96,6 +96,22 @@ class SKILLORPipeline:
 
     def run_pipeline(self, topic: str = None) -> dict:
         logger.info("\n🚀 STARTING SKILLOR - DARK BODY MYSTERY PIPELINE")
+
+        # Scheduler was being instantiated but never actually used - wire it
+        # in for its two genuinely useful bits: warn if we're posting too
+        # soon after the last video (spam-flag risk), and log which peak
+        # slot this run falls into (informational - GitHub Actions cron
+        # controls the actual trigger time, this doesn't block anything).
+        if self.video_history:
+            last_posted_at = self.video_history[-1].get('posted_at')
+            if last_posted_at:
+                try:
+                    last_dt = datetime.fromisoformat(last_posted_at)
+                    if not self.scheduler.validate_posting_interval(last_dt):
+                        logger.warning("Posting sooner than the recommended 2h gap since the last video - proceeding anyway, but keep an eye on spam flags.")
+                except Exception as e:
+                    logger.warning(f"Could not validate posting interval: {e}")
+
         script_data = self.generate_with_niche_strategy(topic)
 
         logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
@@ -120,7 +136,7 @@ class SKILLORPipeline:
 
         logger.info("\n📤 PHASE 5: UPLOAD WITH SEO TAGS")
         upload_result = upload_all(final_video, thumb_path, script_data) # tags auto jayenge
-        self._save_video_history({'title': script_data['title'], 'posted_at': datetime.now().isoformat()})
+        self._save_video_history({'title': script_data['title'], 'posted_at': datetime.now(timezone.utc).isoformat()})
 
         logger.info(f"\n✅ DONE: {script_data['title']}")
         return {'success': True}
