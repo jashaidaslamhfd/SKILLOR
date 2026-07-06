@@ -143,8 +143,13 @@ class SKILLORPipeline:
         thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
 
         logger.info("\n📤 PHASE 5: UPLOAD WITH SEO TAGS")
-        upload_result = upload_all(final_video, thumb_path, script_data) # tags auto jayenge
-        self._save_video_history({'title': script_data['title'], 'posted_at': datetime.now(timezone.utc).isoformat()})
+        upload_result = upload_all(final_video, thumb_path, script_data)
+        self._save_video_history({
+            'title': script_data['title'],
+            'posted_at': datetime.now(timezone.utc).isoformat(),
+            'facebook_success': upload_result.get('facebook_success', False),
+            'youtube_video_id': upload_result.get('youtube_video_id'),
+        })
 
         logger.info(f"\n✅ DONE: {script_data['title']}")
         return {'success': True}
