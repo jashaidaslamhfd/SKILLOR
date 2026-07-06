@@ -33,27 +33,63 @@ CTAS = [
 ]
 
 CATEGORY_TAGS = {
-    "Brain": ["neuroscience", "brainfacts", "psychologyfacts"],
-    "Body": ["humanbody", "bodyfacts", "anatomy"],
-    "Mystery": ["darkfacts", "mysteryscience", "weirdfacts"],
-    "Health": ["healthfacts", "bodyhacks", "sciencefacts"],
+    "Brain": [
+        "neuroscience", "brainfacts", "psychologyfacts", "mindblown",
+        "brainscience", "humanbrain", "nerveoussystem", "mentalhacks"
+    ],
+    "Body": [
+        "humanbody", "bodyfacts", "anatomy", "bodyparts", "humanfacts",
+        "bodyawareness", "bodymystery", "yourbiody"
+    ],
+    "Mystery": [
+        "mysteryscience", "weirdfacts", "creepyfacts", "unknownfacts",
+        "darkscience", "bodysecrets", "themoreyouknow", "mindblowing"
+    ],
+    "Health": [
+        "healthfacts", "bodyhacks", "sciencefacts", "healthscience",
+        "medicalmystery", "humanhealth", "wellness"
+    ],
 }
-BASE_TAGS = ["facts", "shorts", "science", "darkfacts"]
+# Strong base tags — YouTube search-optimized for dark/mystery science niche
+BASE_TAGS = [
+    "darkfacts", "facts", "shorts", "youtubeshorts", "science",
+    "didyouknow", "mindblowing", "funfacts", "scaryfacts", "viral"
+]
 TARGET_WORD_RANGE = (110, 150)
+
+
+def _make_seo_title(title: str, topic: str) -> str:
+    """Enhances the AI-generated title with CTR-boosting patterns common in
+    dark-facts shorts without being clickbaity enough to get flagged.
+    Keeps it under 70 chars (YouTube truncates beyond that in search)."""
+    # If the title already has a strong hook pattern leave it alone
+    power_words = ["secret", "nobody", "never", "actually", "dark", "scary",
+                   "real", "hidden", "warning", "shock", "fact", "truth"]
+    if any(pw in title.lower() for pw in power_words):
+        return title[:70]
+
+    # Prefix with a hook emoji + badge that performs well in dark-science niche
+    enhanced = f"🫀 {title}"
+    if len(enhanced) <= 70:
+        return enhanced
+    return title[:70]
+
 
 def get_random_topic() -> str:
     return random.choice(DARK_TOPICS)
 
+
 def get_topic_category(topic: str) -> str:
     topic_lower = topic.lower()
-    if any(word in topic_lower for word in ['brain', 'mind', 'sleep']):
+    if any(word in topic_lower for word in ['brain', 'mind', 'sleep', 'nerve', 'psych']):
         return "Brain"
-    elif any(word in topic_lower for word in ['heart', 'blood', 'lung', 'kidney', 'bone']):
+    elif any(word in topic_lower for word in ['heart', 'blood', 'lung', 'kidney', 'bone', 'organ']):
         return "Body"
-    elif any(word in topic_lower for word in ['scary', 'secret', 'kill']):
+    elif any(word in topic_lower for word in ['scary', 'secret', 'kill', 'dark', 'mystery', 'hidden']):
         return "Mystery"
     else:
         return "Body"
+
 
 def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
     if not hook_preference:
@@ -78,18 +114,27 @@ Return ONLY valid JSON, no other text, in exactly this shape:
 """
     return prompt
 
+
 def get_seo_tags(topic: str, category: str = "Body") -> list:
+    """Returns YouTube-optimized tag list (max 15 tags, mix of broad + niche)."""
     tags = BASE_TAGS.copy()
     tags.extend(CATEGORY_TAGS.get(category, []))
-    tags.extend(topic.lower().split()[:3])
-    return list(dict.fromkeys(tags))
+    # Add topic-specific keyword tags (each word separately for broader reach)
+    topic_words = [w for w in topic.lower().split() if len(w) > 3]
+    tags.extend(topic_words[:4])
+    # Deduplicate and cap at 15 (more tags beyond ~15 don't help YouTube SEO)
+    seen, result = set(), []
+    for t in tags:
+        clean = t.strip().lower().replace(' ', '')
+        if clean and clean not in seen:
+            seen.add(clean)
+            result.append(t)
+        if len(result) >= 15:
+            break
+    return result
 
 
 def generate_seo_tags(topic: str, category: str = "Body", title: str = "") -> list:
-    """main.py imports this exact name (`generate_seo_tags`, 3 args: topic,
-    category, title) - this was missing, which is what crashed the pipeline
-    with 'ImportError: cannot import name generate_seo_tags'. `title` isn't
-    needed for tag generation itself but is accepted for call compatibility."""
     return get_seo_tags(topic, category)
 
 
