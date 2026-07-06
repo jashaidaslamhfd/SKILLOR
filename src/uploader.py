@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import time
 import google.oauth2.credentials
@@ -6,6 +7,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 import requests
+from niche_strategy import _make_seo_title
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -28,11 +30,72 @@ RETRY_DELAY = 5
 MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
 
 
-def _build_description(script_data: dict, hashtags: list) -> str:
-    voiceover = script_data.get('voiceover', '')
-    cta = script_data.get('cta', '')
-    hashtag_line = ' '.join(f"#{h}" for h in hashtags)
-    return f"{voiceover[:180]}...\n\n{cta}\n\n{hashtag_line}"
+def _build_youtube_description(script_data: dict, tags: list) -> str:
+    """CTR-optimized YouTube description:
+    - First 2 lines visible before 'Show more' — hook viewer immediately
+    - Keywords appear early (good for YouTube search ranking)
+    - Clean hashtag section at end (max 3 work best for YT Shorts reach)"""
+    title = script_data.get('title', '')
+    hook = script_data.get('hook', '')
+    cta = script_data.get('cta', 'Follow for more dark body secrets.')
+    description = script_data.get('description', '')
+
+    # YouTube shows only first ~125 chars before "Show more" in Shorts
+    # Put the most engaging line first so it doubles as the preview text
+    first_line = hook[:120] if hook else title
+
+    # Top 3 tags as hashtags (YouTube Shorts surfaces videos via hashtags)
+    yt_hashtags = ' '.join(f"#{t}" for t in tags[:3])
+
+    return (
+        f"{first_line}\n\n"
+        f"{description}\n\n"
+        f"👇 {cta}\n\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔬 Dark body science | USA adults\n"
+        f"━━━━━━━━━━━━━━━\n\n"
+        f"{yt_hashtags}"
+    )[:5000]
+
+
+def _build_facebook_description(script_data: dict, tags: list) -> str:
+    """Facebook Reels description:
+    - Facebook's own guidelines warn that MORE THAN 5 hashtags can
+      suppress reach — so we use MAX 3 (sweet spot for Reels).
+    - Hook in first line (shows before 'See more' truncation).
+    - Clean CTA drives the follow/share action."""
+    hook = script_data.get('hook', '')
+    cta = script_data.get('cta', 'Follow for more dark body secrets.')
+    description = script_data.get('description', '')
+
+    # Strict 3-hashtag limit for Facebook — avoids the >5 hashtag warning
+    fb_hashtags = ' '.join(f"#{t}" for t in tags[:3])
+
+    return (
+        f"{hook}\n\n"
+        f"{description}\n\n"
+        f"{cta}\n\n"
+        f"{fb_hashtags}"
+    )[:2200]
+
+
+def _already_uploaded_to_facebook(script_data: dict) -> bool:
+    """Checks output/video_history.json to see if this exact video title
+    was already successfully posted to Facebook — prevents the same video
+    being uploaded 3x on retries/re-runs of the same pipeline execution."""
+    history_file = "output/video_history.json"
+    if not os.path.exists(history_file):
+        return False
+    try:
+        with open(history_file) as f:
+            history = json.load(f)
+        title = script_data.get('title', '')
+        return any(
+            v.get('title') == title and v.get('facebook_success')
+            for v in history
+        )
+    except Exception:
+        return False
 
 
 def _upload_youtube(video_path, thumb_path, script_data, tags):
@@ -53,7 +116,8 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
         return False, None
 
     title = script_data.get('title', 'Untitled')
-    desc = _build_description(script_data, tags)
+    enhanced_title = _make_seo_title(title, script_data.get('topic', title))
+    desc = _build_youtube_description(script_data, tags)
 
     creds = google.oauth2.credentials.Credentials(
         token=None,
@@ -67,7 +131,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
 
     body = {
         'snippet': {
-            'title': title[:100],
+            'title': enhanced_title[:100],
             'description': desc[:5000],
             'categoryId': '22',
             # FIX: was a fixed hardcoded list on every single video - now
@@ -144,8 +208,15 @@ def _upload_facebook_reels(video_path, script_data, tags):
         logger.warning("FB_ACCESS_TOKEN or FB_PAGE_ID missing - Facebook upload skipped")
         return False
 
+    # Duplicate prevention: if this exact video title was already successfully
+    # posted to Facebook in a previous run, skip it rather than uploading again.
+    if _already_uploaded_to_facebook(script_data):
+        logger.info(f"Facebook: '{script_data.get('title')}' already uploaded — skipping duplicate.")
+        return True  # treat as success so pipeline doesn't retry/fail
+
     title = script_data.get('title', 'Untitled')
-    description = _build_description(script_data, tags)[:2200]  # FB Reels description limit is generous, not 63 chars
+    # Max 3 hashtags — Facebook's own algorithm penalises Reels with >5 hashtags
+    description = _build_facebook_description(script_data, tags)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -241,5 +312,5 @@ def upload_all(video_path, thumb_path, script_data):
     return {
         "youtube_success": youtube_success,
         "youtube_video_id": yt_video_id,
-        "facebook_success": facebook_success
-                    }
+        "facebook_success": facebook_success,
+    }
