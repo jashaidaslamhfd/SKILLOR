@@ -1,236 +1,262 @@
 """
-src/shorts_enhancer.py
+src/seo_generator.py
 
-PRD "Shorts Generator" feature. SKILLOR already produces Shorts-only videos
-(video_editor.py hardcodes a 1080x1920 canvas and 40-55s target), so the
-"convert a long video into Shorts" part of the PRD doesn't apply here.
-What DOES apply and add value on top of the existing pipeline:
+PRD "AI SEO Generator" feature, adapted to SKILLOR's dark-facts Shorts niche.
+Pure post-processing on top of an already-generated script_data dict — no
+extra LLM calls, so it's free and instant to run for every video.
 
-  - A finer-grained hook score with concrete fix suggestions (quality_checker
-    already scores the hook 0-100 for the approve/reject gate; this module
-    explains *why* and *what to change*, so a human reviewing a low-scoring
-    video knows what to fix instead of just seeing a number)
-  - Per-scene caption pacing check (words-per-second) - a scene can pass
-    quality_checker's overall pacing check while still having one scene
-    that flashes by unreadably fast or drags
-  - Shorts-specific hashtag set (#shorts is close to mandatory for Shorts
-    surfacing - separate from the general SEO tags in seo_generator.py)
-  - SRT subtitle file export from the exact per-scene audio durations
-    video_editor.py already computes - lets you upload real closed
-    captions (accessibility + a documented small SEO/reach benefit),
-    reusing timing that's otherwise only baked into burned-in captions
+Produces:
+  - title_options: 5 SEO-friendly title variants (different hook angles)
+  - description: CTR-optimized YouTube description (reuses the same shape
+    uploader.py already builds, factored out here so it's the single
+    source of truth)
+  - hashtags: deduplicated, ranked hashtag list
+  - pinned_comment: a comment worth auto-pinning post-upload to seed
+    engagement (main.py/uploader.py can pin it via commentThreads.insert)
+  - playlist_suggestion: which existing playlist this video best fits
+  - seo_score: 0-100 with a breakdown, so low-scoring videos can be
+    flagged the same way quality_checker flags weak scripts
+
+Nothing here calls the network or an LLM - it's deterministic string/rule
+based scoring, matching the pattern already used in quality_checker.py and
+anti_spam.py.
 """
 
-import os
+import re
 import logging
 from typing import Dict, List
+
+from niche_strategy import generate_seo_tags, _make_seo_title, get_topic_category
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Readable range for on-screen word-by-word captions. Below this, text
-# flashes by too fast to read; above this, it drags and viewers swipe away.
-MIN_WORDS_PER_SEC = 1.5
-MAX_WORDS_PER_SEC = 3.5
+TITLE_MAX_LEN = 70          # YouTube truncates further titles in search UI
+DESCRIPTION_MAX_LEN = 5000  # YouTube hard limit
+PINNED_COMMENT_MAX_LEN = 200
 
-SHORTS_HASHTAGS = ["#shorts", "#youtubeshorts", "#short"]
+# Existing playlists this channel maintains (edit to match your real
+# playlist names/IDs - used only for suggestion text, not an API call).
+PLAYLISTS_BY_CATEGORY = {
+    "Brain": "Dark Brain Facts",
+    "Body": "Dark Body Facts",
+    "Mystery": "Body Mysteries",
+    "Health": "Health & Science Shorts",
+}
 
-
-# ---------------------------------------------------------------------------
-# Hook scoring with actionable feedback
-# ---------------------------------------------------------------------------
-
-_CURIOSITY_TRIGGERS = [
-    "don't know", "doesn't know", "myth", "truth", "shocking",
-    "secret", "discovered", "most people", "never knew",
+_TITLE_TEMPLATES = [
+    "{topic}",
+    "The Truth About {topic}",
+    "{topic} (Doctors Won't Tell You)",
+    "Why {topic} Actually Happens",
+    "{topic}... This Is Real",
 ]
-_POWER_WORDS = [
-    "proven", "science", "expert", "revealed", "breakthrough",
-    "hidden", "trick", "hack", "amazing", "incredible",
-]
 
 
-def score_hook_detailed(hook: str) -> Dict:
-    """Same scoring logic as quality_checker._score_hook, but returns which
-    checks passed/failed and a concrete suggestion for each miss, instead
-    of a single collapsed number. Meant for a human reviewing why a video
-    scored low, not for the automated approve/reject gate (that stays in
-    quality_checker.py so there's one source of truth for the pass/fail
-    threshold)."""
-    checks = []
-    score = 0
+def _clean_topic_for_title(topic: str) -> str:
+    """Templates like 'The Truth About Why Your Heart Skips a Beat' read
+    awkwardly - strip a leading 'Why'/'Your' so templated titles stay
+    grammatical."""
+    t = topic.strip()
+    t = re.sub(r'^(why|your|the)\s+', '', t, flags=re.IGNORECASE)
+    return t[0].upper() + t[1:] if t else topic
 
-    if not hook or len(hook) < 10:
-        return {
-            'score': 0,
-            'checks': [{'name': 'length', 'passed': False,
-                        'note': 'Hook missing or too short - needs at least a full sentence.'}],
-        }
 
-    score += 50
-    has_question = '?' in hook
-    checks.append({
-        'name': 'question_format', 'passed': has_question,
-        'note': 'Questions pull viewers in during the first 3 seconds.' if has_question
-                else 'Consider rephrasing as a question to raise curiosity.',
-    })
-    if has_question:
-        score += 15
+def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[str]:
+    """Returns up to n distinct SEO-friendly title variants for the same
+    video. First option is always the enhanced original AI title (already
+    proven in production via niche_strategy._make_seo_title); the rest are
+    template-driven alternates so there's real angle diversity, not just
+    punctuation changes."""
+    base_title = script_data.get('title') or topic
+    options = [_make_seo_title(base_title, topic)]
 
-    has_curiosity = any(t in hook.lower() for t in _CURIOSITY_TRIGGERS)
-    checks.append({
-        'name': 'curiosity_gap', 'passed': has_curiosity,
-        'note': 'Good curiosity-gap phrasing.' if has_curiosity
-                else f"Add a curiosity trigger, e.g. one of: {', '.join(_CURIOSITY_TRIGGERS[:4])}.",
-    })
-    if has_curiosity:
+    clean_topic = _clean_topic_for_title(topic)
+    seen = {options[0].lower()}
+    for template in _TITLE_TEMPLATES:
+        if len(options) >= n:
+            break
+        candidate = template.format(topic=clean_topic)[:TITLE_MAX_LEN]
+        if candidate.lower() not in seen:
+            options.append(candidate)
+            seen.add(candidate.lower())
+
+    return options[:n]
+
+
+def generate_hashtags(topic: str, category: str, n: int = 8) -> List[str]:
+    """Wraps niche_strategy.generate_seo_tags() into ready-to-use hashtags,
+    ranked broad-first (helps discovery) then niche-specific (helps
+    relevance). Capped at n since YouTube only surfaces the first few
+    hashtags above the title anyway, and Shorts specifically rewards a
+    tight, relevant set over a long list."""
+    tags = generate_seo_tags(topic, category)
+    return [f"#{t}" for t in tags[:n]]
+
+
+def generate_description(script_data: Dict, tags: List[str]) -> str:
+    """Same structure as uploader._build_youtube_description, factored out
+    here so SEO generation and upload share one implementation instead of
+    drifting apart. uploader.py should import this going forward."""
+    title = script_data.get('title', '')
+    hook = script_data.get('hook', '')
+    cta = script_data.get('cta', 'Follow for more dark body secrets.')
+    description = script_data.get('description', '')
+
+    first_line = hook[:120] if hook else title
+    yt_hashtags = ' '.join(f"#{t}" for t in tags[:3])
+
+    return (
+        f"{first_line}\n\n"
+        f"{description}\n\n"
+        f"👇 {cta}\n\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔬 Dark body science | USA adults\n"
+        f"━━━━━━━━━━━━━━━\n\n"
+        f"{yt_hashtags}"
+    )[:DESCRIPTION_MAX_LEN]
+
+
+def generate_pinned_comment(script_data: Dict) -> str:
+    """A short comment worth pinning right after upload to seed the first
+    reply/engagement signal. Keep it a genuine question or prompt - not an
+    engagement-bait command like 'like if you agree', which YouTube's spam
+    systems increasingly downrank."""
+    topic = script_data.get('topic', script_data.get('title', 'this'))
+    comment = f"Did you know this about {topic.lower()}? Curious what surprised you most 👇"
+    return comment[:PINNED_COMMENT_MAX_LEN]
+
+
+def suggest_playlist(category: str) -> str:
+    return PLAYLISTS_BY_CATEGORY.get(category, "Dark Body Facts")
+
+
+def _score_title(title: str) -> int:
+    """0-100. Rewards length in the sweet spot, a power word, and presence
+    of a number - all correlate with higher Shorts CTR without tipping into
+    all-caps/clickbait territory that risks a policy strike."""
+    if not title:
+        return 0
+    score = 40
+    length = len(title)
+    if 30 <= length <= 60:
+        score += 25
+    elif length < 30:
+        score += 10
+    else:
+        score += 5  # over 60 chars risks truncation in search results
+
+    power_words = ['secret', 'truth', 'real', 'hidden', 'actually', 'why', 'this']
+    if any(w in title.lower() for w in power_words):
         score += 20
 
-    has_power_word = any(w in hook.lower() for w in _POWER_WORDS)
-    checks.append({
-        'name': 'power_word', 'passed': has_power_word,
-        'note': 'Good use of a power word.' if has_power_word
-                else f"Add a power word, e.g. one of: {', '.join(_POWER_WORDS[:4])}.",
-    })
-    if has_power_word:
-        score += 15
+    if re.search(r'\d', title):
+        score += 10
 
-    word_count = len(hook.split())
-    length_ok = 8 <= word_count <= 15
-    checks.append({
-        'name': 'length_8_to_15_words', 'passed': length_ok,
-        'note': f"{word_count} words is in the ideal range." if length_ok
-                else f"{word_count} words - {'too short, expand it a bit' if word_count < 8 else 'a bit long, tighten it'}.",
-    })
-    score += 10 if length_ok else (-10 if word_count < 8 else 0)
+    if title.isupper():
+        score -= 15  # reads as spam/clickbait, hurts rather than helps
 
-    return {'score': max(0, min(score, 100)), 'checks': checks}
+    return max(0, min(score, 100))
 
 
-# ---------------------------------------------------------------------------
-# Per-scene caption pacing
-# ---------------------------------------------------------------------------
+def _score_description(description: str, hook: str) -> int:
+    """0-100. Rewards putting the hook in the visible first ~125 chars
+    (before YouTube's 'Show more' cutoff) and including hashtags."""
+    if not description:
+        return 0
+    score = 30
+    if hook and hook[:60].lower() in description[:150].lower():
+        score += 30
+    if '#' in description:
+        score += 20
+    length = len(description)
+    if 150 <= length <= 1000:
+        score += 20
+    elif length > 0:
+        score += 10
+    return max(0, min(score, 100))
 
-def check_caption_pacing(scenes: List[Dict], audio_segments: List[Dict]) -> Dict:
-    """Flags any individual scene whose words-per-second falls outside the
-    readable range, even if the video's overall pacing (checked in
-    quality_checker) looks fine on average. audio_segments come from
-    voice_generator.generate_voice_segments() and carry the real spoken
-    duration per scene."""
-    issues = []
-    per_scene = []
 
-    for i, (scene, seg) in enumerate(zip(scenes, audio_segments)):
-        caption = scene.get('caption', '')
-        duration = max(seg.get('duration', 0), 0.01)
-        word_count = len(caption.split())
-        wps = word_count / duration
+def _score_tags(tags: List[str]) -> int:
+    """0-100. Rewards having enough tags for reach without over-stuffing
+    (YouTube ignores tags past a certain total character budget, and
+    excessive tagging is itself a spam-flag risk anti_spam.py watches for)."""
+    if not tags:
+        return 0
+    count = len(tags)
+    if 8 <= count <= 15:
+        score = 90
+    elif count < 8:
+        score = 50 + count * 5
+    else:
+        score = max(40, 90 - (count - 15) * 5)
 
-        status = "ok"
-        if wps < MIN_WORDS_PER_SEC:
-            status = "too_slow"
-            issues.append(f"Scene {i+1}: {wps:.1f} words/sec - dragging, consider trimming the caption or shortening the scene.")
-        elif wps > MAX_WORDS_PER_SEC:
-            status = "too_fast"
-            issues.append(f"Scene {i+1}: {wps:.1f} words/sec - too fast to read, consider splitting into two scenes.")
+    unique_ratio = len(set(t.lower() for t in tags)) / count
+    score = int(score * unique_ratio)
+    return max(0, min(score, 100))
 
-        per_scene.append({'scene': i + 1, 'words_per_sec': round(wps, 2), 'status': status})
 
-    return {
-        'per_scene': per_scene,
-        'issues': issues,
-        'all_readable': len(issues) == 0,
+def calculate_seo_score(title: str, description: str, tags: List[str], script_data: Dict) -> Dict:
+    """Overall 0-100 SEO score plus a per-component breakdown, mirroring
+    the shape quality_checker.check_script_quality() returns so both can be
+    logged/displayed the same way in main.py."""
+    hook = script_data.get('hook', '')
+    components = {
+        'title_score': _score_title(title),
+        'description_score': _score_description(description, hook),
+        'tags_score': _score_tags(tags),
     }
+    overall = round(sum(components.values()) / len(components))
+    components['overall_seo_score'] = overall
+
+    if overall >= 85:
+        rating = "🟢 EXCELLENT"
+    elif overall >= 70:
+        rating = "🟡 GOOD"
+    elif overall >= 50:
+        rating = "🟠 NEEDS WORK"
+    else:
+        rating = "🔴 POOR"
+
+    return {'scores': components, 'rating': rating}
 
 
-# ---------------------------------------------------------------------------
-# Shorts hashtags
-# ---------------------------------------------------------------------------
+def generate_seo_package(topic: str, script_data: Dict) -> Dict:
+    """Single entry point main.py can call once per video. Returns
+    everything the PRD's 'AI SEO Generator' section asks for, scoped to
+    what actually applies to a YouTube Short (chapters are skipped - not
+    supported on sub-60s videos)."""
+    category = get_topic_category(topic)
+    tags = generate_seo_tags(topic, category, script_data.get('title', ''))
+    title_options = generate_title_options(topic, script_data)
+    chosen_title = title_options[0]
+    description = generate_description(script_data, tags)
+    hashtags = generate_hashtags(topic, category)
+    pinned_comment = generate_pinned_comment(script_data)
+    playlist = suggest_playlist(category)
+    seo_score = calculate_seo_score(chosen_title, description, tags, script_data)
 
-def generate_shorts_hashtags(topic_tags: List[str], n: int = 5) -> List[str]:
-    """#shorts-family tags first (near-mandatory for Shorts shelf
-    placement), then the top niche tags already computed by
-    seo_generator/niche_strategy - avoids re-deriving tags from scratch."""
-    result = list(SHORTS_HASHTAGS)
-    for t in topic_tags:
-        tag = f"#{t}" if not t.startswith('#') else t
-        if tag.lower() not in (x.lower() for x in result):
-            result.append(tag)
-        if len(result) >= n:
-            break
-    return result[:n]
-
-
-# ---------------------------------------------------------------------------
-# SRT subtitle export
-# ---------------------------------------------------------------------------
-
-def _seconds_to_srt_timestamp(seconds: float) -> str:
-    millis = int(round(seconds * 1000))
-    hours, millis = divmod(millis, 3_600_000)
-    minutes, millis = divmod(millis, 60_000)
-    secs, millis = divmod(millis, 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-
-def generate_srt(scenes: List[Dict], audio_segments: List[Dict], output_path: str = None) -> str:
-    """Builds standard SRT subtitle content from each scene's caption and
-    its real audio duration (same timing source video_editor.py uses for
-    burned-in captions, so the uploaded closed-caption file matches what's
-    on screen). Writes to output_path if given, always returns the SRT
-    text either way."""
-    lines = []
-    t = 0.0
-    for i, (scene, seg) in enumerate(zip(scenes, audio_segments), start=1):
-        duration = max(seg.get('duration', 0), 0.6)
-        start, end = t, t + duration
-        lines.append(str(i))
-        lines.append(f"{_seconds_to_srt_timestamp(start)} --> {_seconds_to_srt_timestamp(end)}")
-        lines.append(scene.get('caption', '').strip())
-        lines.append("")
-        t = end
-
-    srt_content = "\n".join(lines)
-
-    if output_path:
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(srt_content)
-        logger.info(f"SRT subtitles written to {output_path}")
-
-    return srt_content
-
-
-# ---------------------------------------------------------------------------
-# Combined report
-# ---------------------------------------------------------------------------
-
-def build_shorts_report(script_data: Dict, audio_segments: List[Dict], topic_tags: List[str]) -> Dict:
-    """Single entry point main.py can call alongside quality_checker /
-    anti_spam. Doesn't gate publishing on its own (quality_checker already
-    owns the approve/reject decision) - this is diagnostic + asset output."""
-    hook_detail = score_hook_detailed(script_data.get('hook', ''))
-    pacing = check_caption_pacing(script_data.get('scenes', []), audio_segments)
-    hashtags = generate_shorts_hashtags(topic_tags)
+    logger.info(f"SEO package built for '{topic}' - score: {seo_score['scores']['overall_seo_score']}/100 ({seo_score['rating']})")
 
     return {
-        'hook_detail': hook_detail,
-        'caption_pacing': pacing,
-        'shorts_hashtags': hashtags,
+        'title_options': title_options,
+        'chosen_title': chosen_title,
+        'description': description,
+        'tags': tags,
+        'hashtags': hashtags,
+        'pinned_comment': pinned_comment,
+        'playlist_suggestion': playlist,
+        'seo_score': seo_score,
     }
 
 
 if __name__ == "__main__":
     import json
-    test_scenes = [
-        {"visual": "human heart beating", "caption": "Your heart has its own brain."},
-        {"visual": "close up neurons", "caption": "It contains over 40000 neurons that operate independently of your actual brain."},
-    ]
-    test_segments = [{"duration": 2.0}, {"duration": 3.0}]
-    report = build_shorts_report(
-        {"hook": "Doctors don't want you to know this about your heart...", "scenes": test_scenes},
-        test_segments,
-        ["darkfacts", "heartfacts", "science"],
-    )
-    print(json.dumps(report, indent=2))
-    print(generate_srt(test_scenes, test_segments))
+    test_script = {
+        'title': 'Your Heart Has Its Own Brain',
+        'hook': "Doctors don't want you to know this about your heart...",
+        'cta': 'Follow for more dark body secrets',
+        'description': 'Your heart contains its own independent nervous system.',
+    }
+    result = generate_seo_package("Your Heart Has Its Own Brain", test_script)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
