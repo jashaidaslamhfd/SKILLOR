@@ -8,6 +8,7 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 import requests
 from niche_strategy import _make_seo_title
+from seo_generator import generate_description as _seo_generate_description
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -31,31 +32,11 @@ MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
 
 
 def _build_youtube_description(script_data: dict, tags: list) -> str:
-    """CTR-optimized YouTube description:
-    - First 2 lines visible before 'Show more' — hook viewer immediately
-    - Keywords appear early (good for YouTube search ranking)
-    - Clean hashtag section at end (max 3 work best for YT Shorts reach)"""
-    title = script_data.get('title', '')
-    hook = script_data.get('hook', '')
-    cta = script_data.get('cta', 'Follow for more dark body secrets.')
-    description = script_data.get('description', '')
-
-    # YouTube shows only first ~125 chars before "Show more" in Shorts
-    # Put the most engaging line first so it doubles as the preview text
-    first_line = hook[:120] if hook else title
-
-    # Top 3 tags as hashtags (YouTube Shorts surfaces videos via hashtags)
-    yt_hashtags = ' '.join(f"#{t}" for t in tags[:3])
-
-    return (
-        f"{first_line}\n\n"
-        f"{description}\n\n"
-        f"👇 {cta}\n\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"🔬 Dark body science | USA adults\n"
-        f"━━━━━━━━━━━━━━━\n\n"
-        f"{yt_hashtags}"
-    )[:5000]
+    """CTR-optimized YouTube description. Delegates to
+    seo_generator.generate_description() so upload and the SEO-package
+    preview (script_data['description'] set in main.py) can never drift
+    out of sync - this used to be a separate copy of the same logic."""
+    return _seo_generate_description(script_data, tags)
 
 
 def _build_facebook_description(script_data: dict, tags: list) -> str:
@@ -119,13 +100,23 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
     enhanced_title = _make_seo_title(title, script_data.get('topic', title))
     desc = _build_youtube_description(script_data, tags)
 
+    # NOTE: captions.insert (SRT upload) and commentThreads.insert (posting
+    # the pinned_comment from seo_generator) both need the broader
+    # youtube.force-ssl scope, not just youtube.upload. Listing it here
+    # doesn't grant it by itself - your REFRESH_TOKEN has to have actually
+    # been issued with consent for this scope, or those two calls below
+    # will fail with a 403 and get skipped (logged as a warning, not fatal -
+    # the video upload itself only needs youtube.upload and is unaffected).
     creds = google.oauth2.credentials.Credentials(
         token=None,
         refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
         client_id=google_client_id,
         client_secret=google_client_secret,
-        scopes=["https://www.googleapis.com/auth/youtube.upload"],
+        scopes=[
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube.force-ssl",
+        ],
     )
     yt = build('youtube', 'v3', credentials=creds)
 
@@ -172,6 +163,54 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
                     logger.info("Thumbnail uploaded successfully")
                 except Exception as thumb_error:
                     logger.warning(f"Thumbnail upload failed: {thumb_error}")
+
+            # Optional: real closed-caption track from seo/shorts modules'
+            # SRT export (main.py sets script_data['srt_path']). Best-effort
+            # only - see scope note above.
+            srt_path = script_data.get('srt_path')
+            if srt_path and os.path.exists(srt_path):
+                try:
+                    yt.captions().insert(
+                        part="snippet",
+                        body={
+                            "snippet": {
+                                "videoId": yt_video_id,
+                                "language": "en",
+                                "name": "English",
+                                "isDraft": False,
+                            }
+                        },
+                        media_body=MediaFileUpload(srt_path, mimetype="application/octet-stream"),
+                    ).execute()
+                    logger.info("Captions uploaded successfully")
+                except Exception as captions_error:
+                    logger.warning(
+                        f"Captions upload failed (needs youtube.force-ssl scope on REFRESH_TOKEN): {captions_error}"
+                    )
+
+            # Optional: post the pinned_comment from seo_generator as the
+            # first top-level comment. NOTE: this only posts the comment -
+            # the YouTube Data API has no public endpoint to actually pin a
+            # comment, so pinning it still needs one manual click in Studio.
+            pinned_comment = script_data.get('pinned_comment')
+            if pinned_comment:
+                try:
+                    yt.commentThreads().insert(
+                        part="snippet",
+                        body={
+                            "snippet": {
+                                "videoId": yt_video_id,
+                                "topLevelComment": {
+                                    "snippet": {"textOriginal": pinned_comment}
+                                },
+                            }
+                        },
+                    ).execute()
+                    logger.info("Seed comment posted (pin it manually in YouTube Studio for best effect)")
+                except Exception as comment_error:
+                    logger.warning(
+                        f"Seed comment post failed (needs youtube.force-ssl scope on REFRESH_TOKEN): {comment_error}"
+                    )
             break
 
         except HttpError as e:
