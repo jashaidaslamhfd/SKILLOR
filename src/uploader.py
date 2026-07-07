@@ -36,7 +36,7 @@ def _build_youtube_description(script_data: dict, tags: list) -> str:
     seo_generator.generate_description() so upload and the SEO-package
     preview (script_data['description'] set in main.py) can never drift
     out of sync - this used to be a separate copy of the same logic."""
-    return _seo_generate_description(script_data, tags)
+    return generate_description(script_data, tags)
 
 
 def _build_facebook_description(script_data: dict, tags: list) -> str:
