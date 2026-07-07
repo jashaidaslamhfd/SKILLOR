@@ -22,6 +22,7 @@ from scheduler import USAPeakTimeScheduler
 from anti_spam import AntiSpamSystem
 from seo_generator import generate_seo_package
 from shorts_enhancer import build_shorts_report, generate_srt
+from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -146,6 +147,33 @@ class SKILLORPipeline:
         if seo_overall < 50:
             logger.warning("SEO score is low - review title/description/tags before this goes out.")
 
+        # CTR prediction (heuristic - needs at least the SEO score; hook
+        # score gets folded in later once shorts_report exists, so this
+        # first call is intentionally partial and gets recomputed after
+        # Phase 3b with the full signal set).
+        ctr_result = predict_ctr(script_data)
+        script_data['ctr_prediction'] = ctr_result
+
+        ranked_hashtags = rank_hashtags(script_data['hashtags'])
+        script_data['hashtags_ranked'] = ranked_hashtags
+
+        ab_result = generate_ab_variants(script_data, seo_package['title_options'])
+        script_data['ab_test'] = ab_result
+        if ab_result['recommended'] and ab_result['recommended']['title'] != script_data['title']:
+            logger.info(
+                f"A/B pre-test suggests a different combo may score higher: "
+                f"'{ab_result['recommended']['title']}' ({ab_result['recommended']['description_variant']}) - "
+                f"kept the original pick since this is prep, not a live split test."
+            )
+
+        history_insights = get_historical_insights()
+        if history_insights['insights']:
+            top = history_insights['insights'][0]
+            logger.info(
+                f"Historical pattern insight ({history_insights['data_source']}): "
+                f"'{top['title_pattern']}' titles average {top['avg_score']} (n={top['sample_size']})"
+            )
+
         logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
         image_paths = []
         used_hashes = set()
@@ -177,6 +205,13 @@ class SKILLORPipeline:
         if shorts_report['hook_detail']['score'] < 70:
             logger.warning(f"Hook score {shorts_report['hook_detail']['score']}/100 - see shorts_report.hook_detail.checks for specifics.")
 
+        # Recompute CTR prediction now that the hook score is available -
+        # the earlier call right after SEO generation only had the SEO
+        # score to go on.
+        script_data['ctr_prediction'] = predict_ctr(script_data)
+        logger.info(f"CTR prediction: {script_data['ctr_prediction'].get('ctr_prediction')}/10 "
+                    f"(confidence {script_data['ctr_prediction'].get('confidence')})")
+
         os.makedirs("output", exist_ok=True)
         srt_path = "output/captions.srt"
         generate_srt(script_data['scenes'], audio_segments, output_path=srt_path)
@@ -186,6 +221,16 @@ class SKILLORPipeline:
         final_video = build_video(image_paths, audio_segments, script_data['scenes'])
         thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
 
+        # PRD "Thumbnail SEO" - real analysis of the rendered thumbnail file
+        # (contrast in the text strip, text length/readability, color
+        # warmth), not a guess from the title string alone.
+        thumbnail_score = score_thumbnail(thumb_path, script_data['title'])
+        script_data['thumbnail_score'] = thumbnail_score
+        if 'overall_thumbnail_score' in thumbnail_score:
+            logger.info(f"Thumbnail score: {thumbnail_score['overall_thumbnail_score']}/100")
+            if thumbnail_score['overall_thumbnail_score'] < 60:
+                logger.warning("Thumbnail score is low - check contrast_score/readability_score/color_score for specifics.")
+
         logger.info("\n📤 PHASE 5: UPLOAD WITH SEO TAGS")
         upload_result = upload_all(final_video, thumb_path, script_data)
         self._save_video_history({
@@ -193,6 +238,12 @@ class SKILLORPipeline:
             'posted_at': datetime.now(timezone.utc).isoformat(),
             'facebook_success': upload_result.get('facebook_success', False),
             'youtube_video_id': upload_result.get('youtube_video_id'),
+            # No real YouTube Analytics puller exists yet - these are the
+            # predicted scores from this same run, recorded so
+            # get_historical_insights() has something to bucket by
+            # title-pattern until real 'actual_ctr'/'views' data is added.
+            'seo_score': script_data.get('seo_score', {}).get('scores', {}).get('overall_seo_score'),
+            'predicted_ctr': script_data.get('ctr_prediction', {}).get('ctr_prediction'),
         })
 
         logger.info(f"\n✅ DONE: {script_data['title']}")
