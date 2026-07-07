@@ -20,6 +20,8 @@ from niche_strategy import (
 from quality_checker import QualityChecker
 from scheduler import USAPeakTimeScheduler
 from anti_spam import AntiSpamSystem
+from seo_generator import generate_seo_package
+from shorts_enhancer import build_shorts_report, generate_srt
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -122,6 +124,28 @@ class SKILLORPipeline:
 
         script_data = self.generate_with_niche_strategy(topic)
 
+        logger.info("\n🔍 PHASE 1b: SEO GENERATION")
+        # PRD "AI SEO Generator" - multi-title options, description, tags,
+        # hashtags, pinned comment, playlist suggestion, and a 0-100 SEO
+        # score. Runs once against the final approved script (not against
+        # every retry attempt in generate_with_niche_strategy) since it's
+        # deterministic post-processing, not something that affects
+        # approval itself.
+        seo_topic = script_data.get('topic', topic)
+        seo_package = generate_seo_package(seo_topic, script_data)
+        script_data['title'] = seo_package['chosen_title']
+        script_data['title_options'] = seo_package['title_options']
+        script_data['description'] = seo_package['description']
+        script_data['tags'] = seo_package['tags']
+        script_data['hashtags'] = seo_package['hashtags']
+        script_data['pinned_comment'] = seo_package['pinned_comment']
+        script_data['playlist_suggestion'] = seo_package['playlist_suggestion']
+        script_data['seo_score'] = seo_package['seo_score']
+        seo_overall = seo_package['seo_score']['scores']['overall_seo_score']
+        logger.info(f"SEO score: {seo_overall}/100 ({seo_package['seo_score']['rating']})")
+        if seo_overall < 50:
+            logger.warning("SEO score is low - review title/description/tags before this goes out.")
+
         logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
         image_paths = []
         used_hashes = set()
@@ -137,6 +161,26 @@ class SKILLORPipeline:
         logger.info("\n🔊 PHASE 3: VOICE GENERATION - DARK MALE")
         # CRITICAL CHANGE: am_adam + slow speed
         audio_segments = generate_voice_segments(script_data['scenes'], voice="am_adam", speed=0.95)
+
+        logger.info("\n📝 PHASE 3b: SHORTS ENHANCEMENTS")
+        # PRD "Shorts Generator" - detailed hook feedback, per-scene caption
+        # pacing check (catches a single too-fast/too-slow scene that the
+        # overall-average pacing check in quality_checker can miss), a
+        # Shorts-specific hashtag set, and a real SRT closed-caption file
+        # (uses the same per-scene audio durations video_editor.py uses for
+        # burned-in captions, so timing matches exactly).
+        shorts_report = build_shorts_report(script_data, audio_segments, script_data.get('tags', []))
+        script_data['shorts_report'] = shorts_report
+        if not shorts_report['caption_pacing']['all_readable']:
+            for issue in shorts_report['caption_pacing']['issues']:
+                logger.warning(f"Caption pacing: {issue}")
+        if shorts_report['hook_detail']['score'] < 70:
+            logger.warning(f"Hook score {shorts_report['hook_detail']['score']}/100 - see shorts_report.hook_detail.checks for specifics.")
+
+        os.makedirs("output", exist_ok=True)
+        srt_path = "output/captions.srt"
+        generate_srt(script_data['scenes'], audio_segments, output_path=srt_path)
+        script_data['srt_path'] = srt_path
 
         logger.info("\n🎬 PHASE 4: BUILD VIDEO")
         final_video = build_video(image_paths, audio_segments, script_data['scenes'])
