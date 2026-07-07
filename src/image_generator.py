@@ -127,87 +127,70 @@ def _layer_cloudflare(index, scene_text):
             pass
     raise RuntimeError(f"Cloudflare AI bad response: {response.status_code} {response.text[:150]}")
 
-def _layer_deepai(index, scene_text):
-    key = os.environ.get("DEEPAI_API_KEY")
-    if not key:
-        raise RuntimeError("DEEPAI_API_KEY not set - skipping DeepAI layer")
+def _layer_modelslab(index, scene_text):
+    api_key = os.environ.get("MODELSLAB_API_KEY")
+    if not api_key:
+        raise RuntimeError("MODELSLAB_API_KEY not set - skipping ModelsLab layer")
 
-    response = requests.post(
-        "https://api.deepai.org/api/text2img",
-        data={"text": scene_text},
-        headers={"api-key": key},
-        timeout=REQUEST_TIMEOUT,
-    )
+    payload = {
+        "key": api_key,
+        "prompt": scene_text,
+        "negative_prompt": "blurry, low quality, watermark",
+        "width": "1024",
+        "height": "1024",
+        "samples": "1",
+        "safety_checker": "no",
+    }
+    response = requests.post("https://modelslab.com/api/v6/images/text2img", json=payload, timeout=60)
     if response.status_code != 200:
-        raise RuntimeError(f"DeepAI bad response: {response.status_code} {response.text[:150]}")
-
-    img_url = response.json().get("output_url")
-    if not img_url:
-        raise RuntimeError("DeepAI response missing output_url")
-
-    img_resp = requests.get(img_url, timeout=REQUEST_TIMEOUT)
-    if img_resp.status_code != 200 or len(img_resp.content) < 2000:
-        raise RuntimeError("DeepAI: failed to download generated image")
-    return _save_bytes(img_resp.content, index)
-
-_OPENROUTER_FREE_MODEL_CACHE = {"checked": False, "model": None}
-
-def _get_free_openrouter_image_model(api_key):
-    if _OPENROUTER_FREE_MODEL_CACHE["checked"]:
-        return _OPENROUTER_FREE_MODEL_CACHE["model"]
-
-    model = None
-    try:
-        resp = requests.get(
-            "https://openrouter.ai/api/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            params={"output_modalities": "image"},
-            timeout=REQUEST_TIMEOUT,
-        )
-        if resp.status_code == 200:
-            for m in resp.json().get("data", []):
-                pricing = m.get("pricing", {})
-                prices = [pricing.get(k) for k in ("prompt", "completion", "image") if k in pricing]
-                if prices and all(float(p) == 0 for p in prices):
-                    model = m.get("id")
-                    break
-    except Exception as e:
-        logger.warning(f"OpenRouter free-model lookup failed: {e}")
-
-    _OPENROUTER_FREE_MODEL_CACHE["checked"] = True
-    _OPENROUTER_FREE_MODEL_CACHE["model"] = model
-    return model
-
-def _layer_openrouter(index, scene_text):
-    key = os.environ.get("OPENROUTER_API_KEY")
-    if not key:
-        raise RuntimeError("OPENROUTER_API_KEY not set - skipping OpenRouter layer")
-
-    model = _get_free_openrouter_image_model(key)
-    if not model:
-        raise RuntimeError("OpenRouter: no free image-output model currently available")
-
-    response = requests.post(
-        "https://openrouter.ai/api/v1/images",
-        headers={"Authorization": f"Bearer {key}"},
-        json={"model": model, "prompt": scene_text},
-        timeout=REQUEST_TIMEOUT,
-    )
-    if response.status_code != 200:
-        raise RuntimeError(f"OpenRouter bad response: {response.status_code} {response.text[:150]}")
+        raise RuntimeError(f"ModelsLab bad response: {response.status_code} {response.text[:150]}")
 
     data = response.json()
-    images = data.get("data") or data.get("images") or []
+    if data.get("status") not in ("success", "processing"):
+        raise RuntimeError(f"ModelsLab error: {data.get('message', data)}")
+    images = data.get("output") or data.get("images") or []
     if not images:
-        raise RuntimeError("OpenRouter: response contained no images")
+        raise RuntimeError("ModelsLab: no image URL returned (may need to poll fetch_result)")
 
-    first = images[0]
-    b64 = first.get("b64_json") or first.get("image") if isinstance(first, dict) else None
-    if not b64:
-        raise RuntimeError("OpenRouter: response image had no usable base64 data")
+    img_resp = requests.get(images[0], timeout=60)
+    if img_resp.status_code != 200 or len(img_resp.content) < 2000:
+        raise RuntimeError("ModelsLab: failed to download generated image")
+    return _save_bytes(img_resp.content, index)
 
-    import base64
-    return _save_bytes(base64.b64decode(b64), index, ext="png")
+def _layer_replicate(index, scene_text):
+    api_token = os.environ.get("REPLICATE_API_TOKEN")
+    if not api_token:
+        raise RuntimeError("REPLICATE_API_TOKEN not set - skipping Replicate layer")
+
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+    response = requests.post(
+        "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+        headers=headers,
+        json={"input": {"prompt": scene_text}},
+        timeout=30,
+    )
+    if response.status_code not in (200, 201):
+        raise RuntimeError(f"Replicate bad response: {response.status_code} {response.text[:150]}")
+
+    prediction = response.json()
+    get_url = prediction.get("urls", {}).get("get")
+    if not get_url:
+        raise RuntimeError("Replicate: no polling URL in response")
+
+    for _ in range(20):  # poll up to ~20s
+        time.sleep(1)
+        poll = requests.get(get_url, headers=headers, timeout=15).json()
+        status = poll.get("status")
+        if status == "succeeded":
+            output = poll.get("output")
+            img_url = output[0] if isinstance(output, list) else output
+            if not img_url:
+                raise RuntimeError("Replicate: succeeded but no output URL")
+            img_resp = requests.get(img_url, timeout=30)
+            return _save_bytes(img_resp.content, index)
+        if status == "failed":
+            raise RuntimeError(f"Replicate: prediction failed - {poll.get('error')}")
+    raise RuntimeError("Replicate: timed out waiting for prediction")
 
 def _layer5_local_pool(index, used_fallbacks: set):
     pool = _load_fallback_pool()
@@ -304,14 +287,17 @@ def _generate_one(index, scene, used_hashes: set, used_fallbacks: set):
     prompt = scene_text.replace(' ', '_')
     seed = random.randint(1000, 9999)
 
+    # DeepAI aur OpenRouter hata diye gaye — dono ka free tier khatam ho chuka hai
+    # (DeepAI ab sirf Pro members ke liye, OpenRouter ko paid credits chahiye),
+    # isliye ye har run mein sirf time waste kar rahe the bina kabhi succeed hue.
     layers = [
         ("Pollinations-flux", lambda: _layer1_pollinations_flux(index, prompt, seed)),
         ("Pollinations-turbo", lambda: _layer2_pollinations_turbo(index, prompt, seed)),
         ("HuggingFace", lambda: _layer3_huggingface(index, scene_text)),
         ("Cloudflare-AI", lambda: _layer_cloudflare(index, scene_text)),
-        ("DeepAI", lambda: _layer_deepai(index, scene_text)),
-        ("OpenRouter", lambda: _layer_openrouter(index, scene_text)),
         ("Gemini", lambda: _layer4_gemini(index, scene_text)),
+        ("ModelsLab", lambda: _layer_modelslab(index, scene_text)),
+        ("Replicate", lambda: _layer_replicate(index, scene_text)),
         ("Pexels-live", lambda: _layer6_pexels_live(index, scene_text, used_fallbacks)),
         ("Pixabay-live", lambda: _layer7_pixabay_live(index, scene_text, used_fallbacks)),
         ("LocalPool", lambda: _layer5_local_pool(index, used_fallbacks)),
