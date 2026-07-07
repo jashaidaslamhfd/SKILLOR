@@ -8,7 +8,7 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 import requests
 from niche_strategy import _make_seo_title
-from seo_generator import generate_seo_description as _seo_generate_description
+from seo_generator import generate_description
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
