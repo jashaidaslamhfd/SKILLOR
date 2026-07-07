@@ -123,31 +123,6 @@ def gen_gemini(prompt, seed, scene_text=None):
 
 
 # ---------------------------------------------------------------------------
-# 5) DEEPAI (needs DEEPAI_API_KEY env var, free tier)
-# ---------------------------------------------------------------------------
-def gen_deepai(prompt, seed, scene_text=None):
-    api_key = os.environ.get("DEEPAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("DEEPAI_API_KEY not set")
-    text = scene_text or prompt.replace("_", " ")
-    resp = requests.post(
-        "https://api.deepai.org/api/text2img",
-        data={"text": text},
-        headers={"api-key": api_key},
-        timeout=REQUEST_TIMEOUT,
-    )
-    if resp.status_code == 429:
-        raise RateLimitError("DeepAI: rate limited")
-    if resp.status_code != 200:
-        raise RuntimeError(f"DeepAI bad response: {resp.status_code}")
-    img_url = resp.json().get("output_url")
-    if not img_url:
-        raise RuntimeError("DeepAI: no output_url in response")
-    img_resp = requests.get(img_url, timeout=REQUEST_TIMEOUT)
-    return img_resp.content, "jpg"
-
-
-# ---------------------------------------------------------------------------
 # 6) CRAIYON (unofficial, no key needed — best-effort quality, good as a
 #    deep fallback before hitting the local static pool)
 # ---------------------------------------------------------------------------
@@ -268,7 +243,6 @@ PROVIDER_REGISTRY = [
     {"name": "Pollinations-turbo", "env_keys": [],                       "generate": gen_pollinations_turbo},
     {"name": "HuggingFace",        "env_keys": ["HF_API_KEY"],           "generate": gen_huggingface},
     {"name": "Gemini",             "env_keys": ["GEMINI_API_KEY"],       "generate": gen_gemini},
-    {"name": "DeepAI",             "env_keys": ["DEEPAI_API_KEY"],       "generate": gen_deepai},
     {"name": "Craiyon",            "env_keys": [],                       "generate": gen_craiyon},
     {"name": "ModelsLab",          "env_keys": ["MODELSLAB_API_KEY"],    "generate": gen_modelslab},
     {"name": "Replicate",          "env_keys": ["REPLICATE_API_TOKEN"],  "generate": gen_replicate},
