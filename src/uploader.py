@@ -124,7 +124,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
         'snippet': {
             'title': enhanced_title[:100],
             'description': desc[:5000],
-            'categoryId': '22',
+            'categoryId': '28',
             # FIX: was a fixed hardcoded list on every single video - now
             # topic/category-aware tags from niche_strategy.generate_seo_tags,
             # which also helps SEO reach and avoids duplicate-metadata spam risk.
