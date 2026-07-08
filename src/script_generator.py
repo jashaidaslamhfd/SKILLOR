@@ -4,115 +4,90 @@ import time
 import logging
 from groq import Groq, BadRequestError
 
+# 2026 Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-MIN_SCENES = 6
-MAX_SCENES = 8
-MIN_WORDS = 110
-MAX_WORDS = 150
+# 2026 Standards: High retention needs more scenes to maintain engagement
+MIN_SCENES = 8
+MAX_SCENES = 12
+MIN_WORDS = 130
+MAX_WORDS = 170
 
+def _get_system_prompt() -> str:
+    return """You are a top-tier Social Media Strategist for 2026. 
+    Your expertise is creating viral scripts for YouTube Shorts/Facebook Reels.
+    Focus on:
+    1. Pattern Interrupt Hooks: Start with something shocking or counter-intuitive.
+    2. High Pacing: Short, punchy sentences.
+    3. Loopable Outros: The end should naturally lead back to the start.
+    4. Retention: Remove all fluff; every word must add value.
+    5. Output: STRICT JSON format only."""
 
 def _default_prompt(topic: str) -> str:
-    """Fallback generic prompt (used only if no niche-specific prompt is passed in)."""
     return f"""
-    You are a viral YouTube Shorts scriptwriter for a USA audience.
-    Topic: "{topic}".
-    Write a 40-55 second, high-retention, fast-paced script in ENGLISH ONLY.
-    Use a strong hook in the first 3 seconds.
-    Split the script into {MIN_SCENES}-{MAX_SCENES} scenes. Each scene needs:
-      - "visual": 5-8 word description for image generation
-      - "caption": the EXACT spoken text for that scene (captions concatenated
-        in order must reconstruct the full voiceover word-for-word)
-    Total spoken word count must be between {MIN_WORDS}-{MAX_WORDS} words.
-    Output ONLY valid JSON:
-    {{"title": "...", "hook": "...", "scenes": [{{"visual": "...", "caption": "..."}}], "cta": "..."}}
+    Create a 45-second viral script for the topic: "{topic}".
+    The script must be high-energy and engaging for a USA audience.
+    
+    Format Requirements:
+    - Return ONLY a JSON object.
+    - 'title': Catchy, click-worthy title.
+    - 'hook': The first 3 seconds (The most important part).
+    - 'scenes': A list of {MIN_SCENES}-{MAX_SCENES} objects, each with 'visual' (detailed description for AI image generation) and 'caption' (spoken text).
+    - 'cta': A non-intrusive, natural call-to-action that fits the end.
+    
+    The total word count must be between {MIN_WORDS} and {MAX_WORDS} words.
     """
 
-
 def _normalize_scenes(script_data: dict) -> dict:
-    """Ensure scenes is a list of {"visual","caption"} dicts and derive a
-    top-level 'voiceover' field (join of all captions) for quality_checker /
-    anti_spam / uploader description use."""
-    scenes = script_data.get('scenes', [])
     normalized = []
-    for s in scenes:
-        if isinstance(s, dict):
-            visual = s.get('visual') or s.get('description') or s.get('scene') or ''
-            caption = s.get('caption') or s.get('text') or ''
-        else:
-            # Backward-compat: old format was a plain string (used as both)
-            visual = str(s)
-            caption = str(s)
+    for s in script_data.get('scenes', []):
+        visual = s.get('visual') or s.get('description') or ''
+        caption = s.get('caption') or s.get('text') or ''
         if visual and caption:
             normalized.append({"visual": visual.strip(), "caption": caption.strip()})
-
+    
     script_data['scenes'] = normalized
     script_data['voiceover'] = ' '.join(s['caption'] for s in normalized)
     return script_data
 
-
 def generate_script(topic: str, custom_prompt: str = None, max_retries: int = 3) -> dict:
-    """
-    Groq API se USA audience ke liye English script banata hai.
-    Agar custom_prompt diya gaya hai (niche_strategy se), wahi use hota hai -
-    warna generic fallback prompt. Retries max_retries tak agar invalid JSON
-    ya validation fail ho.
-    """
     if not os.environ.get("GROQ_API_KEY"):
-        raise ValueError("GROQ_API_KEY missing hai. GitHub Secrets check karo.")
+        raise ValueError("GROQ_API_KEY is missing.")
 
     prompt = custom_prompt or _default_prompt(topic)
-    last_error = None
-
+    
     for attempt in range(1, max_retries + 1):
         try:
-            logger.info(f"Script generation attempt {attempt}/{max_retries}")
-
-            chat_completion = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="openai/gpt-oss-20b",
+            logger.info(f"Generating optimized script (Attempt {attempt}/{max_retries})")
+            
+            completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": _get_system_prompt()},
+                    {"role": "user", "content": prompt}
+                ],
+                model="llama-3.3-70b-versatile",
                 response_format={"type": "json_object"},
-                reasoning_effort="low",
-                max_tokens=1800,
-                timeout=30,
+                temperature=0.7,
+                max_tokens=2500
             )
-            content = chat_completion.choices[0].message.content
-            script_data = json.loads(content)
-
-            if not all(k in script_data for k in ("title", "hook", "scenes")):
-                raise ValueError("Response mein title/hook/scenes missing hai")
-
-            if not isinstance(script_data['scenes'], list) or len(script_data['scenes']) < MIN_SCENES:
-                raise ValueError(f"Scenes must be a list with at least {MIN_SCENES} items")
-
+            
+            script_data = json.loads(completion.choices[0].message.content)
             script_data = _normalize_scenes(script_data)
-
+            
+            # Validation
             word_count = len(script_data['voiceover'].split())
-            if word_count < MIN_WORDS - 20 or word_count > MAX_WORDS + 30:
-                # Too far outside target -> better to regenerate than to
-                # rely purely on post-hoc speed scaling in video_editor.
-                raise ValueError(
-                    f"Voiceover word count {word_count} too far from target "
-                    f"{MIN_WORDS}-{MAX_WORDS} range - regenerating"
-                )
-
-            logger.info(f"Script generation successful ✅ ({word_count} words, {len(script_data['scenes'])} scenes)")
+            if not (MIN_WORDS - 10 <= word_count <= MAX_WORDS + 10):
+                raise ValueError(f"Word count {word_count} is out of target range.")
+            
+            logger.info(f"Script successful: {word_count} words, {len(script_data['scenes'])} scenes.")
             return script_data
 
-        except (BadRequestError, json.JSONDecodeError, ValueError) as e:
-            last_error = e
-            logger.error(f"Script generation attempt {attempt}/{max_retries} fail hui: {e}")
-            if attempt < max_retries:
-                time.sleep(3 * attempt)
-            continue
         except Exception as e:
-            last_error = e
-            logger.error(f"Unexpected error in script generation: {e}")
+            logger.error(f"Attempt {attempt} failed: {e}")
             if attempt < max_retries:
-                time.sleep(3 * attempt)
-            continue
-
-    raise RuntimeError(f"Script generation {max_retries} attempts ke baad bhi fail hui: {last_error}")
+                time.sleep(2 ** attempt)
+            else:
+                raise RuntimeError("Script generation failed after multiple attempts.")
