@@ -66,13 +66,13 @@ def _make_seo_title(title: str, topic: str) -> str:
     power_words = ["secret", "nobody", "never", "actually", "dark", "scary",
                    "real", "hidden", "warning", "shock", "fact", "truth"]
     if any(pw in title.lower() for pw in power_words):
-        return title[:70]
+        return title[:55]
 
     # Prefix with a hook emoji + badge that performs well in dark-science niche
     enhanced = f"🫀 {title}"
-    if len(enhanced) <= 70:
+    if len(enhanced) <= 55:
         return enhanced
-    return title[:70]
+    return title[:55]
 
 
 def get_random_topic() -> str:
