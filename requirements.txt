@@ -24,6 +24,9 @@ numpy>=1.24.0
 # HTTP/API Requests
 requests>=2.31.0
 
+# Browser automation (screenshot fallback layer for scene visuals)
+playwright>=1.44.0
+
 # Google APIs
 google-api-python-client>=2.100.0
 google-auth>=2.25.0
