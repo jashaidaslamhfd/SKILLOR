@@ -1,17 +1,72 @@
 # src/niche_strategy.py
+import logging
 import random
 
+logger = logging.getLogger(__name__)
+
+# Expanded from the original 10 to ~50 - the old list was getting cycled
+# through (and repeated) every couple weeks via plain random.choice(), which
+# hurts virality since platforms suppress near-duplicate content from the
+# same channel. This is now just the STATIC fallback pool; get_random_topic()
+# below prefers live trend-research topics first and also skips anything
+# used recently, regardless of which pool it came from.
 DARK_TOPICS = [
+    # Brain / mind / sleep
     "Your Heart Has Its Own Brain",
+    "This Happens Inside Your Brain When You Sleep",
+    "Why You Get Goosebumps",
+    "Your Brain Eats Itself While You Sleep",
+    "The Part of Your Brain That Never Sleeps",
+    "Why Your Brain Lies to You Every Day",
+    "This Is What Deja Vu Actually Is",
+    "Your Brain Can Rewire Itself Overnight",
+    "The Reason You Talk to Yourself in Your Head",
+    "Why Nightmares Exist At All",
+    "Your Brain Deletes Memories on Purpose",
+    "The Real Reason You Freeze Under Pressure",
+    "Why Some People Never Forget a Face",
+    # Heart / blood / circulatory
     "Your Body Has 100,000 km of Veins",
     "Why Your Heart Skips a Beat",
-    "This Happens Inside Your Brain When You Sleep",
-    "Your Lungs Can Drown You From Inside",
-    "The Bone That Breaks Most in Fights",
     "Your Blood Has a Secret Weapon",
-    "Why You Get Goosebumps",
+    "Your Heart Beats 100,000 Times a Day Without Asking",
+    "The Sound Your Heart Makes That You've Never Heard",
+    "Why Your Face Turns Red When You're Angry",
+    "The Reason Cold Hands Mean a Warm Heart",
+    "Your Blood Changes Color Inside Your Body",
+    # Lungs / breathing
+    "Your Lungs Can Drown You From Inside",
+    "Why You Yawn When You See Someone Else Yawn",
+    "The Real Reason You Can't Tickle Yourself",
+    "Why Holding Your Breath Feels Like Panic",
+    # Bones / muscles
+    "The Bone That Breaks Most in Fights",
+    "Your Bones Are Being Replaced Right Now",
+    "Why Cracking Your Knuckles Makes That Sound",
+    "The Strongest Muscle in Your Body Isn't What You Think",
+    "Why You Lose Height During the Day",
+    # Digestive / organs
     "Your Stomach Can Digest Itself",
     "The Organ You Can Live Without",
+    "Your Gut Has Its Own Nervous System",
+    "Why Your Stomach Growls Even When You're Not Hungry",
+    "The Organ That Regrows Itself Completely",
+    "Why You Can't Breathe and Swallow at the Same Time",
+    # Skin / senses
+    "Your Skin Replaces Itself Every Month",
+    "Why Your Eyes Never Actually Stop Moving",
+    "The Reason Your Ears Never Stop Growing",
+    "Why You Can't See Your Own Blind Spot",
+    "Your Fingerprints Started Forming Before You Were Born",
+    # Mystery / dark facts
+    "The Sound Only Your Body Can Hear",
+    "Why Fear Has a Physical Smell",
+    "The Moment Your Body Knows You're Lying",
+    "Why Your Body Remembers Trauma Before Your Mind Does",
+    "The Reflex You Can't Control No Matter What",
+    "Why Some People Feel Pain Differently Than Others",
+    "The Signal Your Body Sends Before You Even Notice It's Sick",
+    "Why Your Body Temperature Drops Right Before You Wake Up",
 ]
 
 HOOK_FORMULAS = [
@@ -78,8 +133,39 @@ def _make_seo_title(title: str, topic: str) -> str:
     return title[:55]
 
 
-def get_random_topic() -> str:
-    return random.choice(DARK_TOPICS)
+def get_random_topic(exclude: list = None) -> str:
+    """Picks a topic for the next video, preferring live trend-research
+    (today's relevant Reddit posts) and falling back to the static
+    DARK_TOPICS pool. Either way, anything in `exclude` (recently-used
+    topics, passed in by main.py from video_history.json) is skipped so
+    the channel doesn't repeat itself.
+
+    Trend topics are preferred ~60% of the time when available - not 100%,
+    so the channel keeps a mix of "on-brand always-works" facts alongside
+    "what's trending today" content rather than fully chasing trends.
+    """
+    exclude_set = {t.strip().lower() for t in (exclude or []) if t}
+
+    trending = []
+    try:
+        from trend_research import fetch_trending_topics
+        trending = fetch_trending_topics()
+    except Exception as e:
+        logger.warning(f"Trend research unavailable, using static pool only: {e}")
+        trending = []
+
+    trend_candidates = [t for t in trending if t.strip().lower() not in exclude_set]
+    if trend_candidates and random.random() < 0.6:
+        return random.choice(trend_candidates)
+
+    static_candidates = [t for t in DARK_TOPICS if t.strip().lower() not in exclude_set]
+    if not static_candidates:
+        # Everything (trending + static) has been used recently - better to
+        # allow a repeat than to crash the pipeline.
+        logger.warning("All topics recently used - allowing a repeat from the static pool.")
+        static_candidates = trend_candidates or DARK_TOPICS
+
+    return random.choice(static_candidates)
 
 
 def get_topic_category(topic: str) -> str:
