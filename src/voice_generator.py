@@ -80,7 +80,7 @@ def generate_voice_segments(
     scenes: List[dict],
     voice: str = "am_adam", # CHANGE 1: am_michael se am_adam
     output_dir: str = "output/segments",
-    speed: float = 0.88, # CHANGE 2: 1.0 se 0.95. Thora slow
+    speed: float = 0.95, # CHANGE 2: 1.0 se 0.95. Thora slow
 ) -> List[Dict]:
     """
     Each scene gets its own audio with mystery pauses
