@@ -55,7 +55,10 @@ BASE_TAGS = [
     "darkfacts", "facts", "shorts", "youtubeshorts", "science",
     "didyouknow", "mindblowing", "funfacts", "scaryfacts", "viral"
 ]
-TARGET_WORD_RANGE = (110, 150)
+# Kept in sync with script_generator.py's MIN_WORDS/MAX_WORDS - these two
+# used to disagree (110-150 here vs an effective 120-180 there), so any
+# script that hit *this* file's own target could still fail validation.
+TARGET_WORD_RANGE = (130, 160)
 
 
 def _make_seo_title(title: str, topic: str) -> str:
@@ -97,14 +100,29 @@ def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
     pain_point = PAIN_POINTS[hash(topic) % len(PAIN_POINTS)]
     cta = CTAS[hash(topic) % len(CTAS)]
     min_w, max_w = TARGET_WORD_RANGE
+    num_scenes = 7
+    per_scene_lo = min_w // num_scenes
+    per_scene_hi = max_w // num_scenes
     prompt = f"""
 You are an expert mystery science communicator creating DARK MYSTERY YouTube Shorts for USA adults 18+.
 Topic: {topic}
-Target spoken length: {min_w}-{max_w} words total (~40-55 seconds)
 SCRIPT REQUIREMENTS: 1. DARK HOOK: "{hook_preference}" 2. RELATE 3. SCIENCE 4. RELIEF 5. CTA: "{cta}"
 TONE: Dark, mysterious, factual. PAIN POINT: {pain_point}
 
-Split the script into 6-8 scenes. Each scene needs:
+WORD COUNT IS A HARD REQUIREMENT - read this carefully:
+- The full voiceover (all captions combined) MUST total {min_w}-{max_w} words. Not less.
+- "Punchy" and "high pacing" means short SENTENCES, not short SCRIPTS - use several
+  punchy sentences per scene rather than one clipped fragment. A scene like
+  "Your heart is lying." is too short; a scene like "Your heart is lying to you
+  right now, and it has been since the day you were born." is the right density.
+- Split the script into exactly {num_scenes} scenes. Each scene's "caption" should be
+  roughly {per_scene_lo}-{per_scene_hi} words on its own - if a caption is much shorter
+  than that, add another punchy sentence to it before moving to the next scene.
+- Before you finalize your answer, mentally count the total words across all
+  captions and confirm it falls in the {min_w}-{max_w} range. If it's short, expand
+  scenes with more concrete detail/science rather than padding with filler.
+
+Each scene needs:
   - "visual": 5-8 word description for image generation (what should be shown on screen)
   - "caption": the EXACT spoken text for that scene (captions concatenated in
     order must reconstruct the full voiceover word-for-word, total {min_w}-{max_w} words)
