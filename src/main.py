@@ -54,6 +54,13 @@ class SKILLORPipeline:
         with open("output/video_history.json", 'w') as f:
             json.dump(self.video_history, f, indent=2)
 
+    def _get_recent_topics(self, n: int = 20) -> list:
+        """Topics used in the last `n` videos, so get_random_topic() can
+        skip them and avoid repeating content. video_history.json didn't
+        used to store 'topic' at all (only 'title', which gets rewritten
+        by the SEO pass) - _save_video_history now records it below."""
+        return [v.get('topic') for v in self.video_history[-n:] if v.get('topic')]
+
     def _generate_and_check_once(self, topic: str) -> dict:
         category = get_topic_category(topic)
         specialized_prompt = get_script_prompt_for_niche(topic) # Ab Dark prompt aayega
@@ -83,10 +90,15 @@ class SKILLORPipeline:
 
     def generate_with_niche_strategy(self, topic: str = None) -> dict:
         fixed_topic = topic
+        # Recent topics (trending + static, either source) get excluded so
+        # the channel doesn't repost near-identical content every couple
+        # weeks - recomputed once per run, not per attempt, since topics
+        # picked within THIS run's retries shouldn't exclude each other.
+        recent_topics = self._get_recent_topics()
         best_attempt = None
         last_error = None
         for attempt in range(1, MAX_SCRIPT_ATTEMPTS + 1):
-            current_topic = fixed_topic or get_random_topic() # Dark topics list se
+            current_topic = fixed_topic or get_random_topic(exclude=recent_topics) # Trending + dark topics list se
             try:
                 result = self._generate_and_check_once(current_topic)
             except Exception as e:
@@ -235,6 +247,7 @@ class SKILLORPipeline:
         upload_result = upload_all(final_video, thumb_path, script_data)
         self._save_video_history({
             'title': script_data['title'],
+            'topic': script_data.get('topic'),
             'posted_at': datetime.now(timezone.utc).isoformat(),
             'facebook_success': upload_result.get('facebook_success', False),
             'youtube_video_id': upload_result.get('youtube_video_id'),
