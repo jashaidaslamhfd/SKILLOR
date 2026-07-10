@@ -4,6 +4,7 @@ import logging
 from typing import Dict
 import numpy as np
 import soundfile as sf
+from moviepy.audio.AudioClip import AudioArrayClip
 from moviepy.editor import (
     ImageClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
