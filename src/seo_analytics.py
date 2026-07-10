@@ -312,6 +312,142 @@ def get_historical_insights(min_sample: int = 3) -> Dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# 6. REAL YouTube Analytics fetch (needs OAuth creds - see uploader.py)
+#
+# Everything above this point is heuristic. This is the actual "system ab
+# blind nahi" piece: it calls the real YouTube Analytics API (v2) for one
+# video and returns real views / average-view-duration / real CTR.
+#
+# Reuses the SAME OAuth refresh-token creds uploader.py already uses for
+# the Data API upload - it just additionally needs the
+# `yt-analytics.readonly` scope to have been granted when that
+# REFRESH_TOKEN was issued. If it wasn't, this returns an 'error' instead
+# of raising, so a missing scope never crashes the pipeline.
+# ---------------------------------------------------------------------------
+
+def fetch_actual_performance(youtube_video_id: str, days_back: int = 30) -> Dict:
+    """Pulls real lifetime-to-date performance for one video: views,
+    averageViewDuration (seconds), averageViewPercentage (retention %),
+    impressions, and impressionsClickThroughRate (real CTR - the actual
+    metric predict_ctr() above can only estimate)."""
+    import datetime as _dt
+    import google.oauth2.credentials
+    from googleapiclient.discovery import build as _build
+    from googleapiclient.errors import HttpError
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    refresh_token = os.environ.get("REFRESH_TOKEN")
+    missing = [n for n, v in {
+        "GOOGLE_CLIENT_ID": client_id, "GOOGLE_CLIENT_SECRET": client_secret,
+        "REFRESH_TOKEN": refresh_token,
+    }.items() if not v]
+    if missing:
+        return {"error": f"Missing credentials: {missing}"}
+
+    creds = google.oauth2.credentials.Credentials(
+        token=None, refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id, client_secret=client_secret,
+        scopes=["https://www.googleapis.com/auth/yt-analytics.readonly"],
+    )
+    yta = _build("youtubeAnalytics", "v2", credentials=creds)
+
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=max(days_back, 1))
+
+    try:
+        resp = yta.reports().query(
+            ids="channel==MINE",
+            startDate=start.isoformat(),
+            endDate=end.isoformat(),
+            metrics="views,averageViewDuration,averageViewPercentage,impressions,impressionsClickThroughRate",
+            dimensions="video",
+            filters=f"video=={youtube_video_id}",
+        ).execute()
+    except HttpError as e:
+        logger.warning(f"YouTube Analytics fetch failed for {youtube_video_id}: {e}")
+        return {"error": f"HttpError {e.resp.status}: needs yt-analytics.readonly scope on REFRESH_TOKEN"}
+    except Exception as e:
+        logger.warning(f"YouTube Analytics fetch failed for {youtube_video_id}: {e}")
+        return {"error": str(e)}
+
+    rows = resp.get("rows") or []
+    if not rows:
+        return {"note": "No analytics rows yet - data can take 24-48h to populate after upload."}
+
+    headers = [h["name"] for h in resp.get("columnHeaders", [])]
+    values = dict(zip(headers, rows[0]))
+
+    return {
+        "video_id": youtube_video_id,
+        "views": values.get("views"),
+        "average_view_duration_sec": values.get("averageViewDuration"),
+        "average_view_percentage": values.get("averageViewPercentage"),
+        "impressions": values.get("impressions"),
+        "actual_ctr": values.get("impressionsClickThroughRate"),
+        "fetched_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    }
+
+
+def update_history_with_real_metrics(min_hours_old: int = 24) -> Dict:
+    """Meant to run on its OWN schedule (separate cron/GitHub Action),
+    NOT inside the main generation pipeline - real analytics data isn't
+    available immediately after upload.
+
+    Walks output/video_history.json, finds entries with a
+    youtube_video_id but no 'actual_ctr' yet that are at least
+    `min_hours_old` hours old, fetches real numbers for each via
+    fetch_actual_performance(), and writes them back into that SAME
+    history entry. Once this has run for a video,
+    get_historical_insights() above automatically prefers
+    'real_analytics' over predicted scores - no other code changes
+    needed, it already checks for 'actual_ctr'/'views' first."""
+    import datetime as _dt
+
+    history = _load_history()
+    if not history:
+        return {"updated": 0, "note": "No history file yet."}
+
+    now = _dt.datetime.now(_dt.timezone.utc)
+    updated = 0
+    for entry in history:
+        vid = entry.get("youtube_video_id")
+        posted_at = entry.get("posted_at")
+        if not vid or "actual_ctr" in entry or not posted_at:
+            continue
+        try:
+            posted_dt = _dt.datetime.fromisoformat(posted_at)
+        except Exception:
+            continue
+        age_hours = (now - posted_dt).total_seconds() / 3600
+        if age_hours < min_hours_old:
+            continue
+
+        metrics = fetch_actual_performance(vid)
+        if "error" in metrics or "note" in metrics:
+            logger.info(f"{vid}: {metrics.get('error') or metrics.get('note')}")
+            continue
+
+        entry["views"] = metrics["views"]
+        entry["actual_ctr"] = metrics["actual_ctr"]
+        entry["average_view_duration_sec"] = metrics["average_view_duration_sec"]
+        entry["average_view_percentage"] = metrics["average_view_percentage"]
+        entry["analytics_fetched_at"] = metrics["fetched_at"]
+        updated += 1
+        logger.info(
+            f"Updated real metrics for {vid}: views={metrics['views']}, "
+            f"CTR={metrics['actual_ctr']}, avg_view_pct={metrics['average_view_percentage']}"
+        )
+
+    if updated:
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(history, f, indent=2)
+
+    return {"updated": updated, "total_entries": len(history)}
+
+
 if __name__ == "__main__":
     test_script = {
         'title': "🫀 Your Heart Has Its Own Brain",
