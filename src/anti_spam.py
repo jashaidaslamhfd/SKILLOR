@@ -103,6 +103,13 @@ class AntiSpamSystem:
         for prev_video in previous_videos[-10:]:  # Check last 10 videos
             prev_hash = self._get_content_hash(prev_video)
             
+            if current_hash == prev_hash:
+                issues.append(
+                    f"🚨 CRITICAL: Content is an exact duplicate of a recent video "
+                    f"'{prev_video.get('title', 'Unknown')[:30]}...'"
+                )
+                continue
+            
             similarity = self._calculate_similarity(video, prev_video)
             
             if similarity > 0.85:
@@ -129,10 +136,16 @@ class AntiSpamSystem:
         
         for prev_video in previous_videos[-5:]:
             prev_title = prev_video.get('title', '').lower().strip()
+            prev_desc = prev_video.get('voiceover', '')[:100].lower().strip()
             
             if current_title == prev_title:
                 issues.append(
                     f"🚨 CRITICAL: Duplicate title found: '{current_title}'"
+                )
+            elif current_desc and current_desc == prev_desc:
+                issues.append(
+                    f"🚨 CRITICAL: Duplicate description/opening found (matches "
+                    f"'{prev_video.get('title', 'Unknown')[:30]}...')"
                 )
             elif self._are_titles_similar(current_title, prev_title):
                 issues.append(
