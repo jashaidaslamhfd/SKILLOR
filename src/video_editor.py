@@ -6,7 +6,7 @@ import soundfile as sf
 from moviepy.editor import (
     ImageClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
-    CompositeAudioClip,
+    CompositeAudioClip, AudioArrayClip,
 )
 import moviepy.video.fx.all as vfx
 import moviepy.audio.fx.all as afx
@@ -272,6 +272,34 @@ def _synthesize_ambient_bed(duration: float, seed: int = None) -> np.ndarray:
     return wave.astype(np.float32)
 
 
+POP_SFX_VOLUME = 0.5  # audible but not louder than the voice
+POP_SFX_DURATION = 0.12
+
+
+def _synthesize_pop_sfx(seed: int = None) -> np.ndarray:
+    """Short percussive 'pop' transition click - a fast-decaying sine burst
+    layered with a touch of noise for a snappy, punchy transient (the
+    [SFX: POP] idea, done as an audio-side scene-cut marker instead of a
+    script-parsed tag). Played on every scene cut (build_video() skips the
+    very first one - nothing to 'cut' from yet) to give an audible
+    attention-reset on top of the existing per-scene Ken Burns zoom/pan."""
+    rng = np.random.default_rng(seed)
+    sr = MUSIC_SAMPLE_RATE
+    n = int(sr * POP_SFX_DURATION)
+    t = np.linspace(0, POP_SFX_DURATION, n, endpoint=False)
+
+    freq = 900 + rng.uniform(-100, 100)
+    tone = np.sin(2 * np.pi * freq * t)
+    noise = rng.normal(0, 1, size=t.shape)
+    envelope = np.exp(-t / 0.02)  # fast decay - percussive "pop", not a ring
+    wave = (0.7 * tone + 0.3 * noise) * envelope
+
+    peak = np.abs(wave).max()
+    if peak > 0:
+        wave = wave / peak * POP_SFX_VOLUME
+    return wave.astype(np.float32)
+
+
 def _get_music_track(duration: float, output_dir: str) -> str:
     """Prefers a real licensed track from assets/music/ if one exists
     (random pick each video for variety); otherwise synthesizes an ambient
@@ -309,6 +337,8 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
 
     video_clips = []
     audio_clips = []
+    pop_sfx_clips = []
+    t_cursor = 0.0
 
     for i, (img_path, seg) in enumerate(zip(image_paths, audio_segments)):
         duration = max(seg['duration'], 0.6)  # floor, avoid zero-length clips
@@ -325,6 +355,12 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         seg_audio = AudioFileClip(seg['path']).fx(afx.audio_fadein, AUDIO_EDGE_FADE).fx(afx.audio_fadeout, AUDIO_EDGE_FADE)
         audio_clips.append(seg_audio)
 
+        if i > 0:  # no "cut" to mark before the very first scene
+            pop_wave = _synthesize_pop_sfx(seed=random.randint(1, 999999))
+            pop_clip = AudioArrayClip(pop_wave.reshape(-1, 1), fps=MUSIC_SAMPLE_RATE).set_start(t_cursor)
+            pop_sfx_clips.append(pop_clip)
+        t_cursor += duration
+
     logger.info("Concatenating video clips (hard-cut, matches the audio's hard-cut timing)...")
     final_video = concatenate_videoclips(video_clips, method="compose")
 
@@ -339,7 +375,8 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         music_clip = concatenate_audioclips([music_clip] * loops_needed)
     music_clip = music_clip.subclip(0, voice_audio.duration).fx(afx.audio_fadein, 1.0).fx(afx.audio_fadeout, 1.0)
 
-    final_audio = CompositeAudioClip([music_clip, voice_audio])
+    logger.info(f"Mixing in {len(pop_sfx_clips)} scene-cut pop SFX...")
+    final_audio = CompositeAudioClip([music_clip, voice_audio] + pop_sfx_clips)
     final_video = final_video.set_audio(final_audio)
 
     # ---- Enforce 40-55s target by scaling video+audio together if needed ----
