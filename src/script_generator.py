@@ -516,9 +516,9 @@ def generate_script(
         except json.JSONDecodeError as e:
             logger.error(f"❌ JSON parsing failed: {e}")
             messages.append({"role": "user", "content": (
-                f"The previous response was not valid JSON. "
-                f"Please return ONLY valid JSON with this exact structure: "
-                f'{{"title": "...", "hook": "...", "scenes": [{{"visual": "...", "caption": "..."}}], "cta": "..."}}'
+                "The previous response was not valid JSON. "
+                "Please return ONLY valid JSON with this exact structure: "
+                '{"title": "...", "hook": "...", "scenes": [{"visual": "...", "caption": "..."}], "cta": "..."}'
             )})
             
         except BadRequestError as e:
