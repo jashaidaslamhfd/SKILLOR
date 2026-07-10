@@ -112,6 +112,39 @@ except ImportError as e:
 KOKORO_SAMPLE_RATE = 24000
 SILENCE_PAD_SEC = 0.25  # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
 
+# ---------------------------------------------------------------------------
+# LOUDNESS NORMALIZATION
+# Both engines already peak-limit to 0.95 (see _synthesize_chatterbox /
+# _synthesize_kokoro), but peak-limiting alone doesn't fix perceived
+# loudness: Chatterbox and Kokoro have different natural RMS levels, and
+# individual lines vary too (a whispered vs. shouted line can share the
+# same peak but sound very different in volume). Since a single video can
+# mix segments from BOTH engines (per-segment Kokoro fallback), leaving
+# this unnormalized produces audible volume jumps between scenes/cuts -
+# exactly the "noisy/inconsistent audio" gap. This normalizes every
+# segment to a consistent target RMS (after peak-limiting already ran),
+# so voice loudness is even across the whole video regardless of which
+# engine produced which line.
+# ---------------------------------------------------------------------------
+TARGET_RMS = 0.11
+
+
+def _normalize_loudness(audio: np.ndarray, target_rms: float = TARGET_RMS) -> np.ndarray:
+    """Scales audio to a consistent target RMS (perceived loudness), then
+    re-applies a hard peak ceiling so the RMS boost can never clip."""
+    rms = float(np.sqrt(np.mean(np.square(audio)))) if audio.size else 0.0
+    if rms < 1e-6:
+        return audio  # near-silence (e.g. the empty-caption pad) - nothing to normalize
+
+    gain = target_rms / rms
+    normalized = audio * gain
+
+    peak = np.abs(normalized).max()
+    if peak > 0.95:
+        normalized = normalized / peak * 0.95
+
+    return normalized.astype(np.float32)
+
 
 def add_mystery_pauses(text: str) -> str:
     """Adds a beat of suspense after dark hooks/reveals for retention.
@@ -169,11 +202,11 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
 
     try:
         audio, sr = _synthesize_chatterbox(text_with_pauses)
-        return audio, sr, "chatterbox"
+        return _normalize_loudness(audio), sr, "chatterbox"
     except Exception as e:
         logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
         audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
-        return audio, sr, "kokoro"
+        return _normalize_loudness(audio), sr, "kokoro"
 
 
 def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
