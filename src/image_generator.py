@@ -1,12 +1,11 @@
 import os
-import time
 import random
 import hashlib
 import threading
 import requests
 import logging
 
-from image_providers import PROVIDER_REGISTRY, available_providers, RateLimitError
+from image_providers import available_providers, RateLimitError
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
