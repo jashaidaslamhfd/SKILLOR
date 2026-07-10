@@ -37,6 +37,7 @@ jobs:
       - run: python src/main.py
         env:
           IMAGEMAGICK_BINARY: /usr/bin/convert
+          FALLBACK_ABORT_RATIO: "1.0"
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
