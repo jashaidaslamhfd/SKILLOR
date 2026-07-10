@@ -69,22 +69,52 @@ DARK_TOPICS = [
     "Why Your Body Temperature Drops Right Before You Wake Up",
 ]
 
+# Expanded from 3 to 15 - with only 3 formulas cycled via hash(topic), every
+# video shared one of just three opening structures, so regular viewers
+# recognized the template within a handful of videos and swiped past it on
+# sight. More variety keeps the pattern from being obvious.
 HOOK_FORMULAS = [
     "This happens to your body every night... and you have no idea.",
     "Doctors don't want you to know this about {topic}...",
     "Your body is lying to you about {topic}. Here's the truth.",
+    "Nobody told you this is happening inside you right now.",
+    "This is the part of {topic} your biology teacher skipped.",
+    "You've done this a million times and never asked why.",
+    "Something in your body is happening without your permission.",
+    "This sounds fake, but {topic} is 100% real.",
+    "Scientists only figured this out about {topic} recently.",
+    "Your body has been hiding this from you your whole life.",
+    "This is why {topic} feels so unsettling once you know it.",
+    "Most people go their entire life never knowing this about {topic}.",
+    "If this happened to you, your body did something incredible.",
+    "There's a reason no one talks about {topic}.",
+    "This is the creepiest thing your own body does.",
 ]
 
 PAIN_POINTS = [
     "Worried something is wrong with your body",
     "Can't sleep because your mind won't shut off",
     "Feel anxious about random body symptoms",
+    "Notice something about their body and can't explain it",
+    "Feel like their body is a mystery even to themselves",
+    "Get scared by symptoms they don't understand",
+    "Wonder if what's happening to them is normal",
+    "Feel disconnected from how their own body works",
+    "Google symptoms late at night and spiral",
+    "Feel like no one explains this stuff clearly",
 ]
 
 CTAS = [
     "Follow for more dark body secrets",
     "Share this if it blew your mind",
     "Comment: Did this happen to you?",
+    "Save this before you forget it",
+    "Follow if your body just did this to you",
+    "Tag someone who needs to see this",
+    "Comment 'same' if this happens to you too",
+    "Share this with someone who overthinks everything",
+    "Follow for the next dark body fact",
+    "Send this to the friend who's always cold/tired/anxious",
 ]
 
 CATEGORY_TAGS = {
@@ -110,10 +140,11 @@ BASE_TAGS = [
     "darkfacts", "facts", "shorts", "youtubeshorts", "science",
     "didyouknow", "mindblowing", "funfacts", "scaryfacts", "viral"
 ]
-# Kept in sync with script_generator.py's MIN_WORDS/MAX_WORDS - these two
-# used to disagree (110-150 here vs an effective 120-180 there), so any
-# script that hit *this* file's own target could still fail validation.
-TARGET_WORD_RANGE = (130, 160)
+# Kept in sync with script_generator.py's MIN_WORDS/MAX_WORDS (130-170) -
+# these two used to disagree (130-160 here vs 130-170 there), so a script
+# that hit *this* file's own target could still fail script_generator's
+# validation and burn a retry for no reason.
+TARGET_WORD_RANGE = (130, 170)
 
 
 def _make_seo_title(title: str, topic: str) -> str:
@@ -186,7 +217,11 @@ def get_script_prompt_for_niche(topic: str, hook_preference: str = None) -> str:
     pain_point = PAIN_POINTS[hash(topic) % len(PAIN_POINTS)]
     cta = CTAS[hash(topic) % len(CTAS)]
     min_w, max_w = TARGET_WORD_RANGE
-    num_scenes = 7
+    # Was hardcoded to 7, which conflicted with script_generator.py's own
+    # MIN_SCENES/MAX_SCENES (8-12) - the model was being told two different
+    # scene counts by two different prompts. 9 sits in the middle of that
+    # actual 8-12 range.
+    num_scenes = 9
     per_scene_lo = min_w // num_scenes
     per_scene_hi = max_w // num_scenes
     prompt = f"""
