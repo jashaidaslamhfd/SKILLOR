@@ -1,4 +1,3 @@
-import os
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict
@@ -161,8 +160,6 @@ class USAPeakTimeScheduler:
         - Lunch: work-break browsing
         - Evening: wind-down scrolling before bed
         """
-        schedule = []
-        
         recommendations = [
             {
                 'slot': 1,
