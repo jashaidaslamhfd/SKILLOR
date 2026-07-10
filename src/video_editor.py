@@ -10,7 +10,6 @@ from moviepy.editor import (
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
     CompositeAudioClip,
 )
-from moviepy.audio.AudioClip import AudioArrayClip
 import moviepy.video.fx.all as vfx
 import moviepy.audio.fx.all as afx
 from PIL import Image, ImageDraw, ImageFont
@@ -310,25 +309,25 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
 
     for i, (img_path, seg) in enumerate(zip(image_paths, audio_segments)):
         duration = max(seg['duration'], 0.6)
-        
+
         # RETENTION: Alternate zoom direction every scene
         direction = "in" if i % 2 == 0 else "out"
-        
+
         # Create Ken Burns clip
         scene_visual = _ken_burns_clip(img_path, duration, direction)
-        
+
         # RETENTION: Word-by-word captions
         caption_text = scenes[i].get('caption', seg.get('caption', ''))
         word_clips = _word_by_word_clips(caption_text, duration)
-        
+
         # Combine visual + captions
         combined = CompositeVideoClip(
-            [scene_visual] + word_clips, 
+            [scene_visual] + word_clips,
             size=(CANVAS_W, CANVAS_H)
         ).set_duration(duration)
-        
+
         video_clips.append(combined)
-        
+
         # Audio segment
         seg_audio = AudioFileClip(seg['path']).fx(
             afx.audio_fadein, AUDIO_EDGE_FADE
@@ -336,16 +335,16 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
             afx.audio_fadeout, AUDIO_EDGE_FADE
         )
         audio_clips.append(seg_audio)
-        
+
         # RETENTION: Pop SFX on scene cuts (except first)
         if i > 0:
             pop_wave = _synthesize_pop_sfx(seed=random.randint(1, 999999))
             pop_clip = AudioArrayClip(
-                pop_wave.reshape(-1, 1), 
+                pop_wave.reshape(-1, 1),
                 fps=MUSIC_SAMPLE_RATE
             ).set_start(t_cursor)
             pop_sfx_clips.append(pop_clip)
-        
+
         t_cursor += duration
 
     logger.info("Concatenating video clips...")
@@ -356,11 +355,11 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
 
     logger.info("Adding background music bed...")
     music_path = _get_music_track(
-        voice_audio.duration, 
+        voice_audio.duration,
         os.path.dirname(output_path) or "output"
     )
     music_clip = AudioFileClip(music_path).fx(afx.volumex, MUSIC_VOLUME)
-    
+
     if music_clip.duration < voice_audio.duration:
         loops_needed = int(voice_audio.duration // music_clip.duration) + 1
         music_clip = concatenate_audioclips([music_clip] * loops_needed)
@@ -392,10 +391,10 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     logger.info(f"Writing video to {output_path}...")
     final_video.write_videofile(
-        output_path, 
-        fps=30, 
-        codec="libx264", 
-        audio_codec="aac", 
+        output_path,
+        fps=30,
+        codec="libx264",
+        audio_codec="aac",
         bitrate="6000k"
     )
     logger.info(f"Video created: {output_path} ({final_video.duration:.1f}s)")
@@ -469,11 +468,11 @@ def generate_thumbnail(image_path: str, title: str, output_path: str = "output/t
         w = draw.textlength(line, font=font)
         x = (1280 - w) / 2
         draw.text(
-            (x, y), 
-            line, 
-            font=font, 
-            fill="white", 
-            stroke_width=3, 
+            (x, y),
+            line,
+            font=font,
+            fill="white",
+            stroke_width=3,
             stroke_fill="black"
         )
         y += 74
@@ -493,13 +492,13 @@ def analyze_video_retention_potential(video_path: str) -> Dict:
     Checks: duration, scene count, caption pacing, etc.
     """
     from moviepy.editor import VideoFileClip
-    
+
     clip = VideoFileClip(video_path)
     duration = clip.duration
-    
+
     # Scene detection (approximate)
     scenes = int(duration / 5)  # Assuming ~5 second scenes
-    
+
     analysis = {
         'duration': duration,
         'duration_optimal': TARGET_MIN_SEC <= duration <= TARGET_MAX_SEC,
@@ -508,30 +507,30 @@ def analyze_video_retention_potential(video_path: str) -> Dict:
         'retention_score': 0,
         'suggestions': []
     }
-    
+
     # Calculate retention score
     score = 50  # Base
-    
+
     if analysis['duration_optimal']:
         score += 20
     else:
         analysis['suggestions'].append(
             f"Duration {duration:.1f}s - aim for {TARGET_MIN_SEC}-{TARGET_MAX_SEC}s"
         )
-    
+
     if analysis['scene_count_optimal']:
         score += 20
     else:
         analysis['suggestions'].append(
             f"Estimated {scenes} scenes - aim for 7-12 scenes"
         )
-    
+
     # Check for Ken Burns effect (video length vs scene count)
     if scenes > 5 and duration > 30:
         score += 10
-    
+
     analysis['retention_score'] = min(100, score)
-    
+
     clip.close()
     return analysis
 
@@ -542,12 +541,12 @@ def analyze_video_retention_potential(video_path: str) -> Dict:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    
+
     print("="*60)
     print("RETENTION-OPTIMIZED VIDEO EDITOR")
     print("="*60)
     print()
-    
+
     print("✅ Features enabled:")
     print("   - Ken Burns effect (alternating zoom in/out)")
     print("   - Word-by-word captions (karaoke style)")
