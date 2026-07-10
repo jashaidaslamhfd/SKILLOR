@@ -57,7 +57,7 @@ class QualityChecker:
         return {
             'scores': scores,
             'issues': issues,
-            'approved': overall_score >= 75,
+            'approved': overall_score >= 80,
             'recommendation': self._get_recommendation(overall_score, issues)
         }
     
