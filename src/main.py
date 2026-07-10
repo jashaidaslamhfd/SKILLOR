@@ -248,6 +248,13 @@ class SKILLORPipeline:
         self._save_video_history({
             'title': script_data['title'],
             'topic': script_data.get('topic'),
+            # anti_spam.py's similarity/duplicate checks compare THIS video's
+            # voiceover against previous videos' voiceover - but this field
+            # was never being saved, so every past-video comparison was
+            # silently checking against an empty string and could never
+            # actually flag repetitive content. Capped at 500 chars since
+            # anti_spam only ever looks at the first 100-200 chars anyway.
+            'voiceover': script_data.get('voiceover', '')[:500],
             'posted_at': datetime.now(timezone.utc).isoformat(),
             'facebook_success': upload_result.get('facebook_success', False),
             'youtube_video_id': upload_result.get('youtube_video_id'),
