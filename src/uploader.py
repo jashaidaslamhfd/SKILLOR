@@ -253,7 +253,6 @@ def _upload_facebook_reels(video_path, script_data, tags):
         logger.info(f"Facebook: '{script_data.get('title')}' already uploaded — skipping duplicate.")
         return True  # treat as success so pipeline doesn't retry/fail
 
-    title = script_data.get('title', 'Untitled')
     # Max 3 hashtags — Facebook's own algorithm penalises Reels with >5 hashtags
     description = _build_facebook_description(script_data, tags)
 
