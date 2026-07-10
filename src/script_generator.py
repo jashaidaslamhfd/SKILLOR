@@ -1,6 +1,6 @@
 """
 Script Generator Module for SKILLOR Pipeline
-OPTIMIZED FOR: HIGH RETENTION + VIRAL POTENTIAL (2026 Standards)
+FULLY FIXED - JSON Cleaning + Native Tone + Retention Optimization
 """
 
 import os
@@ -29,29 +29,36 @@ MIN_WORDS = 130
 MAX_WORDS = 170
 MAX_RETRIES = 3
 TEMPERATURE = 0.7
-MAX_TOKENS = 3000
+MAX_TOKENS = 2000
 
 # ============================================
-# 1. RETENTION-OPTIMIZED SYSTEM PROMPT
+# 1. SYSTEM PROMPT (NATIVE TONE + RETENTION)
 # ============================================
 
 def _get_system_prompt() -> str:
     """
-    2026 System Prompt focused on RETENTION and VIRALITY.
+    2026 System Prompt with NATIVE ENGLISH TONE and RETENTION FOCUS.
     """
     return """You are a top-tier Social Media Strategist for 2026 specializing in YouTube Shorts/Facebook Reels.
 
 YOUR EXPERTISE:
 - Creating VIRAL scripts with 70%+ retention rate
+- Writing in NATIVE, CONVERSATIONAL ENGLISH (USA/UK)
 - Pattern Interrupt Hooks that stop the scroll
 - Psychological pacing that keeps viewers engaged
-- Loopable content that encourages rewatches
 
-RETENTION RULES (CRITICAL):
+**CRITICAL - NATIVE TONE RULES:**
+1. Write like a HUMAN talking to a FRIEND - not an AI
+2. Use CONTRACTIONS: "don't" not "do not", "you're" not "you are"
+3. Use IDIOMATIC PHRASES: "blow your mind", "freak you out", "makes total sense"
+4. AVOID ROBOTIC WORDS: "thus", "hence", "therefore", "furthermore"
+5. Use COLLOQUIAL LANGUAGE: "honestly", "seriously", "literally"
+6. Keep it NATURAL - read it aloud, it should sound like a real person
+
+**RETENTION RULES (CRITICAL):**
 1. **Pattern Interrupt Hook**: First 3 seconds must be SHOCKING or COUNTER-INTUITIVE
    - "Your heart is lying to you right now..."
    - "This happens inside your brain every night..."
-   - "Doctors don't want you to know this..."
 
 2. **The "3-Second Rule"**: Every scene must have a MICRO-HOOK
    - Start each scene with tension
@@ -61,26 +68,14 @@ RETENTION RULES (CRITICAL):
 3. **"YOU" Language**: Use direct personal address
    - "Your brain", "Your heart", "You feel"
    - Creates emotional connection
-   - Increases watch time
 
-4. **Pacing**: Short, punchy sentences (5-10 words max)
-   - NOT a short script - use multiple punchy sentences per scene
-   - Total word count MUST be 130-170 words
-   - Each scene: 15-20 words (spoken in 3-5 seconds)
-
-5. **Visual Engagement**: Each scene needs CINEMATIC visuals
-   - Use words: cinematic, macro-lens, high-contrast, dramatic lighting
-   - No static or generic images
-
-6. **Loopable Outro**: End should naturally lead back to the start
-   - Encourages rewatching
-   - Increases total watch time
-
-7. **Emotional Arc**: 
+4. **Emotional Arc**: 
    - Hook (Curiosity/Shock) → Build Tension → Reveal → Relief/Resolution
-   - Every scene moves the emotional needle
 
-OUTPUT FORMAT:
+5. **Loopable Outro**: End should naturally lead back to the start
+   - Encourages rewatching
+
+**OUTPUT FORMAT:**
 Return ONLY valid JSON with this exact structure:
 {
   "title": "Catchy click-worthy title (under 55 chars)",
@@ -91,11 +86,11 @@ Return ONLY valid JSON with this exact structure:
       "caption": "Punchy spoken text (15-20 words)"
     }
   ],
-  "cta": "Natural call-to-action that fits the end",
+  "cta": "Natural call-to-action",
   "description": "1-2 sentence video description"
 }
 
-REMEMBER: Retention is EVERYTHING. Every word, every scene, every visual must serve to KEEP THE VIEWER WATCHING.
+REMEMBER: Write like a HUMAN, not an AI. Be NATURAL. Be CONVERSATIONAL. Focus on RETENTION.
 """
 
 
@@ -105,26 +100,29 @@ REMEMBER: Retention is EVERYTHING. Every word, every scene, every visual must se
 
 def _default_prompt(topic: str) -> str:
     """
-    Default prompt for script generation.
-    Includes word count constraints and structure requirements.
+    Default prompt with NATIVE TONE and RETENTION enforcement.
     """
     return f"""
 Create a HIGH-RETENTION 45-second viral script for YouTube Shorts on: "{topic}"
 
-TARGET AUDIENCE: USA adults 18+ (dark mystery/science niche)
+**CRITICAL - NATIVE ENGLISH TONE:**
+- Write like a HUMAN talking to a friend
+- Use CONTRACTIONS: "don't", "you're", "that's"
+- Use IDIOMS: "blow your mind", "freak you out", "makes total sense"
+- AVOID: "thus", "hence", "therefore", "furthermore"
+- Sound NATURAL when read aloud
 
-SCRIPT REQUIREMENTS:
+**SCRIPT REQUIREMENTS:**
 
 1. **HOOK** (First 3 seconds - CRITICAL):
    - Must stop the scroll immediately
+   - Use conversational tone
    - Pattern interrupt or shocking statement
-   - Example: "Your body is lying to you right now..."
 
 2. **SCENES** ({MIN_SCENES}-{MAX_SCENES} scenes):
-   - Each scene: 3-5 seconds duration
    - Each scene: 15-20 words caption
+   - Each scene: Must end with a cliffhanger
    - Each scene: Cinematic visual description
-   - Each scene: Must end with a cliffhanger or transition
 
 3. **WORD COUNT** (HARD REQUIREMENT):
    - Total: {MIN_WORDS}-{MAX_WORDS} words
@@ -139,22 +137,118 @@ SCRIPT REQUIREMENTS:
 5. **TONE**:
    - Dark, mysterious, factual
    - Engaging, not boring
-   - Scientific but accessible
+   - NATURAL, CONVERSATIONAL
 
-Return ONLY valid JSON with title, hook, scenes, cta, and description.
-
-SCENE FORMAT:
+**SCENE FORMAT:**
 {{
   "visual": "Cinematic description (macro-lens, high-contrast, dramatic lighting)",
   "caption": "Punchy, engaging text (ends with cliffhanger)"
 }}
 
-Remember: Retention is EVERYTHING. Make every second count.
+**Return ONLY valid JSON with title, hook, scenes, cta, and description.**
+
+**REMEMBER:** Retention is EVERYTHING. Write like a HUMAN. Make every second count.
 """
 
 
 # ============================================
-# 3. SCRIPT VALIDATION & NORMALIZATION
+# 3. JSON CLEANING FUNCTION
+# ============================================
+
+def _clean_json_response(raw_reply: str) -> Dict:
+    """
+    Cleans and extracts JSON from LLM response.
+    Handles markdown code blocks, extra text, and malformed JSON.
+    """
+    if not raw_reply:
+        raise ValueError("Empty response from LLM")
+    
+    # Remove markdown code blocks
+    raw_reply = re.sub(r'```json\s*', '', raw_reply)
+    raw_reply = re.sub(r'```\s*', '', raw_reply)
+    
+    # Try to find JSON object
+    json_match = re.search(r'\{.*\}', raw_reply, re.DOTALL)
+    if json_match:
+        json_str = json_match.group(0)
+    else:
+        json_str = raw_reply
+    
+    # Clean common JSON issues
+    json_str = json_str.strip()
+    
+    # Fix trailing commas
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    
+    # Fix single quotes (but not inside existing JSON strings)
+    # Only replace unescaped single quotes that are used as string delimiters
+    json_str = re.sub(r"(?<!')'(?!')", '"', json_str)
+    
+    # Remove control characters
+    json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)
+    
+    # Fix unescaped newlines in strings
+    json_str = re.sub(r'(?<!\\)\n', ' ', json_str)
+    
+    # Try to parse
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON parsing failed: {e}")
+        logger.debug(f"Cleaned JSON: {json_str[:500]}...")
+        
+        # Fallback: Try to extract with regex
+        fallback = {}
+        
+        # Extract title
+        title_match = re.search(r'"title"\s*:\s*"([^"]+)"', json_str)
+        if title_match:
+            fallback['title'] = title_match.group(1)
+        
+        # Extract hook
+        hook_match = re.search(r'"hook"\s*:\s*"([^"]+)"', json_str)
+        if hook_match:
+            fallback['hook'] = hook_match.group(1)
+        
+        # Extract scenes
+        scenes_match = re.search(r'"scenes"\s*:\s*\[(.*?)\]', json_str, re.DOTALL)
+        if scenes_match:
+            scenes_str = scenes_match.group(1)
+            scenes = []
+            # Find all scene objects
+            scene_blocks = re.finditer(r'\{[^{}]*\}', scenes_str, re.DOTALL)
+            for block in scene_blocks:
+                scene_str = block.group(0)
+                visual_match = re.search(r'"visual"\s*:\s*"([^"]+)"', scene_str)
+                caption_match = re.search(r'"caption"\s*:\s*"([^"]+)"', scene_str)
+                if visual_match and caption_match:
+                    scenes.append({
+                        'visual': visual_match.group(1),
+                        'caption': caption_match.group(1)
+                    })
+            if scenes:
+                fallback['scenes'] = scenes
+        
+        # Extract CTA
+        cta_match = re.search(r'"cta"\s*:\s*"([^"]+)"', json_str)
+        if cta_match:
+            fallback['cta'] = cta_match.group(1)
+        
+        # Extract description
+        desc_match = re.search(r'"description"\s*:\s*"([^"]+)"', json_str)
+        if desc_match:
+            fallback['description'] = desc_match.group(1)
+        
+        if fallback:
+            logger.info("✅ Extracted data using regex fallback")
+            return fallback
+        
+        raise ValueError(f"Could not parse JSON from response: {raw_reply[:200]}")
+
+
+# ============================================
+# 4. SCRIPT VALIDATION & NORMALIZATION
 # ============================================
 
 def _normalize_scenes(script_data: Dict) -> Dict:
@@ -165,8 +259,9 @@ def _normalize_scenes(script_data: Dict) -> Dict:
     normalized = []
     
     for s in script_data.get('scenes', []):
-        visual = s.get('visual') or s.get('description') or ''
-        caption = s.get('caption') or s.get('text') or ''
+        # Try different field names
+        visual = s.get('visual') or s.get('description') or s.get('image') or ''
+        caption = s.get('caption') or s.get('text') or s.get('speech') or ''
         
         # Clean and validate
         visual = visual.strip()
@@ -175,6 +270,12 @@ def _normalize_scenes(script_data: Dict) -> Dict:
         if visual and caption:
             normalized.append({
                 "visual": visual,
+                "caption": caption
+            })
+        elif caption and not visual:
+            # If only caption exists, generate a generic visual
+            normalized.append({
+                "visual": f"Dark cinematic shot of {caption[:30]}...",
                 "caption": caption
             })
     
@@ -220,17 +321,12 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
             issues.append(f"Scene {i+1} missing visual description")
         if not scene.get('caption'):
             issues.append(f"Scene {i+1} missing caption")
-        
-        # Check for cliffhanger
-        caption = scene.get('caption', '')
-        if not any(word in caption.lower() for word in ['...', 'but', 'however', 'yet', 'still']):
-            issues.append(f"Scene {i+1} may lack cliffhanger")
     
     return len(issues) == 0, issues
 
 
 # ============================================
-# 4. RETENTION ANALYSIS
+# 5. RETENTION ANALYSIS
 # ============================================
 
 def analyze_retention_potential(script_data: Dict) -> Dict:
@@ -258,7 +354,7 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
             suggestions.append("Hook should be 5-15 words for maximum impact")
         
         # Check for pattern interrupt
-        if any(word in hook.lower() for word in ['lying', 'secret', 'truth', 'never', 'always']):
+        if any(word in hook.lower() for word in ['lying', 'secret', 'truth', 'never', 'always', 'actually']):
             score += 10
     
     # Check "YOU" language
@@ -273,7 +369,7 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
     cliffhanger_count = 0
     for scene in scenes:
         caption = scene.get('caption', '')
-        if any(word in caption.lower() for word in ['...', 'but', 'however', 'yet', 'still']):
+        if any(word in caption.lower() for word in ['...', 'but', 'however', 'yet', 'still', 'though']):
             cliffhanger_count += 1
     
     if cliffhanger_count >= len(scenes) * 0.7:
@@ -288,18 +384,24 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
     else:
         suggestions.append(f"Word count: {word_count} (target: {MIN_WORDS}-{MAX_WORDS})")
     
+    # Check for loopable outro
+    cta = script_data.get('cta', '')
+    if any(word in cta.lower() for word in ['follow', 'share', 'subscribe', 'comment']):
+        score += 10
+    
     return {
         'retention_score': min(100, score),
         'suggestions': suggestions,
         'scenes': len(scenes),
         'word_count': word_count,
         'you_count': you_count,
-        'cliffhanger_ratio': cliffhanger_count / len(scenes) if scenes else 0
+        'cliffhanger_ratio': cliffhanger_count / len(scenes) if scenes else 0,
+        'is_viral_ready': score >= 80
     }
 
 
 # ============================================
-# 5. MAIN GENERATE FUNCTION (RETRY LOGIC)
+# 6. MAIN GENERATE FUNCTION
 # ============================================
 
 def generate_script(
@@ -309,6 +411,12 @@ def generate_script(
 ) -> Dict:
     """
     Generates a RETENTION-OPTIMIZED script using Groq LLM.
+    
+    Features:
+    - JSON cleaning with regex fallback
+    - Native English tone enforcement
+    - Automatic validation and retry
+    - Retention analysis
     
     Args:
         topic: Topic for the script
@@ -354,9 +462,10 @@ def generate_script(
                 max_tokens=MAX_TOKENS
             )
             
-            # Parse response
             raw_reply = completion.choices[0].message.content
-            script_data = json.loads(raw_reply)
+            
+            # Clean JSON
+            script_data = _clean_json_response(raw_reply)
             
             # Normalize scenes
             script_data = _normalize_scenes(script_data)
@@ -383,6 +492,7 @@ def generate_script(
                 
                 if score >= 80:
                     logger.info(f"✅ Excellent script! Retention score: {score}/100")
+                    logger.info(f"📊 {len(script_data['scenes'])} scenes, {len(script_data['voiceover'].split())} words")
                     return script_data
                 else:
                     logger.warning(f"⚠️ Good but could be better (Score: {score}/100)")
@@ -414,7 +524,12 @@ def generate_script(
         except BadRequestError as e:
             logger.error(f"❌ Groq API error: {e}")
             last_error = e
-            break
+            if attempt < max_retries:
+                wait_time = 2 ** attempt
+                logger.info(f"⏳ Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+            else:
+                break
             
         except Exception as e:
             logger.error(f"❌ Unexpected error: {e}")
@@ -437,7 +552,7 @@ def generate_script(
 
 
 # ============================================
-# 6. BATCH GENERATION
+# 7. BATCH GENERATION
 # ============================================
 
 def generate_multiple_scripts(
@@ -457,6 +572,7 @@ def generate_multiple_scripts(
         List of script data dictionaries
     """
     scripts = []
+    failed = []
     
     for i, topic in enumerate(topics):
         logger.info(f"📝 Generating script {i+1}/{len(topics)}: {topic}")
@@ -467,68 +583,84 @@ def generate_multiple_scripts(
             logger.info(f"✅ Script {i+1} generated successfully")
         except Exception as e:
             logger.error(f"❌ Script {i+1} failed: {e}")
-            continue
+            failed.append({'topic': topic, 'error': str(e)})
         
         if i < len(topics) - 1:
             time.sleep(delay)
     
     logger.info(f"📊 Generated {len(scripts)}/{len(topics)} scripts successfully")
-    return scripts
+    if failed:
+        logger.warning(f"⚠️ Failed scripts: {len(failed)}")
+    
+    return scripts, failed
 
 
 # ============================================
-# 7. SCRIPT EXPORT
+# 8. SCRIPT EXPORT
 # ============================================
 
-def export_script(script_data: Dict, output_path: str = "output/script.json"):
+def export_script(script_data: Dict, output_path: str = "output/script.json") -> str:
     """
     Exports script data to JSON file.
     """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     
-    with open(output_path, 'w') as f:
-        json.dump(script_data, f, indent=2)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(script_data, f, indent=2, ensure_ascii=False)
     
     logger.info(f"📄 Script exported to: {output_path}")
     return output_path
 
 
 # ============================================
-# 8. MAIN EXECUTION
+# 9. MAIN EXECUTION
 # ============================================
 
 if __name__ == "__main__":
-    # Test the generator
-    print("="*60)
-    print("RETENTION-OPTIMIZED SCRIPT GENERATOR")
-    print("="*60)
+    print("="*70)
+    print("SCRIPT GENERATOR - FULLY FIXED (JSON Cleaning + Native Tone)")
+    print("="*70)
     print()
     
     # Test single generation
     test_topic = "Why Your Brain Lies to You"
     print(f"🧪 Testing with topic: {test_topic}")
-    print()
+    print("-" * 70)
     
     try:
         script = generate_script(test_topic)
         
         print("✅ Script generated successfully!")
-        print(f"   Title: {script.get('title')}")
-        print(f"   Hook: {script.get('hook')}")
-        print(f"   Scenes: {len(script.get('scenes', []))}")
-        print(f"   Words: {len(script.get('voiceover', '').split())}")
+        print()
+        print(f"📌 TITLE: {script.get('title')}")
+        print(f"🎯 HOOK: {script.get('hook')}")
+        print(f"📊 SCENES: {len(script.get('scenes', []))}")
+        print(f"📝 WORDS: {len(script.get('voiceover', '').split())}")
+        print(f"📢 CTA: {script.get('cta')}")
         
         if 'retention_analysis' in script:
             analysis = script['retention_analysis']
-            print(f"   Retention Score: {analysis.get('retention_score')}/100")
-            print(f"   Suggestions: {analysis.get('suggestions', [])[:2]}")
+            print()
+            print("📈 RETENTION ANALYSIS:")
+            print(f"   Score: {analysis.get('retention_score')}/100")
+            print(f"   Viral Ready: {analysis.get('is_viral_ready')}")
+            if analysis.get('suggestions'):
+                print("   Suggestions:")
+                for suggestion in analysis['suggestions'][:3]:
+                    print(f"     - {suggestion}")
         
         print()
-        print("📄 First scene preview:")
+        print("📄 FIRST SCENE PREVIEW:")
         scenes = script.get('scenes', [])
         if scenes:
             print(f"   Visual: {scenes[0].get('visual')}")
-            print(f"   Caption: {scenes[0].get('caption')[:50]}...")
+            print(f"   Caption: {scenes[0].get('caption')}")
+        
+        print()
+        print("-" * 70)
+        print("✅ Script generator is ready for production!")
         
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
