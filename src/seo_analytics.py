@@ -30,7 +30,7 @@ Honest scope note up front, since it matters for how much to trust this:
 import os
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 from collections import defaultdict
 
 import numpy as np
