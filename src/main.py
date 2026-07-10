@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 import time
@@ -188,15 +189,46 @@ class SKILLORPipeline:
 
         logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
         image_paths = []
+        image_sources = []
         used_hashes = set()
         used_fallbacks = set()
 
         for i, scene in enumerate(script_data['scenes']):
-            try:
-                res = generate_images(i, scene, used_hashes, used_fallbacks)
-                image_paths.append(res['path'])
-            except Exception as e:
-                logger.error(f"Scene {i} image failed: {e}")
+            # NOTE: intentionally NOT caught here anymore. Swallowing this
+            # used to leave image_paths shorter than scenes on a total
+            # failure, which build_video()'s length-assert would then blow
+            # up on with a confusing error deep in Phase 4 - and worse, a
+            # caught-but-ignored failure could silently continue with a
+            # missing scene. Let it raise straight up to run_pipeline's
+            # caller so a broken run never reaches the upload step.
+            res = generate_images(i, scene, used_hashes, used_fallbacks)
+            image_paths.append(res['path'])
+            image_sources.append(res['source'])
+
+        # ---- STRICT QUALITY GATE ----
+        # "AI-provider" = image_generator's primary layer, rendered fresh
+        # from THIS scene's own visual description via image_providers.py -
+        # unique, on-brand, matches the script. Every other source (local
+        # fallback pool, Pexels/Pixabay stock, Playwright screenshot) is a
+        # degraded substitute that only fires when AI providers are
+        # rate-limited. A video built mostly out of those looks generic/
+        # reused, which is exactly what gets a Shorts video flagged
+        # "low-quality" and reach-limited by the algorithm.
+        # Better to abort this run (no upload) than publish that - the next
+        # scheduled run tries again once providers are free.
+        FALLBACK_ABORT_RATIO = float(os.environ.get("FALLBACK_ABORT_RATIO", "0.3"))
+        source_counts = Counter(image_sources)
+        fallback_count = sum(c for src, c in source_counts.items() if src != "AI-provider")
+        fallback_ratio = fallback_count / len(image_sources) if image_sources else 1.0
+        logger.info(f"Image sources: {dict(source_counts)} (fallback ratio {fallback_ratio:.0%})")
+        if fallback_ratio > FALLBACK_ABORT_RATIO:
+            raise RuntimeError(
+                f"Quality gate failed: {fallback_count}/{len(image_sources)} scene "
+                f"images ({fallback_ratio:.0%}) came from fallback sources instead of "
+                f"fresh AI generation (threshold: {FALLBACK_ABORT_RATIO:.0%}). Aborting "
+                f"this run instead of uploading a cheap-looking video - AI image "
+                f"providers are likely rate-limited right now."
+            )
 
         logger.info("\n🔊 PHASE 3: VOICE GENERATION - DARK MALE")
         # CRITICAL CHANGE: am_adam + slow speed
@@ -270,9 +302,20 @@ class SKILLORPipeline:
         return {'success': True}
 
     def run_daily_batch(self, num_videos: int = 3):
+        succeeded, failed = 0, 0
         for i in range(num_videos):
-            self.run_pipeline()
+            try:
+                self.run_pipeline()
+                succeeded += 1
+            except Exception as e:
+                # A quality-gate abort (or any other failure) for slot i
+                # should NOT stop the rest of today's batch - it just means
+                # this slot posts nothing. Better than crashing the whole
+                # batch over one rate-limited run.
+                failed += 1
+                logger.error(f"Batch slot {i + 1}/{num_videos} failed/aborted: {e}")
             if i < num_videos - 1: time.sleep(300) # 5 min gap
+        logger.info(f"Daily batch complete: {succeeded} uploaded, {failed} failed/aborted (of {num_videos} slots).")
 
 def main():
     pipeline = SKILLORPipeline()
