@@ -8,25 +8,120 @@ from typing import List, Dict
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# PRIMARY ENGINE: Chatterbox (Resemble AI, MIT license - safe for a
+# monetized channel).
+#
+# Why Chatterbox over Kokoro: Kokoro has no emotion/delivery control at all
+# - every line comes out at the same flat intensity regardless of content,
+# which is exactly why the channel's "dark mystery" voiceovers read as
+# monotone. Chatterbox's `exaggeration` parameter is the first open-source
+# control of its kind for this, so it's what actually fixes the tone
+# instead of just changing which model renders the same flat delivery.
+#
+# Lazy-loaded on first use (not at import time) so a missing pip install or
+# a failed model download doesn't crash the whole pipeline before it even
+# starts - _get_chatterbox() catches that, and every call in this file
+# falls back to Kokoro per-segment if Chatterbox is unavailable or a
+# specific generation call fails. One bad Chatterbox call should never take
+# a whole video down.
+# ---------------------------------------------------------------------------
+_chatterbox_model = None
+_chatterbox_load_failed = False
+
+# Tuned for THIS channel's dark/mystery/body-science tone specifically -
+# not Chatterbox's defaults (exaggeration=0.5, cfg_weight=0.5, which are
+# "natural/neutral"). Per Chatterbox's own docs: pushing exaggeration up
+# makes delivery more dramatic/tense, but also speeds pacing up as a side
+# effect - pulling cfg_weight down compensates for that, so the net result
+# is a *slower, more deliberate, ominous* read rather than a rushed one.
+# If a video ever comes out feeling over-the-top, drop exaggeration toward
+# 0.6; if it still feels flat, push it toward 0.8-0.9.
+CHATTERBOX_EXAGGERATION = 0.7
+CHATTERBOX_CFG_WEIGHT = 0.35
+CHATTERBOX_TEMPERATURE = 0.8
+
+# Optional voice-clone reference. Drop a clean 10-20s WAV (single speaker,
+# no background noise) here and Chatterbox will clone that voice for every
+# video instead of its own built-in default voice. If this file doesn't
+# exist, Chatterbox just uses its default voice - nothing else changes.
+VOICE_REFERENCE_PATH = "assets/voice_reference.wav"
+
+
+def _get_chatterbox():
+    """Loads the Chatterbox model once and caches it. Returns None (and
+    remembers not to retry) if loading fails for any reason - missing
+    package, no internet for the first-run model download, out-of-memory
+    on a CPU-only runner, etc."""
+    global _chatterbox_model, _chatterbox_load_failed
+    if _chatterbox_model is not None or _chatterbox_load_failed:
+        return _chatterbox_model
+    try:
+        import torch
+        from chatterbox.tts import ChatterboxTTS
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Loading Chatterbox TTS model on {device} (first call only, then cached)...")
+        _chatterbox_model = ChatterboxTTS.from_pretrained(device=device)
+        logger.info("Chatterbox loaded successfully.")
+    except Exception as e:
+        logger.error(f"Chatterbox unavailable ({e}) - every segment will fall back to Kokoro.")
+        _chatterbox_load_failed = True
+        _chatterbox_model = None
+    return _chatterbox_model
+
+
+def _synthesize_chatterbox(text: str):
+    """Returns (audio: np.ndarray float32, sample_rate: int)."""
+    model = _get_chatterbox()
+    if model is None:
+        raise RuntimeError("Chatterbox model not loaded")
+
+    kwargs = dict(
+        exaggeration=CHATTERBOX_EXAGGERATION,
+        cfg_weight=CHATTERBOX_CFG_WEIGHT,
+        temperature=CHATTERBOX_TEMPERATURE,
+    )
+    if os.path.exists(VOICE_REFERENCE_PATH):
+        kwargs["audio_prompt_path"] = VOICE_REFERENCE_PATH
+
+    wav = model.generate(text, **kwargs)
+    audio = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+
+    if np.isnan(audio).any():
+        audio = np.nan_to_num(audio, 0.0)
+    peak = np.abs(audio).max()
+    if peak > 1.0:
+        audio = audio / peak * 0.95
+
+    return audio, model.sr
+
+
+# ---------------------------------------------------------------------------
+# FALLBACK ENGINE: Kokoro (Apache 2.0). No emotion control, but has no
+# install/download surprises and is fast on CPU - kept exactly as before so
+# a Chatterbox failure never takes the whole pipeline down with it.
+# ---------------------------------------------------------------------------
 try:
     from kokoro import KPipeline
-    logger.info("Loading Kokoro TTS Model...")
-    tts = KPipeline(lang_code='a') # 'a' = American English
+    logger.info("Loading Kokoro TTS model (fallback engine)...")
+    _kokoro_tts = KPipeline(lang_code='a')  # 'a' = American English
 except ImportError as e:
     logger.error(f"Failed to import Kokoro: {e}")
-    tts = None
+    _kokoro_tts = None
 
-SAMPLE_RATE = 24000
-SILENCE_PAD_SEC = 0.25 # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
+KOKORO_SAMPLE_RATE = 24000
+SILENCE_PAD_SEC = 0.25  # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
+
 
 def add_mystery_pauses(text: str) -> str:
     """Adds a beat of suspense after dark hooks/reveals for retention.
 
-    Kokoro TTS reads plain text/punctuation, not SSML - it has no idea what
-    '<break time="0.5s"/>' means, so it was likely reading those tags aloud
-    as literal words. Real neural TTS models DO respect punctuation-driven
-    pauses though, so we use an ellipsis (natural trailing-off pause) or a
-    short standalone clause instead - actually audible, not spoken as text."""
+    Neither Kokoro nor Chatterbox reads SSML tags like '<break time="0.5s"/>'
+    - both read plain text/punctuation, so a literal SSML tag would get
+    spoken aloud as text. Real neural TTS models DO respect
+    punctuation-driven pauses though, so we use an ellipsis (natural
+    trailing-off pause) or a short standalone clause instead - actually
+    audible, not spoken as text."""
     # "you too?" -> trailing pause via ellipsis
     text = re.sub(r'you too\?', 'you too?..', text, flags=re.IGNORECASE)
     # already-present ".." -> stretch into a longer natural pause
@@ -35,16 +130,13 @@ def add_mystery_pauses(text: str) -> str:
     text = re.sub(r'right now\.', 'right now...', text, flags=re.IGNORECASE)
     return text
 
-def _synthesize(text: str, voice: str, speed: float) -> np.ndarray:
-    if not tts:
+
+def _synthesize_kokoro(text: str, voice: str, speed: float):
+    """Returns (audio: np.ndarray float32, sample_rate: int)."""
+    if not _kokoro_tts:
         raise RuntimeError("Kokoro TTS model not loaded. Check Kokoro installation.")
-    if not text or not text.strip():
-        raise ValueError("Text cannot be empty")
 
-    # NEW: Add mystery pauses before TTS
-    text = add_mystery_pauses(text)
-
-    generator = tts(text, voice=voice, speed=speed)
+    generator = _kokoro_tts(text, voice=voice, speed=speed)
     chunks = []
     for gs, ps, audio in generator:
         if audio is not None:
@@ -61,32 +153,57 @@ def _synthesize(text: str, voice: str, speed: float) -> np.ndarray:
     if max_val > 1.0:
         full_audio = full_audio / max_val * 0.95
 
-    return full_audio
+    return full_audio, KOKORO_SAMPLE_RATE
+
+
+def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
+    """Chatterbox first (dark, expressive delivery); falls back to Kokoro
+    on ANY failure - missing install, model load error, generation error -
+    so a single bad Chatterbox call can't kill a whole video. Returns
+    (audio, sample_rate, engine_used) so callers/logs can tell which engine
+    actually produced a given segment."""
+    if not text or not text.strip():
+        raise ValueError("Text cannot be empty")
+
+    text_with_pauses = add_mystery_pauses(text)
+
+    try:
+        audio, sr = _synthesize_chatterbox(text_with_pauses)
+        return audio, sr, "chatterbox"
+    except Exception as e:
+        logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
+        audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
+        return audio, sr, "kokoro"
+
 
 def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
-    """USA Dark Science Voice: Deep, Slow, Mysterious"""
+    """USA Dark Science Voice: deep, slow, mysterious. Tries Chatterbox
+    (expressive) first, Kokoro (flat but reliable) as fallback."""
     try:
-        logger.info(f"Generating DARK voiceover with: {voice} at speed {speed}...")
+        logger.info(f"Generating DARK voiceover (voice='{voice}', speed={speed})...")
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        audio = _synthesize(text, voice, speed)
-        sf.write(output_path, audio, SAMPLE_RATE)
-        logger.info(f"Voice saved: {output_path} ({len(audio)} samples, {len(audio)/SAMPLE_RATE:.2f}s)")
+        audio, sr, engine = _synthesize(text, voice, speed)
+        sf.write(output_path, audio, sr)
+        logger.info(f"Voice saved via {engine}: {output_path} ({len(audio)} samples, {len(audio)/sr:.2f}s)")
         return output_path
     except Exception as e:
         logger.error(f"Voice generation failed: {e}")
         raise RuntimeError(f"Voice generation error: {e}")
 
+
 def generate_voice_segments(
     scenes: List[dict],
-    voice: str = "am_adam", # CHANGE 1: am_michael se am_adam
+    voice: str = "am_adam",  # only used if a segment falls back to Kokoro
     output_dir: str = "output/segments",
-    speed: float = 0.95, # CHANGE 2: 1.0 se 0.95. Thora slow
+    speed: float = 0.95,     # only used if a segment falls back to Kokoro
 ) -> List[Dict]:
     """
-    Each scene gets its own audio with mystery pauses
+    Each scene gets its own audio, generated via Chatterbox (with mystery
+    pauses and dark-tone exaggeration) or Kokoro as a per-segment fallback.
     """
     os.makedirs(output_dir, exist_ok=True)
     segments = []
+    engine_counts = {}
 
     for i, scene in enumerate(scenes):
         caption = scene.get('caption', '').strip() if isinstance(scene, dict) else str(scene)
@@ -94,18 +211,21 @@ def generate_voice_segments(
             caption = " "
 
         try:
-            audio = _synthesize(caption, voice, speed) # Pauses auto add ho jaenge
+            audio, sr, engine = _synthesize(caption, voice, speed)
         except Exception as e:
-            logger.error(f"Segment {i+1} TTS failed: {e} - inserting short silence instead")
-            audio = np.zeros(int(SAMPLE_RATE * 1.5), dtype=np.float32)
+            logger.error(f"Segment {i+1} TTS failed on both engines: {e} - inserting short silence instead")
+            audio = np.zeros(int(KOKORO_SAMPLE_RATE * 1.5), dtype=np.float32)
+            sr = KOKORO_SAMPLE_RATE
+            engine = "silence"
 
+        engine_counts[engine] = engine_counts.get(engine, 0) + 1
         path = os.path.join(output_dir, f"seg_{i}.wav")
-        sf.write(path, audio, SAMPLE_RATE)
-        duration = len(audio) / SAMPLE_RATE
+        sf.write(path, audio, sr)
+        duration = len(audio) / sr
 
-        segments.append({"path": path, "duration": duration, "caption": caption})
-        logger.info(f"Segment {i+1}/{len(scenes)}: {duration:.2f}s - \"{caption[:50]}...\"")
+        segments.append({"path": path, "duration": duration, "caption": caption, "tts_engine": engine})
+        logger.info(f"Segment {i+1}/{len(scenes)} via {engine}: {duration:.2f}s - \"{caption[:50]}...\"")
 
     total = sum(s['duration'] for s in segments)
-    logger.info(f"Total DARK voiceover duration: {total:.2f}s")
+    logger.info(f"Total DARK voiceover duration: {total:.2f}s | engines used: {engine_counts}")
     return segments
