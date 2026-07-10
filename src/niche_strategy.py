@@ -5,8 +5,7 @@ OPTIMIZED FOR: HIGH RETENTION + PSYCHOLOGICAL PACING
 
 import logging
 import random
-import re
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -359,6 +358,7 @@ SCRIPT STRUCTURE:
 
 TONE: Dark, mysterious, factual, engaging, personal
 PAIN POINT: {pain_point}
+SUGGESTED CLIFFHANGER TRANSITIONS (use similar style between scenes): {', '.join(transitions)}
 
 📝 SCENE REQUIREMENTS:
 
