@@ -6,7 +6,6 @@ from collections import Counter
 from datetime import datetime, timezone
 import time
 import traceback
-from pathlib import Path
 
 # Add current directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
@@ -292,6 +291,17 @@ class SKILLORPipeline:
                 
                 ranked_hashtags = rank_hashtags(script_data.get('hashtags', []))
                 script_data['hashtags_ranked'] = ranked_hashtags
+
+                title_options = script_data.get('title_options', [])
+                if title_options:
+                    ab_variants = generate_ab_variants(script_data, title_options)
+                    script_data['ab_variants'] = ab_variants
+                    logger.info("✅ A/B title/description variants generated")
+
+                insights = get_historical_insights()
+                if insights.get('insights'):
+                    script_data['historical_insights'] = insights
+                    logger.info(f"📊 Historical insights: {len(insights['insights'])} pattern(s) found")
             except Exception as e:
                 logger.warning(f"CTR prediction failed: {e}")
 
