@@ -181,9 +181,12 @@ def _clean_json_response(raw_reply: str) -> Dict:
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
     
-    # Fix single quotes (but not inside existing JSON strings)
-    # Only replace unescaped single quotes that are used as string delimiters
-    json_str = re.sub(r"(?<!')'(?!')", '"', json_str)
+    # NOTE: We intentionally do NOT blanket-convert single quotes to double
+    # quotes here. Groq's response_format={"type": "json_object"} already
+    # guarantees valid double-quoted JSON, and the system prompt asks for
+    # natural contractions ("don't", "you're"), which contain apostrophes.
+    # Converting those apostrophes to '"' corrupts the JSON mid-string
+    # (this was the root cause of the "Expecting ',' delimiter" errors).
     
     # Remove control characters
     json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)
@@ -580,87 +583,4 @@ def generate_multiple_scripts(
         try:
             script = generate_script(topic, max_retries=max_retries)
             scripts.append(script)
-            logger.info(f"✅ Script {i+1} generated successfully")
-        except Exception as e:
-            logger.error(f"❌ Script {i+1} failed: {e}")
-            failed.append({'topic': topic, 'error': str(e)})
-        
-        if i < len(topics) - 1:
-            time.sleep(delay)
-    
-    logger.info(f"📊 Generated {len(scripts)}/{len(topics)} scripts successfully")
-    if failed:
-        logger.warning(f"⚠️ Failed scripts: {len(failed)}")
-    
-    return scripts, failed
-
-
-# ============================================
-# 8. SCRIPT EXPORT
-# ============================================
-
-def export_script(script_data: Dict, output_path: str = "output/script.json") -> str:
-    """
-    Exports script data to JSON file.
-    """
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(script_data, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"📄 Script exported to: {output_path}")
-    return output_path
-
-
-# ============================================
-# 9. MAIN EXECUTION
-# ============================================
-
-if __name__ == "__main__":
-    print("="*70)
-    print("SCRIPT GENERATOR - FULLY FIXED (JSON Cleaning + Native Tone)")
-    print("="*70)
-    print()
-    
-    # Test single generation
-    test_topic = "Why Your Brain Lies to You"
-    print(f"🧪 Testing with topic: {test_topic}")
-    print("-" * 70)
-    
-    try:
-        script = generate_script(test_topic)
-        
-        print("✅ Script generated successfully!")
-        print()
-        print(f"📌 TITLE: {script.get('title')}")
-        print(f"🎯 HOOK: {script.get('hook')}")
-        print(f"📊 SCENES: {len(script.get('scenes', []))}")
-        print(f"📝 WORDS: {len(script.get('voiceover', '').split())}")
-        print(f"📢 CTA: {script.get('cta')}")
-        
-        if 'retention_analysis' in script:
-            analysis = script['retention_analysis']
-            print()
-            print("📈 RETENTION ANALYSIS:")
-            print(f"   Score: {analysis.get('retention_score')}/100")
-            print(f"   Viral Ready: {analysis.get('is_viral_ready')}")
-            if analysis.get('suggestions'):
-                print("   Suggestions:")
-                for suggestion in analysis['suggestions'][:3]:
-                    print(f"     - {suggestion}")
-        
-        print()
-        print("📄 FIRST SCENE PREVIEW:")
-        scenes = script.get('scenes', [])
-        if scenes:
-            print(f"   Visual: {scenes[0].get('visual')}")
-            print(f"   Caption: {scenes[0].get('caption')}")
-        
-        print()
-        print("-" * 70)
-        print("✅ Script generator is ready for production!")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+            logger.info(f"✅ Script {i+1} generated s
