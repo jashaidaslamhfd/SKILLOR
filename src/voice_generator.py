@@ -15,8 +15,7 @@ import numpy as np
 import soundfile as sf
 import logging
 import re
-import time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 
 # ============================================
 # LOGGING CONFIGURATION
@@ -622,7 +621,7 @@ if __name__ == "__main__":
     
     # Test single voice generation
     test_text = "Your heart is lying to you right now... and it has been since the day you were born."
-    print(f"🧪 Testing voice generation:")
+    print("🧪 Testing voice generation:")
     print(f"   Text: {test_text}")
     print()
     
