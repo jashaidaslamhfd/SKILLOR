@@ -2,9 +2,11 @@ import os
 import random
 import logging
 import numpy as np
+import soundfile as sf
 from moviepy.editor import (
     ImageClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
+    CompositeAudioClip,
 )
 import moviepy.video.fx.all as vfx
 import moviepy.audio.fx.all as afx
@@ -19,6 +21,21 @@ ZOOM_AMOUNT = 0.18           # 1.0 -> 1.18 (or reverse) - clearly visible but no
 PAN_PX = 50                  # subtle horizontal drift in pixels
 TARGET_MIN_SEC = 40
 TARGET_MAX_SEC = 55
+
+# ---------------------------------------------------------------------------
+# Background music. Pure voiceover-over-silence reads as flat/lifeless,
+# especially for a "dark mystery" tone where a low tension bed is expected.
+# No real royalty-free-music CDN is reachable from this environment, so this
+# synthesizes a procedural dark ambient drone (root + fifth + a slightly
+# detuned layer for tension, plus a slow swell and a soft noise bed) instead
+# of relying on an external audio library. If you later add real licensed
+# tracks under assets/music/*.wav|mp3, drop them in - _get_music_track()
+# prefers a real file when one exists and only falls back to the
+# synthesized drone when the folder is empty.
+# ---------------------------------------------------------------------------
+MUSIC_DIR = "assets/music"
+MUSIC_VOLUME = 0.15          # ducked well under the voice, just adds atmosphere
+MUSIC_SAMPLE_RATE = 24000    # matches voice_generator.py's Kokoro output rate
 
 # Caption safe-zone: Shorts/Reels UI (like/comment/share/follow buttons) sits
 # on the right edge and bottom ~12-15% of the screen. Keep captions higher
@@ -223,6 +240,57 @@ def _word_by_word_clips(text: str, total_duration: float):
     return clips
 
 
+def _synthesize_ambient_bed(duration: float, seed: int = None) -> np.ndarray:
+    """Procedural dark-ambient drone: a low root note + a fifth + a slightly
+    detuned layer (for tension/dissonance), a slow volume swell so it isn't
+    a static hum, and a soft filtered noise bed for texture. Not a real
+    music track, but far better than dead silence under the voiceover."""
+    rng = np.random.default_rng(seed)
+    sr = MUSIC_SAMPLE_RATE
+    n = max(int(sr * duration), sr)
+    t = np.linspace(0, duration, n, endpoint=False)
+
+    root = 48 + rng.uniform(-4, 4)  # low, sub-100Hz-ish root for a "dark" register
+    freqs = [root, root * 1.5, root * 2.006]  # root, perfect fifth, detuned octave
+    wave = np.zeros_like(t)
+    for f in freqs:
+        wave += 0.30 * np.sin(2 * np.pi * f * t)
+
+    # Slow amplitude swell so the drone breathes instead of sitting static.
+    lfo = 0.7 + 0.3 * np.sin(2 * np.pi * 0.04 * t + rng.uniform(0, 2 * np.pi))
+    wave *= lfo
+
+    # Soft low-passed noise bed (air/texture), kept very quiet.
+    noise = rng.normal(0, 1, size=t.shape)
+    kernel = np.ones(300) / 300
+    noise = np.convolve(noise, kernel, mode="same")
+    wave += 0.04 * noise
+
+    peak = np.abs(wave).max()
+    if peak > 0:
+        wave = wave / peak * 0.9
+    return wave.astype(np.float32)
+
+
+def _get_music_track(duration: float, output_dir: str) -> str:
+    """Prefers a real licensed track from assets/music/ if one exists
+    (random pick each video for variety); otherwise synthesizes an ambient
+    drone bed sized to the video's duration."""
+    if os.path.isdir(MUSIC_DIR):
+        real_tracks = [
+            os.path.join(MUSIC_DIR, f) for f in os.listdir(MUSIC_DIR)
+            if f.lower().endswith((".wav", ".mp3", ".m4a", ".ogg"))
+        ]
+        if real_tracks:
+            return random.choice(real_tracks)
+
+    os.makedirs(output_dir, exist_ok=True)
+    music_path = os.path.join(output_dir, "bg_music.wav")
+    bed = _synthesize_ambient_bed(duration, seed=random.randint(1, 999999))
+    sf.write(music_path, bed, MUSIC_SAMPLE_RATE)
+    return music_path
+
+
 def build_video(image_paths, audio_segments, scenes, output_path="output/final_video.mp4"):
     """
     image_paths:   list of scene image file paths (len == len(scenes))
@@ -261,8 +329,17 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
     final_video = concatenate_videoclips(video_clips, method="compose")
 
     logger.info("Concatenating audio segments (hard-cut, preserves exact voice timing)...")
-    final_audio = concatenate_audioclips(audio_clips)
+    voice_audio = concatenate_audioclips(audio_clips)
 
+    logger.info("Adding background music bed (ducked under the voice)...")
+    music_path = _get_music_track(voice_audio.duration, os.path.dirname(output_path) or "output")
+    music_clip = AudioFileClip(music_path).fx(afx.volumex, MUSIC_VOLUME)
+    if music_clip.duration < voice_audio.duration:
+        loops_needed = int(voice_audio.duration // music_clip.duration) + 1
+        music_clip = concatenate_audioclips([music_clip] * loops_needed)
+    music_clip = music_clip.subclip(0, voice_audio.duration).fx(afx.audio_fadein, 1.0).fx(afx.audio_fadeout, 1.0)
+
+    final_audio = CompositeAudioClip([music_clip, voice_audio])
     final_video = final_video.set_audio(final_audio)
 
     # ---- Enforce 40-55s target by scaling video+audio together if needed ----
