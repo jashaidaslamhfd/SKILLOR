@@ -29,17 +29,27 @@ logger = logging.getLogger(__name__)
 _chatterbox_model = None
 _chatterbox_load_failed = False
 
-# Tuned for THIS channel's dark/mystery/body-science tone specifically -
-# not Chatterbox's defaults (exaggeration=0.5, cfg_weight=0.5, which are
-# "natural/neutral"). Per Chatterbox's own docs: pushing exaggeration up
-# makes delivery more dramatic/tense, but also speeds pacing up as a side
-# effect - pulling cfg_weight down compensates for that, so the net result
-# is a *slower, more deliberate, ominous* read rather than a rushed one.
-# If a video ever comes out feeling over-the-top, drop exaggeration toward
-# 0.6; if it still feels flat, push it toward 0.8-0.9.
-CHATTERBOX_EXAGGERATION = 0.7
-CHATTERBOX_CFG_WEIGHT = 0.35
+# CORRECTED per Chatterbox's own docs: "higher exaggeration tends to speed
+# up speech." The previous settings here (exaggeration=0.7, cfg_weight=0.35)
+# were following Chatterbox's own "dramatic delivery" recipe, but that
+# combination is documented to net out FASTER than default, not slower -
+# which matches the "has emotion but talks too fast, loses the mystery
+# vibe" feedback. Dialing exaggeration back down and cfg_weight back up
+# keeps some expressiveness without the speedup side effect. Reliable
+# pacing control now comes from CHATTERBOX_TEMPO below instead of fighting
+# the model's internal speed/emotion coupling.
+CHATTERBOX_EXAGGERATION = 0.6
+CHATTERBOX_CFG_WEIGHT = 0.5
 CHATTERBOX_TEMPERATURE = 0.8
+
+# Chatterbox has no direct "speed" parameter like Kokoro does, so this
+# applies an explicit pitch-preserving tempo change via ffmpeg after
+# generation (ffmpeg's atempo filter) - this is what actually delivers a
+# slow, deliberate "dark mystery" pace reliably, rather than relying on
+# exaggeration/cfg_weight side effects. 0.85 = 15% slower, same pitch.
+# Lower = slower/more ominous; 1.0 = no change. Valid ffmpeg atempo range
+# per call is 0.5-2.0.
+CHATTERBOX_TEMPO = 0.85
 
 # Optional voice-clone reference. Drop a clean 10-20s WAV (single speaker,
 # no background noise) here and Chatterbox will clone that voice for every
@@ -70,6 +80,37 @@ def _get_chatterbox():
     return _chatterbox_model
 
 
+def _apply_tempo(audio: np.ndarray, sr: int, tempo: float) -> np.ndarray:
+    """Pitch-preserving speed change via ffmpeg's atempo filter. Writes to a
+    temp wav, runs ffmpeg, reads the result back. Returns the original
+    audio unchanged if ffmpeg isn't available or the call fails, so a
+    pacing tweak can never be the reason a whole segment fails."""
+    if tempo == 1.0:
+        return audio
+    try:
+        import subprocess
+        import tempfile
+        import imageio_ffmpeg
+
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_path = os.path.join(tmpdir, "in.wav")
+            out_path = os.path.join(tmpdir, "out.wav")
+            sf.write(in_path, audio, sr)
+            result = subprocess.run(
+                [ffmpeg_exe, "-y", "-i", in_path, "-filter:a", f"atempo={tempo}", out_path],
+                capture_output=True, timeout=30,
+            )
+            if result.returncode != 0 or not os.path.exists(out_path):
+                logger.warning(f"ffmpeg tempo adjustment failed, using original pace: {result.stderr[:200]}")
+                return audio
+            stretched, _ = sf.read(out_path, dtype="float32")
+            return stretched
+    except Exception as e:
+        logger.warning(f"Tempo adjustment failed ({e}), using original pace")
+        return audio
+
+
 def _synthesize_chatterbox(text: str):
     """Returns (audio: np.ndarray float32, sample_rate: int)."""
     model = _get_chatterbox()
@@ -92,6 +133,8 @@ def _synthesize_chatterbox(text: str):
     peak = np.abs(audio).max()
     if peak > 1.0:
         audio = audio / peak * 0.95
+
+    audio = _apply_tempo(audio, model.sr, CHATTERBOX_TEMPO)
 
     return audio, model.sr
 
