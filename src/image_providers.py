@@ -162,24 +162,61 @@ def gen_deepai(prompt, seed, scene_text=None):
 
 
 # ---------------------------------------------------------------------------
-# 6) CRAIYON (unofficial, no key needed — best-effort quality, good as a
-#    deep fallback before hitting the local static pool)
+# 6) AI HORDE (aihorde.net - genuinely free, no signup, no key required.
+#    Replaces Craiyon, which was confirmed to have NO official public API -
+#    the "craiyon.com/v3" endpoint below was always a reverse-engineered/
+#    unofficial route, which is exactly why it was 403ing on every single
+#    run from day one, not a temporary outage. AI Horde is a real,
+#    documented, community-run REST API (crowdsourced volunteer GPUs) that
+#    works anonymously via the public "0000000000" key - anonymous requests
+#    just get lower queue priority, so this polls for up to ~90s before
+#    giving up and letting the next provider take over.)
 # ---------------------------------------------------------------------------
-def gen_craiyon(prompt, seed, scene_text=None):
-    text = scene_text or prompt.replace("_", " ")
-    resp = requests.post(
-        "https://api.craiyon.com/v3",
-        json={"prompt": text, "token": None, "model": "art"},
-        timeout=90,
+def gen_ai_horde(prompt, seed, scene_text=None):
+    text = (scene_text or prompt.replace("_", " "))[:1000]
+    headers = {"apikey": os.environ.get("AI_HORDE_API_KEY", "0000000000")}
+
+    submit = requests.post(
+        "https://aihorde.net/api/v2/generate/async",
+        json={
+            "prompt": text,
+            "params": {"width": 1024, "height": 1792, "steps": 20, "n": 1},
+            "nsfw": False,
+            "censor_nsfw": True,
+        },
+        headers=headers,
+        timeout=20,
     )
-    if resp.status_code == 429:
-        raise RateLimitError("Craiyon: rate limited")
-    if resp.status_code != 200:
-        raise RuntimeError(f"Craiyon bad response: {resp.status_code}")
-    images = resp.json().get("images", [])
-    if not images:
-        raise RuntimeError("Craiyon: no images returned")
-    return base64.b64decode(images[0]), "jpg"
+    if submit.status_code == 429:
+        raise RateLimitError("AI Horde: rate limited")
+    if submit.status_code not in (200, 202):
+        raise RuntimeError(f"AI Horde submit bad response: {submit.status_code} {submit.text[:150]}")
+    job_id = submit.json().get("id")
+    if not job_id:
+        raise RuntimeError(f"AI Horde: no job id in response: {submit.json()}")
+
+    # Anonymous key = lowest queue priority, so this can take a while. Poll
+    # for up to ~60s (12 x 5s); if it's not done by then, give up and let
+    # the next provider in the chain take over rather than blocking.
+    for _ in range(12):
+        time.sleep(5)
+        check = requests.get(f"https://aihorde.net/api/v2/generate/check/{job_id}", timeout=15).json()
+        if check.get("done"):
+            break
+        if check.get("faulted"):
+            raise RuntimeError("AI Horde: job faulted")
+    else:
+        raise RuntimeError("AI Horde: timed out waiting in queue (anonymous priority)")
+
+    status = requests.get(f"https://aihorde.net/api/v2/generate/status/{job_id}", timeout=15).json()
+    generations = status.get("generations", [])
+    if not generations:
+        raise RuntimeError("AI Horde: no generations returned")
+    img_url = generations[0].get("img")
+    if not img_url:
+        raise RuntimeError("AI Horde: generation had no image URL")
+    img_resp = requests.get(img_url, timeout=30)
+    return img_resp.content, "webp"
 
 
 # ---------------------------------------------------------------------------
@@ -280,9 +317,10 @@ def gen_TEMPLATE(prompt, seed, scene_text=None):
 PROVIDER_REGISTRY = [
     {"name": "Pollinations-flux",  "env_keys": [],                       "generate": gen_pollinations_flux},
     {"name": "Pollinations-turbo", "env_keys": [],                       "generate": gen_pollinations_turbo},
+    {"name": "AI-Horde",           "env_keys": [],                       "generate": gen_ai_horde},
     {"name": "HuggingFace",        "env_keys": ["HF_API_KEY"],           "generate": gen_huggingface},
     {"name": "Gemini",             "env_keys": ["GEMINI_API_KEY"],       "generate": gen_gemini},
-    {"name": "Craiyon",            "env_keys": [],                       "generate": gen_craiyon},
+    {"name": "DeepAI",             "env_keys": ["DEEPAI_API_KEY"],       "generate": gen_deepai},
     {"name": "ModelsLab",          "env_keys": ["MODELSLAB_API_KEY"],    "generate": gen_modelslab},
     {"name": "Replicate",          "env_keys": ["REPLICATE_API_TOKEN"],  "generate": gen_replicate},
 
