@@ -220,17 +220,13 @@ class SKILLORPipeline:
                     time.sleep(2)  # Wait before retry
             
             if not success:
-                # Try to get a fallback image
-                try:
-                    from image_providers import get_fallback_image
-                    fallback_path = get_fallback_image(scene.get('visual_description', ''))
-                    if fallback_path:
-                        image_paths.append(fallback_path)
-                        image_sources.append('fallback')
-                        logger.warning(f"Used fallback image for scene {i+1}")
-                except Exception as e:
-                    logger.error(f"Fallback also failed for scene {i+1}: {e}")
-                    raise RuntimeError(f"Failed to generate image for scene {i+1}")
+                # generate_images() (== image_generator._generate_one) already tries every
+                # real fallback layer internally on each attempt - AI providers, local
+                # pool, Pexels, Pixabay, and finally a Playwright screenshot - so if all
+                # MAX_IMAGE_RETRIES attempts above still failed, there's genuinely nothing
+                # left to try for this scene.
+                logger.error(f"All {MAX_IMAGE_RETRIES} attempts (each trying every fallback layer) failed for scene {i+1}")
+                raise RuntimeError(f"Failed to generate image for scene {i+1}: every provider and fallback layer failed")
         
         if len(image_paths) != total_scenes:
             raise RuntimeError(f"Generated {len(image_paths)} images for {total_scenes} scenes")
