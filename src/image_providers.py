@@ -33,6 +33,15 @@ import requests
 
 REQUEST_TIMEOUT = 30
 
+# Pollinations gets its own shorter timeout. Real-world log evidence: in this
+# environment Pollinations was timing out at the full 30s on 7-8 out of 9
+# scenes per video (both flux and turbo), meaning ~60s was being burned per
+# scene just waiting on a provider that was going to fail anyway before ever
+# reaching a provider that actually responds (Pexels). Failing faster here
+# doesn't change the eventual outcome when Pollinations is down/degraded -
+# it just gets to a working image sooner.
+POLLINATIONS_TIMEOUT = 15
+
 POLLINATIONS_URL = "https://image.pollinations.ai/prompt"
 HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent"
@@ -50,7 +59,7 @@ def _pollinations_request(prompt, seed, model):
     url = f"{POLLINATIONS_URL}/{prompt}?width=1080&height=1920&seed={seed}&model={model}&nologo=true"
     last_status = None
     for attempt in range(3):
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        response = requests.get(url, timeout=POLLINATIONS_TIMEOUT)
         if response.status_code == 200 and len(response.content) > 2000:
             return response.content
         last_status = response.status_code
@@ -120,6 +129,36 @@ def gen_gemini(prompt, seed, scene_text=None):
         if inline and inline.get("data"):
             return base64.b64decode(inline["data"]), "png"
     raise RuntimeError("Gemini response contained no image data")
+
+
+# ---------------------------------------------------------------------------
+# 5) DEEPAI text2img (needs DEEPAI_API_KEY, free tier). NOTE: the workflow
+#    and env.example were already passing DEEPAI_API_KEY through, but no
+#    function/registry entry ever existed to consume it - this was a
+#    completely dead env var. Wiring it up here actually uses that free
+#    provider slot instead of silently discarding it.
+# ---------------------------------------------------------------------------
+def gen_deepai(prompt, seed, scene_text=None):
+    api_key = os.environ.get("DEEPAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("DEEPAI_API_KEY not set")
+    text = scene_text or prompt.replace("_", " ")
+    resp = requests.post(
+        "https://api.deepai.org/api/text2img",
+        data={"text": text},
+        headers={"api-key": api_key},
+        timeout=60,
+    )
+    if resp.status_code == 429:
+        raise RateLimitError("DeepAI: rate limited")
+    if resp.status_code != 200:
+        raise RuntimeError(f"DeepAI bad response: {resp.status_code} {resp.text[:150]}")
+    data = resp.json()
+    img_url = data.get("output_url")
+    if not img_url:
+        raise RuntimeError(f"DeepAI: no output_url in response: {data}")
+    img_resp = requests.get(img_url, timeout=30)
+    return img_resp.content, "jpg"
 
 
 # ---------------------------------------------------------------------------
