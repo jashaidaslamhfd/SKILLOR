@@ -176,21 +176,43 @@ def gen_ai_horde(prompt, seed, scene_text=None):
     text = (scene_text or prompt.replace("_", " "))[:1000]
     headers = {"apikey": os.environ.get("AI_HORDE_API_KEY", "0000000000")}
 
-    submit = requests.post(
-        "https://aihorde.net/api/v2/generate/async",
-        json={
-            "prompt": text,
-            "params": {"width": 1024, "height": 1792, "steps": 20, "n": 1},
-            "nsfw": False,
-            "censor_nsfw": True,
-        },
-        headers=headers,
-        timeout=20,
-    )
-    if submit.status_code == 429:
-        raise RateLimitError("AI Horde: rate limited")
-    if submit.status_code not in (200, 202):
-        raise RuntimeError(f"AI Horde submit bad response: {submit.status_code} {submit.text[:150]}")
+    # Anonymous requests share a dynamic, demand-based max PIXEL-AREA cap,
+    # expressed by AI Horde as "requests over NxN" (i.e. width*height must
+    # stay under N*N). Observed caps in practice range ~576x576 (331,776px)
+    # up to ~669x669 (447,561px), and fluctuate run to run with load. Try
+    # progressively smaller sizes - multiples of 64, as required by the
+    # underlying SD models - until one fits under whatever the current cap
+    # happens to be. All three tiers below stay under even the lowest
+    # observed cap except tier 1, which is worth trying first for the
+    # common case where demand (and therefore the cap) is higher.
+    size_tiers = [(448, 768), (384, 640), (320, 512)]
+
+    submit = None
+    last_size_err = None
+    for width, height in size_tiers:
+        submit = requests.post(
+            "https://aihorde.net/api/v2/generate/async",
+            json={
+                "prompt": text,
+                "params": {"width": width, "height": height, "steps": 20, "n": 1},
+                "nsfw": False,
+                "censor_nsfw": True,
+            },
+            headers=headers,
+            timeout=20,
+        )
+        if submit.status_code == 429:
+            raise RateLimitError("AI Horde: rate limited")
+        if submit.status_code == 403:
+            # This size tier is over the current demand cap - shrink and retry.
+            last_size_err = f"{width}x{height} rejected: {submit.text[:150]}"
+            continue
+        if submit.status_code not in (200, 202):
+            raise RuntimeError(f"AI Horde submit bad response: {submit.status_code} {submit.text[:150]}")
+        break
+    else:
+        raise RuntimeError(f"AI Horde: all size tiers over demand cap - {last_size_err}")
+
     job_id = submit.json().get("id")
     if not job_id:
         raise RuntimeError(f"AI Horde: no job id in response: {submit.json()}")
