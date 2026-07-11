@@ -4,7 +4,6 @@ import logging
 from typing import Dict
 import numpy as np
 import soundfile as sf
-from moviepy.audio.AudioClip import AudioArrayClip
 from moviepy.editor import (
     ImageClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
@@ -30,8 +29,6 @@ TARGET_MAX_SEC = 55
 # RETENTION OPTIMIZATIONS
 CAPTION_Y_FRACTION = 0.70
 WORD_MIN_DURATION = 0.12
-POP_SFX_VOLUME = 0.5
-POP_SFX_DURATION = 0.12
 MUSIC_VOLUME = 0.15
 MUSIC_SAMPLE_RATE = 24000
 MUSIC_DIR = "assets/music"
@@ -249,25 +246,6 @@ def _synthesize_ambient_bed(duration: float, seed: int = None) -> np.ndarray:
     return wave.astype(np.float32)
 
 
-def _synthesize_pop_sfx(seed: int = None) -> np.ndarray:
-    """Short percussive 'pop' transition click."""
-    rng = np.random.default_rng(seed)
-    sr = MUSIC_SAMPLE_RATE
-    n = int(sr * POP_SFX_DURATION)
-    t = np.linspace(0, POP_SFX_DURATION, n, endpoint=False)
-
-    freq = 900 + rng.uniform(-100, 100)
-    tone = np.sin(2 * np.pi * freq * t)
-    noise = rng.normal(0, 1, size=t.shape)
-    envelope = np.exp(-t / 0.02)
-    wave = (0.7 * tone + 0.3 * noise) * envelope
-
-    peak = np.abs(wave).max()
-    if peak > 0:
-        wave = wave / peak * POP_SFX_VOLUME
-    return wave.astype(np.float32)
-
-
 def _get_music_track(duration: float, output_dir: str) -> str:
     """Get background music (real track or synthesized)."""
     if os.path.isdir(MUSIC_DIR):
@@ -304,8 +282,6 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
 
     video_clips = []
     audio_clips = []
-    pop_sfx_clips = []
-    t_cursor = 0.0
 
     for i, (img_path, seg) in enumerate(zip(image_paths, audio_segments)):
         duration = max(seg['duration'], 0.6)
@@ -336,17 +312,6 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         )
         audio_clips.append(seg_audio)
 
-        # RETENTION: Pop SFX on scene cuts (except first)
-        if i > 0:
-            pop_wave = _synthesize_pop_sfx(seed=random.randint(1, 999999))
-            pop_clip = AudioArrayClip(
-                pop_wave.reshape(-1, 1),
-                fps=MUSIC_SAMPLE_RATE
-            ).set_start(t_cursor)
-            pop_sfx_clips.append(pop_clip)
-
-        t_cursor += duration
-
     logger.info("Concatenating video clips...")
     final_video = concatenate_videoclips(video_clips, method="compose")
 
@@ -369,8 +334,7 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         afx.audio_fadeout, 1.0
     )
 
-    logger.info(f"Mixing in {len(pop_sfx_clips)} scene-cut pop SFX...")
-    final_audio = CompositeAudioClip([music_clip, voice_audio] + pop_sfx_clips)
+    final_audio = CompositeAudioClip([music_clip, voice_audio])
     final_video = final_video.set_audio(final_audio)
 
     # ---- Enforce 40-55s target ----
