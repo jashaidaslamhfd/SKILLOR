@@ -8,6 +8,10 @@ google-genai>=0.5.0
 # to load or generate. See src/voice_generator.py for the fallback logic.
 chatterbox-tts>=0.1.7
 kokoro==0.9.4
+# Silences a FutureWarning from diffusers (used internally by Chatterbox):
+# "LoRACompatibleLinear is deprecated... switch to PEFT backend". Cosmetic
+# only (doesn't affect output), but this is the documented fix.
+peft>=0.10.0
 
 # Audio Processing
 soundfile>=0.12.1
