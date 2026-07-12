@@ -55,10 +55,13 @@ _TITLE_TEMPLATES = [
 
 def _clean_topic_for_title(topic: str) -> str:
     """Templates like 'The Truth About Why Your Heart Skips a Beat' read
-    awkwardly - strip a leading 'Why'/'Your' so templated titles stay
-    grammatical."""
+    awkwardly - strip a leading 'Why'/'The' so templated titles stay
+    grammatical. Deliberately does NOT strip a leading 'Your' - personal
+    'YOU language' is a core retention technique used throughout this
+    codebase (see niche_strategy/script_generator), so dropping it here
+    would silently undo that for any templated title that wins on score."""
     t = topic.strip()
-    t = re.sub(r'^(why|your|the)\s+', '', t, flags=re.IGNORECASE)
+    t = re.sub(r'^(why|the)\s+', '', t, flags=re.IGNORECASE)
     return t[0].upper() + t[1:] if t else topic
 
 
@@ -111,7 +114,7 @@ def generate_description(script_data: Dict, tags: List[str]) -> str:
         f"{description}\n\n"
         f"👇 {cta}\n\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"🔬 Dark body science | USA adults\n"
+        f"🔬 Dark body science, explained simply\n"
         f"━━━━━━━━━━━━━━━\n\n"
         f"{yt_hashtags}"
     )[:DESCRIPTION_MAX_LEN]
@@ -229,7 +232,12 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
     category = get_topic_category(topic)
     tags = generate_seo_tags(topic, category, script_data.get('title', ''))
     title_options = generate_title_options(topic, script_data)
-    chosen_title = title_options[0]
+    # Score every candidate and pick the best-scoring one instead of
+    # always taking title_options[0] - the score was previously computed
+    # only for logging and never actually influenced which title got
+    # used, so a weak title could ship even when a stronger option was
+    # sitting right there in the list.
+    chosen_title = max(title_options, key=_score_title) if title_options else script_data.get('title', 'Untitled')
     description = generate_description(script_data, tags)
     hashtags = generate_hashtags(topic, category)
     pinned_comment = generate_pinned_comment(script_data)
