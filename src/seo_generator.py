@@ -24,6 +24,7 @@ anti_spam.py.
 
 import re
 import logging
+import random
 from typing import Dict, List
 
 from niche_strategy import generate_seo_tags, _make_seo_title, get_topic_category
@@ -44,13 +45,58 @@ PLAYLISTS_BY_CATEGORY = {
     "Health": "Health & Science Shorts",
 }
 
+# EXPANDED TITLE TEMPLATES (20+ variations for diversity)
 _TITLE_TEMPLATES = [
+    # Original templates (preserved)
     "{topic}",
     "The Truth About {topic}",
     "{topic} (Doctors Won't Tell You)",
     "Why {topic} Actually Happens",
     "{topic}... This Is Real",
+    
+    # NEW: Curiosity gap templates
+    "{topic} (Nobody Tells You This)",
+    "What Happens When {topic}? (Shocking)",
+    "The Hidden Truth About {topic}",
+    "{topic} — What They Don't Tell You",
+    
+    # NEW: Emotion-driven templates
+    "😱 {topic} — You Won't Believe!",
+    "⚠️ Stop Ignoring {topic}!",
+    "🤯 {topic} Will Blow Your Mind",
+    "❌ Everything You Know About {topic} Is Wrong",
+    
+    # NEW: Question-based templates
+    "Is {topic} True? (Science Answers)",
+    "Did You Know About {topic}?",
+    "Can {topic} Really Happen?",
+    
+    # NEW: Time-sensitive templates
+    "Your {topic} — Every Second Counts!",
+    "Why {topic} Happens To You Daily",
+    "The {topic} Crisis Nobody Talks About",
+    
+    # NEW: Benefit-driven templates
+    "How {topic} Changes Everything",
+    "This {topic} Hack Saves Your Life",
+    "What {topic} Means For Your Future",
+    
+    # NEW: Controversial templates
+    "Why {topic} Is A Lie!",
+    "The Dark Side Of {topic}",
+    "Forbidden Truth About {topic}",
 ]
+
+# HIGH-VOLUME TAGS BY CATEGORY
+_HIGH_VOLUME_TAGS = {
+    "Brain": ["neuroscience", "brainfacts", "mindblowing", "psychology", "brainpower", "cognitivescience"],
+    "Body": ["humanbody", "anatomy", "healthfacts", "biology", "physiology", "bodysecrets"],
+    "Mystery": ["mystery", "unsolved", "creepyfacts", "paranormal", "weirdfacts", "conspiracy"],
+    "Health": ["healthtips", "wellness", "medicalfacts", "science", "healthyliving", "nutrition"],
+}
+
+# TRENDING TAGS (YouTube Shorts specific)
+_TRENDING_TAGS = ["shorts", "viralfacts", "didyouknow", "interestingfacts", "education", "sciencefacts"]
 
 
 def _clean_topic_for_title(topic: str) -> str:
@@ -76,7 +122,12 @@ def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[st
 
     clean_topic = _clean_topic_for_title(topic)
     seen = {options[0].lower()}
-    for template in _TITLE_TEMPLATES:
+    
+    # Shuffle templates for variety (but keep original first)
+    templates = _TITLE_TEMPLATES.copy()
+    random.shuffle(templates)
+    
+    for template in templates:
         if len(options) >= n:
             break
         candidate = template.format(topic=clean_topic)[:TITLE_MAX_LEN]
@@ -93,8 +144,27 @@ def generate_hashtags(topic: str, category: str, n: int = 8) -> List[str]:
     relevance). Capped at n since YouTube only surfaces the first few
     hashtags above the title anyway, and Shorts specifically rewards a
     tight, relevant set over a long list."""
+    # Get base tags from niche_strategy
     tags = generate_seo_tags(topic, category)
-    return [f"#{t}" for t in tags[:n]]
+    
+    # Add category-specific high-volume tags
+    volume_tags = _HIGH_VOLUME_TAGS.get(category, ["science", "facts", "education"])
+    
+    # Add trending tags (YouTube Shorts specific)
+    trending_tags = random.sample(_TRENDING_TAGS, min(3, len(_TRENDING_TAGS)))
+    
+    # Combine all tags
+    all_tags = tags + volume_tags + trending_tags
+    
+    # Deduplicate while preserving order
+    seen = set()
+    unique_tags = []
+    for tag in all_tags:
+        if tag.lower() not in seen:
+            seen.add(tag.lower())
+            unique_tags.append(tag)
+    
+    return [f"#{t}" for t in unique_tags[:n]]
 
 
 def generate_description(script_data: Dict, tags: List[str]) -> str:
@@ -109,15 +179,67 @@ def generate_description(script_data: Dict, tags: List[str]) -> str:
     first_line = hook[:120] if hook else title
     yt_hashtags = ' '.join(f"#{t}" for t in tags[:3])
 
-    return (
-        f"{first_line}\n\n"
-        f"{description}\n\n"
-        f"👇 {cta}\n\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"🔬 Dark body science, explained simply\n"
-        f"━━━━━━━━━━━━━━━\n\n"
-        f"{yt_hashtags}"
-    )[:DESCRIPTION_MAX_LEN]
+    # Random template selection for diversity (avoid duplicate flag)
+    templates = [
+        # Template 1: Original structure (preserved)
+        lambda: (
+            f"{first_line}\n\n"
+            f"{description}\n\n"
+            f"👇 {cta}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔬 Dark body science, explained simply\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"{yt_hashtags}"
+        ),
+        
+        # Template 2: Question-first
+        lambda: (
+            f"🤔 Did you know this?\n\n"
+            f"{description}\n\n"
+            f"💬 {cta}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔬 Science explained daily\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"{yt_hashtags}"
+        ),
+        
+        # Template 3: Hook-first (shorter, punchier)
+        lambda: (
+            f"{hook[:100]}\n\n"
+            f"{description[:200]}\n\n"
+            f"🎯 {cta}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔬 Stay curious, stay informed\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"{yt_hashtags}"
+        ),
+        
+        # Template 4: Story-first
+        lambda: (
+            f"📖 Here's the truth no one tells you...\n\n"
+            f"{description}\n\n"
+            f"👆 {cta}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔬 Daily science, made simple\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"{yt_hashtags}"
+        ),
+        
+        # Template 5: Benefit-first
+        lambda: (
+            f"⚠️ This changes everything you knew about {title[:30]}...\n\n"
+            f"{description}\n\n"
+            f"🔥 {cta}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔬 Your daily dose of science\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"{yt_hashtags}"
+        ),
+    ]
+    
+    # Randomly pick a template for diversity
+    description_text = random.choice(templates)()
+    return description_text[:DESCRIPTION_MAX_LEN]
 
 
 def generate_pinned_comment(script_data: Dict) -> str:
@@ -126,7 +248,17 @@ def generate_pinned_comment(script_data: Dict) -> str:
     engagement-bait command like 'like if you agree', which YouTube's spam
     systems increasingly downrank."""
     topic = script_data.get('topic', script_data.get('title', 'this'))
-    comment = f"Did you know this about {topic.lower()}? Curious what surprised you most 👇"
+    
+    # Multiple comment templates for variety
+    comment_templates = [
+        f"Did you know this about {topic.lower()}? Curious what surprised you most 👇",
+        f"What's your reaction to this {topic.lower()} fact? Let me know 👇",
+        f"Which part of this {topic.lower()} explanation blew your mind the most? 🤯",
+        f"Did you already know this about {topic.lower()}? Or was it a shock? 👇",
+        f"What should I explain next? Drop your suggestions below! 🔬",
+    ]
+    
+    comment = random.choice(comment_templates)
     return comment[:PINNED_COMMENT_MAX_LEN]
 
 
@@ -140,25 +272,62 @@ def _score_title(title: str) -> int:
     all-caps/clickbait territory that risks a policy strike."""
     if not title:
         return 0
-    score = 40
+    
+    score = 30  # Base score
+    
+    # Length sweet spot (30-60 chars is YouTube's favorite)
     length = len(title)
-    if 30 <= length <= 60:
-        score += 25
-    elif length < 30:
+    if 30 <= length <= 55:
+        score += 30
+    elif 20 <= length < 30:
+        score += 20
+    elif length < 20:
         score += 10
     else:
-        score += 5  # over 60 chars risks truncation in search results
-
-    power_words = ['secret', 'truth', 'real', 'hidden', 'actually', 'why', 'this']
+        score += 5
+    
+    # EXPANDED power words
+    power_words = [
+        'secret', 'truth', 'real', 'hidden', 'actually', 'why', 
+        'what', 'how', 'when', 'never', 'always', 'every',
+        'shocking', 'crazy', 'insane', 'unbelievable', 'mind-blowing',
+        'danger', 'warning', 'stop', 'don\'t', 'must know',
+        'scientifically', 'proven', 'explained', 'finally',
+        'lie', 'dark', 'forbidden', 'exposed', 'revealed',
+        'hack', 'shortcut', 'trick', 'cheat', 'easy'
+    ]
     if any(w in title.lower() for w in power_words):
         score += 20
-
+    
+    # Numbers (CTR booster)
     if re.search(r'\d', title):
+        score += 15
+    
+    # Emojis (attention grabber)
+    if re.search(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF]', title):
         score += 10
-
+    
+    # Question marks (curiosity)
+    if '?' in title:
+        score += 10
+    
+    # Personal pronouns (YOU/Your)
+    if re.search(r'\b(your|you)\b', title, re.IGNORECASE):
+        score += 10
+    
+    # Exclamation marks (limited)
+    exclamation_count = title.count('!')
+    if exclamation_count == 1:
+        score += 5
+    elif exclamation_count > 2:
+        score -= 5
+    
+    # Penalties
     if title.isupper():
-        score -= 15  # reads as spam/clickbait, hurts rather than helps
-
+        score -= 20
+    if len(set(title)) < 10:  # Too repetitive
+        score -= 10
+    
     return max(0, min(score, 100))
 
 
