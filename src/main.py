@@ -262,6 +262,9 @@ class SKILLORPipeline:
             logger.info("\n🔍 PHASE 1b: SEO GENERATION")
             try:
                 seo_topic = script_data.get('topic', topic)
+                # Preserve the LLM's plain one-sentence summary. The formatted
+                # YouTube description must never be fed back into itself.
+                script_data['summary'] = script_data.get('description', '')
                 seo_package = generate_seo_package(seo_topic, script_data)
                 
                 script_data['title'] = seo_package.get('chosen_title', script_data.get('title', 'Untitled'))
