@@ -237,53 +237,36 @@ def _caption_clip(text: str, duration: float, is_important: bool = False, color_
 
 
 def _word_by_word_clips(text: str, total_duration: float, color_theme: Dict = None):
-    """
-    RETENTION OPTIMIZATION: Word-by-word karaoke-style reveal.
-    Each word appears individually with timing based on word length.
-    This keeps eyes engaged and increases retention.
+    """Show readable 2-4 word phrases instead of flashing one isolated word.
+
+    Timing is punctuation/word-length weighted. This is still lightweight and
+    works without another model; a future Whisper alignment can feed exact
+    timestamps through the same clip interface.
     """
     words = text.split()
     if not words:
         return []
+    groups, current = [], []
+    for word in words:
+        current.append(word)
+        closes_phrase = word.rstrip().endswith((",", ".", "?", "!", ";", ":"))
+        if len(current) >= 4 or (len(current) >= 2 and closes_phrase):
+            groups.append(" ".join(current)); current = []
+    if current:
+        if groups and len(current) == 1:
+            groups[-1] += " " + current[0]
+        else:
+            groups.append(" ".join(current))
 
-    weights = [max(len(w), 3) for w in words]
+    weights = [max(len(g.replace(" ", "")), 6) for g in groups]
     total_weight = sum(weights)
-
-    floor_total = WORD_MIN_DURATION * len(words)
-    if floor_total >= total_duration:
-        per_word = total_duration / len(words)
-        durations = [per_word] * len(words)
-    else:
-        remaining = total_duration - floor_total
-        durations = [WORD_MIN_DURATION + remaining * (w / total_weight) for w in weights]
-
-    clips = []
-    t = 0.0
-    for word, dur in zip(words, durations):
-        # ✅ Priority: Check if this word is important
-        is_important = _is_important_word(word)
-        clip = _caption_clip(word, dur, is_important, color_theme).set_start(t)
-        
-        # ✅ Priority: Pop animation for important words
-        if is_important:
-            # Add scale animation (0.8 → 1.0)
-            def make_scale_func(t_local, dur_local=dur):
-                progress = t_local / dur_local if dur_local > 0 else 0
-                if progress < 0.2:
-                    # Pop effect: 0.8 → 1.1 → 1.0
-                    phase = progress / 0.2
-                    scale = 0.8 + (1.1 - 0.8) * phase
-                elif progress < 0.4:
-                    phase = (progress - 0.2) / 0.2
-                    scale = 1.1 - (1.1 - 1.0) * phase
-                else:
-                    scale = 1.0
-                return scale
-            clip = clip.resize(make_scale_func)
-        
+    durations = [total_duration * w / total_weight for w in weights]
+    clips, cursor = [], 0.0
+    for phrase, duration in zip(groups, durations):
+        important = any(_is_important_word(w) for w in phrase.split())
+        clip = _caption_clip(phrase, duration, important, color_theme).set_start(cursor)
         clips.append(clip)
-        t += dur
-
+        cursor += duration
     return clips
 
 
@@ -358,9 +341,9 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         "image_paths, audio_segments aur scenes ki length barabar honi chahiye"
     )
 
-    # ✅ Priority: Random color theme for this video
-    color_theme = random.choice(COLOR_THEMES)
-    logger.info(f"🎨 Using color theme: {color_theme}")
+    # Fixed brand palette makes every Short immediately recognizable.
+    color_theme = {'primary': (255, 255, 255), 'secondary': (255, 205, 40), 'bg': (18, 20, 28)}
+    logger.info(f"Using fixed SKILLOR brand theme: {color_theme}")
 
     video_clips = []
     audio_clips = []
@@ -389,8 +372,14 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         # RETENTION: Alternate zoom direction every scene
         direction = "in" if i % 2 == 0 else "out"
 
-        # Create Ken Burns clip with extra zoom if needed
-        scene_visual = _ken_burns_clip(img_path, duration, direction, zoom_extra)
+        # Two motion beats per narration scene. This gives roughly 12-16
+        # visual changes per Short without requesting twice as many AI images.
+        first_duration = duration / 2.0
+        second_duration = duration - first_duration
+        first_beat = _ken_burns_clip(img_path, first_duration, direction, zoom_extra)
+        second_direction = "out" if direction == "in" else "in"
+        second_beat = _ken_burns_clip(img_path, second_duration, second_direction, zoom_extra + 0.04)
+        scene_visual = concatenate_videoclips([first_beat, second_beat], method="compose").set_duration(duration)
 
         # ✅ Priority: Word-by-word captions with highlighting
         word_clips = _word_by_word_clips(caption_text, duration, color_theme)
@@ -476,7 +465,7 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
             gain = gain[:, np.newaxis]
         return gain * frame
 
-    ducked_music = music_clip.fl(_duck_and_mix, keep_duration=True)
+    ducked_music = music_clip.volumex(MUSIC_VOLUME)
 
     logger.info("Mixing voice + background music...")
     final_audio = CompositeAudioClip([ducked_music, voice_audio])
