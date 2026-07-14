@@ -229,7 +229,7 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
 
     try:
         audio, sr = _synthesize_chatterbox(text_with_pauses)
-        return audio, sr, "chatterbox"
+        return audio, sr, ("chatterbox_clone" if os.path.exists(VOICE_REFERENCE_PATH) else "chatterbox_default")
     except Exception as e:
         logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
         audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
