@@ -51,58 +51,33 @@ _POWER_WORDS = [
 
 
 def score_hook_detailed(hook: str) -> Dict:
-    """Same scoring logic as quality_checker._score_hook, but returns which
-    checks passed/failed and a concrete suggestion for each miss, instead
-    of a single collapsed number. Meant for a human reviewing why a video
-    scored low, not for the automated approve/reject gate (that stays in
-    quality_checker.py so there's one source of truth for the pass/fail
-    threshold)."""
-    checks = []
-    score = 0
+    """Score a hook for clarity and specificity without rewarding clickbait."""
+    hook = (hook or "").strip()
+    words = hook.split()
+    if not hook:
+        return {'score': 0, 'checks': [{'name': 'present', 'passed': False, 'note': 'Hook is missing.'}]}
 
-    if not hook or len(hook) < 10:
-        return {
-            'score': 0,
-            'checks': [{'name': 'length', 'passed': False,
-                        'note': 'Hook missing or too short - needs at least a full sentence.'}],
-        }
+    checks, score = [], 35
+    length_ok = 4 <= len(words) <= 9
+    checks.append({'name': 'spoken_length', 'passed': length_ok,
+                   'note': f'{len(words)} words; target is 4-9.'})
+    if length_ok: score += 25
 
-    score += 50
-    has_question = '?' in hook
-    checks.append({
-        'name': 'question_format', 'passed': has_question,
-        'note': 'Questions pull viewers in during the first 3 seconds.' if has_question
-                else 'Consider rephrasing as a question to raise curiosity.',
-    })
-    if has_question:
-        score += 15
+    direct = any(re.search(rf"\b{w}\b", hook.lower()) for w in ('you', 'your', 'body', 'brain'))
+    checks.append({'name': 'viewer_or_subject', 'passed': direct,
+                   'note': 'Names the viewer or a clear body subject.'})
+    if direct: score += 15
 
-    has_curiosity = any(t in hook.lower() for t in _CURIOSITY_TRIGGERS)
-    checks.append({
-        'name': 'curiosity_gap', 'passed': has_curiosity,
-        'note': 'Good curiosity-gap phrasing.' if has_curiosity
-                else f"Add a curiosity trigger, e.g. one of: {', '.join(_CURIOSITY_TRIGGERS[:4])}.",
-    })
-    if has_curiosity:
-        score += 20
+    specific = bool(re.search(r"\b(clock|sleep|light|memory|heart|brain|blood|nerve|hormone|cell|muscle|skin|gut|energy|breath)\w*\b", hook.lower()))
+    checks.append({'name': 'specificity', 'passed': specific,
+                   'note': 'Uses a concrete topic word instead of generic hype.'})
+    if specific: score += 20
 
-    has_power_word = any(w in hook.lower() for w in _POWER_WORDS)
-    checks.append({
-        'name': 'power_word', 'passed': has_power_word,
-        'note': 'Good use of a power word.' if has_power_word
-                else f"Add a power word, e.g. one of: {', '.join(_POWER_WORDS[:4])}.",
-    })
-    if has_power_word:
-        score += 15
-
-    word_count = len(hook.split())
-    length_ok = 8 <= word_count <= 15
-    checks.append({
-        'name': 'length_8_to_15_words', 'passed': length_ok,
-        'note': f"{word_count} words is in the ideal range." if length_ok
-                else f"{word_count} words - {'too short, expand it a bit' if word_count < 8 else 'a bit long, tighten it'}.",
-    })
-    score += 10 if length_ok else (-10 if word_count < 8 else 0)
+    clickbait = any(x in hook.lower() for x in ("doctors don't", "won't believe", "shocking secret", "100% real"))
+    checks.append({'name': 'no_fake_hype', 'passed': not clickbait,
+                   'note': 'Avoids manipulative or unsupported hype.'})
+    if not clickbait: score += 10
+    else: score -= 30
 
     return {'score': max(0, min(score, 100)), 'checks': checks}
 
