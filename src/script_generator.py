@@ -126,7 +126,7 @@ Create a HIGH-RETENTION 45-second viral script for YouTube Shorts on: "{topic}"
 **CRITICAL - NATIVE ENGLISH TONE:**
 - Write like a HUMAN talking to a friend
 - Use CONTRACTIONS: "don't", "you're", "that's"
-- Use IDIOMS: "blow your mind", "freak you out", "makes total sense"
+- Use natural everyday English; avoid repeated hype phrases
 - AVOID: "thus", "hence", "therefore", "furthermore"
 - Sound NATURAL when read aloud
 
@@ -138,8 +138,8 @@ Create a HIGH-RETENTION 45-second viral script for YouTube Shorts on: "{topic}"
    - Pattern interrupt or shocking statement
 
 2. **SCENES** ({MIN_SCENES}-{MAX_SCENES} scenes):
-   - Each scene: 15-20 words caption
-   - Each scene: Must end with a cliffhanger
+   - Each scene: 10-16 words caption
+   - Use at most TWO open loops in the whole script; most scenes should explain clearly
    - Each scene: Cinematic visual description
 
 3. **WORD COUNT** (HARD REQUIREMENT):
@@ -161,7 +161,7 @@ Create a HIGH-RETENTION 45-second viral script for YouTube Shorts on: "{topic}"
 **SCENE FORMAT:**
 {{
   "visual": "Cinematic description (macro-lens, high-contrast, dramatic lighting)",
-  "caption": "Punchy, engaging text (ends with cliffhanger)"
+  "caption": "Natural spoken text (10-16 words; first scene equals hook)"
 }}
 
 **Return ONLY valid JSON with title, hook, scenes, cta, and description.**
@@ -332,9 +332,9 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
     # Check word count
     voiceover = script_data.get('voiceover', '')
     word_count = len(voiceover.split())
-    if word_count < MIN_WORDS - 10:
+    if word_count < MIN_WORDS:
         issues.append(f"Too few words: {word_count} (minimum {MIN_WORDS})")
-    elif word_count > MAX_WORDS + 10:
+    elif word_count > MAX_WORDS:
         issues.append(f"Too many words: {word_count} (maximum {MAX_WORDS})")
     
     # Check each scene
@@ -343,6 +343,19 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
             issues.append(f"Scene {i+1} missing visual description")
         if not scene.get('caption'):
             issues.append(f"Scene {i+1} missing caption")
+        else:
+            scene_words = len(scene['caption'].split())
+            if scene_words < 8 or scene_words > 18:
+                issues.append(f"Scene {i+1} has {scene_words} words (allowed 8-18)")
+
+    # The scored hook must be the line viewers actually hear first.
+    if scenes and script_data.get('hook'):
+        def norm(value):
+            return re.sub(r"[^a-z0-9 ]", "", value.lower()).strip()
+        hook = norm(script_data['hook'])
+        first = norm(scenes[0].get('caption', ''))
+        if hook != first:
+            issues.append("Hook must exactly match the first scene caption")
     
     return len(issues) == 0, issues
 
@@ -376,7 +389,7 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
             suggestions.append("Hook should be 5-15 words for maximum impact")
         
         # Check for pattern interrupt
-        if any(word in hook.lower() for word in ['lying', 'secret', 'truth', 'never', 'always', 'actually']):
+        if len(hook.split()) <= 9 and any(ch in hook for ch in ['?', '.', '!']):
             score += 10
     
     # Check "YOU" language
@@ -394,10 +407,10 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
         if any(word in caption.lower() for word in ['...', 'but', 'however', 'yet', 'still', 'though']):
             cliffhanger_count += 1
     
-    if cliffhanger_count >= len(scenes) * 0.7:
+    if 1 <= cliffhanger_count <= 3:
         score += 20
     else:
-        suggestions.append(f"Only {cliffhanger_count}/{len(scenes)} scenes have cliffhangers - aim for 70%+")
+        suggestions.append(f"Only {cliffhanger_count}/{len(scenes)} scenes have cliffhangers - use only 1-3 natural open loops")
     
     # Check word count
     word_count = len(voiceover.split())
