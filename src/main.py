@@ -312,7 +312,8 @@ class SKILLORPipeline:
             
             # Quality Gate: Check fallback ratio
             source_counts = Counter(image_sources)
-            fallback_count = sum(c for src, c in source_counts.items() if src != "AI-provider")
+            unsafe_sources = {"Playwright-screenshot"}
+            fallback_count = sum(c for src, c in source_counts.items() if src in unsafe_sources)
             fallback_ratio = fallback_count / len(image_paths) if image_paths else 1.0
             
             logger.info(f"📊 Image sources: {dict(source_counts)}")
@@ -356,6 +357,18 @@ class SKILLORPipeline:
                         f"(threshold: {FALLBACK_ABORT_RATIO:.1%}). Check that espeak-ng is installed "
                         f"and that Chatterbox/Kokoro model downloads are succeeding."
                     )
+
+                engines = {s.get('tts_engine') for s in audio_segments}
+                if len(engines) != 1:
+                    raise RuntimeError(f"Mixed TTS voices are not publishable: {sorted(engines)}")
+                if os.environ.get("REQUIRE_CLONED_VOICE", "true").lower() == "true":
+                    if engines != {"chatterbox_clone"}:
+                        raise RuntimeError(
+                            f"Cloned voice required, but engine was {sorted(engines)}. "
+                            "Check Chatterbox and the private voice reference."
+                        )
+                if audio_segments and audio_segments[0].get('duration', 99) > 4.0:
+                    raise RuntimeError("First spoken scene exceeds 4 seconds; hook is too slow")
             except Exception as e:
                 logger.error(f"Voice generation failed: {e}")
                 raise
@@ -371,14 +384,15 @@ class SKILLORPipeline:
                 script_data['shorts_report'] = shorts_report
                 
                 if shorts_report.get('caption_pacing', {}).get('all_readable') is False:
-                    for issue in shorts_report.get('caption_pacing', {}).get('issues', []):
-                        logger.warning(f"⚠️ Caption pacing: {issue}")
+                    issues = shorts_report.get('caption_pacing', {}).get('issues', [])
+                    raise RuntimeError("Caption pacing failed: " + "; ".join(issues[:3]))
                 
                 hook_score = shorts_report.get('hook_detail', {}).get('score', 0)
                 if hook_score < 70:
-                    logger.warning(f"⚠️ Hook score: {hook_score}/100 - needs improvement")
+                    raise RuntimeError(f"Hook failed publishing gate: {hook_score}/100")
             except Exception as e:
-                logger.warning(f"Shorts enhancements failed: {e}")
+                logger.error(f"Shorts publishing checks failed: {e}")
+                raise
 
             # Generate SRT
             try:
@@ -422,8 +436,7 @@ class SKILLORPipeline:
                 logger.info(f"✅ Upload result: {upload_result}")
             except Exception as e:
                 logger.error(f"Upload failed: {e}")
-                # Don't raise, but save what we can
-                upload_result = {'success': False, 'error': str(e)}
+                raise
 
             # Save history
             self._save_video_history({
