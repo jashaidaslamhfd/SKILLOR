@@ -23,7 +23,14 @@ jobs:
 
       - run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core imagemagick
+          # espeak-ng is required by Kokoro (the TTS fallback engine) for
+          # phonemization. Without it, Kokoro silently fails to produce
+          # audio whenever Chatterbox (the primary engine) fails, and the
+          # pipeline falls back to inserting silence for every segment -
+          # resulting in videos with no voiceover, only background music,
+          # and captions timed to a fake 1.5s "silence" duration instead
+          # of real speech length.
+          sudo apt-get install -y ffmpeg fonts-dejavu-core imagemagick espeak-ng
           # Ubuntu's default ImageMagick policy blocks the text/label/caption
           # operations MoviePy's TextClip relies on ("not authorized" errors).
           # Relax that policy so caption rendering works in CI.
