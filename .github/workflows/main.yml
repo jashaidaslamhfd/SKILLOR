@@ -9,8 +9,7 @@ on:
         type: string
   schedule:
     # GitHub cron uses UTC.
-    - cron: "0 1 * * *"
-    - cron: "0 12 * * *"
+    # One quality upload per day while the channel builds reliable analytics.
     - cron: "0 18 * * *"
 
 permissions:
@@ -56,6 +55,14 @@ jobs:
 
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
+
+      - name: Restore topic and upload history
+        uses: actions/cache@v4
+        with:
+          path: output/video_history.json
+          key: skillor-history-${{ github.run_id }}
+          restore-keys: |
+            skillor-history-
 
       - name: Validate required secrets
         shell: bash
@@ -103,6 +110,7 @@ jobs:
           TARGET_MIN_SECONDS: "35"
           TARGET_MAX_SECONDS: "55"
           CHATTERBOX_TEMPO: "0.98"
+          REQUIRE_CLONED_VOICE: "true"
           MUSIC_VOLUME: "0.07"
           ENABLE_SCREENSHOT_FALLBACK: "false"
 
@@ -129,4 +137,5 @@ jobs:
             pipeline.log
           if-no-files-found: ignore
           retention-days: 7
+
           
