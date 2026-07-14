@@ -466,9 +466,21 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         t_arr = np.asarray(t)
         return MUSIC_VOLUME * np.where((t_arr % 1.5) < 1.0, 0.65, 1.0)  # Speech = quieter, Silence = fuller
 
-    ducked_music = music_clip.fl(
-        lambda gf, t: duck_volume(t) * gf(t), keep_duration=True
-    )
+    def _duck_and_mix(gf, t):
+        # NOTE: music here can be stereo, so gf(t) may come back shaped
+        # (n_samples, n_channels) while duck_volume(t) is shaped
+        # (n_samples,). Multiplying those directly fails with
+        # "operands could not be broadcast together" (1999,) vs (1999,2).
+        # Reshape the gain envelope to (n_samples, 1) whenever the audio
+        # frame is 2D so it broadcasts across every channel instead of
+        # only working for mono audio.
+        frame = gf(t)
+        gain = duck_volume(t)
+        if frame.ndim == 2 and np.ndim(gain) == 1:
+            gain = gain[:, np.newaxis]
+        return gain * frame
+
+    ducked_music = music_clip.fl(_duck_and_mix, keep_duration=True)
 
     logger.info("Mixing voice + background music...")
     final_audio = CompositeAudioClip([ducked_music, voice_audio])
