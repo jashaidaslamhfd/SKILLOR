@@ -1,292 +1,531 @@
 import os
-import numpy as np
-import soundfile as sf
+import sys
+import json
 import logging
-import re
-from typing import List, Dict
+from collections import Counter
+from media_validator import probe_video
+from datetime import datetime, timezone
+import time
+import traceback
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Add current directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('pipeline.log'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# PRIMARY ENGINE: Chatterbox (Resemble AI, MIT license - safe for a
-# monetized channel).
-#
-# Why Chatterbox over Kokoro: Kokoro has no emotion/delivery control at all
-# - every line comes out at the same flat intensity regardless of content,
-# which is exactly why the channel's "dark mystery" voiceovers read as
-# monotone. Chatterbox's `exaggeration` parameter is the first open-source
-# control of its kind for this, so it's what actually fixes the tone
-# instead of just changing which model renders the same flat delivery.
-#
-# Lazy-loaded on first use (not at import time) so a missing pip install or
-# a failed model download doesn't crash the whole pipeline before it even
-# starts - _get_chatterbox() catches that, and every call in this file
-# falls back to Kokoro per-segment if Chatterbox is unavailable or a
-# specific generation call fails. One bad Chatterbox call should never take
-# a whole video down.
-# ---------------------------------------------------------------------------
-_chatterbox_model = None
-_chatterbox_load_failed = False
-
-# CORRECTED per Chatterbox's own docs: "higher exaggeration tends to speed
-# up speech." The previous settings here (exaggeration=0.7, cfg_weight=0.35)
-# were following Chatterbox's own "dramatic delivery" recipe, but that
-# combination is documented to net out FASTER than default, not slower -
-# which matches the "has emotion but talks too fast, loses the mystery
-# vibe" feedback. Dialing exaggeration back down and cfg_weight back up
-# keeps some expressiveness without the speedup side effect. Reliable
-# pacing control now comes from CHATTERBOX_TEMPO below instead of fighting
-# the model's internal speed/emotion coupling.
-CHATTERBOX_EXAGGERATION = 0.6
-CHATTERBOX_CFG_WEIGHT = 0.5
-CHATTERBOX_TEMPERATURE = 0.8
-
-# Chatterbox has no direct "speed" parameter like Kokoro does, so this
-# applies an explicit pitch-preserving tempo change via ffmpeg after
-# generation (ffmpeg's atempo filter) - this is what actually delivers a
-# slow, deliberate "dark mystery" pace reliably, rather than relying on
-# exaggeration/cfg_weight side effects. 0.85 = 15% slower, same pitch.
-# Lower = slower/more ominous; 1.0 = no change. Valid ffmpeg atempo range
-# per call is 0.5-2.0.
-CHATTERBOX_TEMPO = float(os.environ.get("CHATTERBOX_TEMPO", "0.98"))
-
-# Optional voice-clone reference. Drop a clean 10-20s WAV (single speaker,
-# no background noise) here and Chatterbox will clone that voice for every
-# video instead of its own built-in default voice. If this file doesn't
-# exist, Chatterbox just uses its default voice - nothing else changes.
-VOICE_REFERENCE_PATH = os.environ.get("VOICE_REFERENCE_PATH", "assets/voice_reference.wav")
-
-
-def _get_chatterbox():
-    """Loads the Chatterbox model once and caches it. Returns None (and
-    remembers not to retry) if loading fails for any reason - missing
-    package, no internet for the first-run model download, out-of-memory
-    on a CPU-only runner, etc."""
-    global _chatterbox_model, _chatterbox_load_failed
-    if _chatterbox_model is not None or _chatterbox_load_failed:
-        return _chatterbox_model
-    try:
-        import torch
-        from chatterbox.tts import ChatterboxTTS
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Loading Chatterbox TTS model on {device} (first call only, then cached)...")
-        _chatterbox_model = ChatterboxTTS.from_pretrained(device=device)
-        logger.info("Chatterbox loaded successfully.")
-    except Exception as e:
-        logger.error(f"Chatterbox unavailable ({e}) - every segment will fall back to Kokoro.")
-        _chatterbox_load_failed = True
-        _chatterbox_model = None
-    return _chatterbox_model
-
-
-def _apply_tempo(audio: np.ndarray, sr: int, tempo: float) -> np.ndarray:
-    """Pitch-preserving speed change via ffmpeg's atempo filter. Writes to a
-    temp wav, runs ffmpeg, reads the result back. Returns the original
-    audio unchanged if ffmpeg isn't available or the call fails, so a
-    pacing tweak can never be the reason a whole segment fails."""
-    if tempo == 1.0:
-        return audio
-    try:
-        import subprocess
-        import tempfile
-        import imageio_ffmpeg
-
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            in_path = os.path.join(tmpdir, "in.wav")
-            out_path = os.path.join(tmpdir, "out.wav")
-            sf.write(in_path, audio, sr)
-            result = subprocess.run(
-                [ffmpeg_exe, "-y", "-i", in_path, "-filter:a", f"atempo={tempo}", out_path],
-                capture_output=True, timeout=30,
-            )
-            if result.returncode != 0 or not os.path.exists(out_path):
-                logger.warning(f"ffmpeg tempo adjustment failed, using original pace: {result.stderr[:200]}")
-                return audio
-            stretched, _ = sf.read(out_path, dtype="float32")
-            return stretched
-    except Exception as e:
-        logger.warning(f"Tempo adjustment failed ({e}), using original pace")
-        return audio
-
-
-def _synthesize_chatterbox(text: str):
-    """Returns (audio: np.ndarray float32, sample_rate: int)."""
-    model = _get_chatterbox()
-    if model is None:
-        raise RuntimeError("Chatterbox model not loaded")
-
-    kwargs = dict(
-        exaggeration=CHATTERBOX_EXAGGERATION,
-        cfg_weight=CHATTERBOX_CFG_WEIGHT,
-        temperature=CHATTERBOX_TEMPERATURE,
+# Import modules with error handling
+try:
+    from script_generator import generate_script
+    from image_generator import _generate_one as generate_images
+    from voice_generator import generate_voice_segments
+    from video_editor import build_video, generate_thumbnail
+    from uploader import upload_all
+    from niche_strategy import (
+        get_script_prompt_for_niche, get_random_topic, get_topic_category,
+        generate_seo_tags, validate_script_for_medical_accuracy, auto_add_disclaimer,
     )
-    if os.path.exists(VOICE_REFERENCE_PATH):
-        kwargs["audio_prompt_path"] = VOICE_REFERENCE_PATH
+    from quality_checker import QualityChecker
+    from scheduler import USAPeakTimeScheduler
+    from anti_spam import AntiSpamSystem
+    from seo_generator import generate_seo_package
+    from shorts_enhancer import build_shorts_report, generate_srt
+    from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
+except ImportError as e:
+    logger.error(f"Failed to import modules: {e}")
+    logger.error("Make sure all required modules are in the same directory")
+    sys.exit(1)
 
-    wav = model.generate(text, **kwargs)
-    audio = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+# Constants
+MAX_SCRIPT_ATTEMPTS = 3
+MAX_IMAGE_RETRIES = 3
+FALLBACK_ABORT_RATIO = float(os.environ.get("FALLBACK_ABORT_RATIO", "0.5"))
 
-    if np.isnan(audio).any():
-        audio = np.nan_to_num(audio, 0.0)
-    peak = np.abs(audio).max()
-    if peak > 1.0:
-        audio = audio / peak * 0.95
-
-    audio = _apply_tempo(audio, model.sr, CHATTERBOX_TEMPO)
-
-    return audio, model.sr
-
-
-# ---------------------------------------------------------------------------
-# FALLBACK ENGINE: Kokoro (Apache 2.0). No emotion control, but has no
-# install/download surprises and is fast on CPU - kept exactly as before so
-# a Chatterbox failure never takes the whole pipeline down with it.
-# ---------------------------------------------------------------------------
-_kokoro_tts = None
-_kokoro_load_failed = False
-
-
-def _get_kokoro():
-    """Lazy-loads Kokoro only when actually needed as a fallback. Previously
-    this loaded unconditionally at module import time (every single
-    pipeline run), which meant paying its ~5s load + first-run model
-    download cost even on runs where Chatterbox succeeded for every
-    segment and Kokoro was never actually used."""
-    global _kokoro_tts, _kokoro_load_failed
-    if _kokoro_tts is not None or _kokoro_load_failed:
-        return _kokoro_tts
-    try:
-        from kokoro import KPipeline
-        logger.info("Loading Kokoro TTS model (fallback engine, first use only)...")
-        _kokoro_tts = KPipeline(lang_code='a')  # 'a' = American English
-        logger.info("Kokoro loaded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to load Kokoro: {e}")
-        _kokoro_load_failed = True
-        _kokoro_tts = None
-    return _kokoro_tts
-
-KOKORO_SAMPLE_RATE = 24000
-SILENCE_PAD_SEC = 0.25  # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
-
-
-def add_mystery_pauses(text: str) -> str:
-    """Adds a beat of suspense after dark hooks/reveals for retention.
-
-    Neither Kokoro nor Chatterbox reads SSML tags like '<break time="0.5s"/>'
-    - both read plain text/punctuation, so a literal SSML tag would get
-    spoken aloud as text. Real neural TTS models DO respect
-    punctuation-driven pauses though, so we use an ellipsis (natural
-    trailing-off pause) or a short standalone clause instead - actually
-    audible, not spoken as text."""
-    # "you too?" -> trailing pause via ellipsis
-    text = re.sub(r'you too\?', 'you too?..', text, flags=re.IGNORECASE)
-    # already-present ".." -> stretch into a longer natural pause
-    text = re.sub(r'(?<!\.)\.\.(?!\.)', '...', text)
-    # "right now." -> comma-separated beat before continuing
-    text = re.sub(r'right now\.', 'right now...', text, flags=re.IGNORECASE)
-    return text
-
-
-def _synthesize_kokoro(text: str, voice: str, speed: float):
-    """Returns (audio: np.ndarray float32, sample_rate: int)."""
-    kokoro = _get_kokoro()
-    if not kokoro:
-        raise RuntimeError("Kokoro TTS model not loaded. Check Kokoro installation.")
-
-    generator = kokoro(text, voice=voice, speed=speed)
-    chunks = []
-    for gs, ps, audio in generator:
-        if audio is not None:
-            chunks.append(audio)
-
-    if not chunks:
-        raise RuntimeError(f"Kokoro ne audio generate nahi kiya for: {text[:50]}...")
-
-    full_audio = np.concatenate(chunks)
-    if np.isnan(full_audio).any():
-        full_audio = np.nan_to_num(full_audio, 0.0)
-
-    max_val = np.abs(full_audio).max()
-    if max_val > 1.0:
-        full_audio = full_audio / max_val * 0.95
-
-    return full_audio, KOKORO_SAMPLE_RATE
-
-
-def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
-    """Chatterbox first (dark, expressive delivery); falls back to Kokoro
-    on ANY failure - missing install, model load error, generation error -
-    so a single bad Chatterbox call can't kill a whole video. Returns
-    (audio, sample_rate, engine_used) so callers/logs can tell which engine
-    actually produced a given segment."""
-    if not text or not text.strip():
-        raise ValueError("Text cannot be empty")
-
-    text_with_pauses = add_mystery_pauses(text)
-
-    try:
-        audio, sr = _synthesize_chatterbox(text_with_pauses)
-        return audio, sr, ("chatterbox_clone" if os.path.exists(VOICE_REFERENCE_PATH) else "chatterbox_default")
-    except Exception as e:
-        logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
-        audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
-        return audio, sr, "kokoro"
-
-
-def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
-    """USA Dark Science Voice: deep, slow, mysterious. Tries Chatterbox
-    (expressive) first, Kokoro (flat but reliable) as fallback."""
-    try:
-        logger.info(f"Generating DARK voiceover (voice='{voice}', speed={speed})...")
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        audio, sr, engine = _synthesize(text, voice, speed)
-        sf.write(output_path, audio, sr)
-        logger.info(f"Voice saved via {engine}: {output_path} ({len(audio)} samples, {len(audio)/sr:.2f}s)")
-        return output_path
-    except Exception as e:
-        logger.error(f"Voice generation failed: {e}")
-        raise RuntimeError(f"Voice generation error: {e}")
-
-
-def generate_voice_segments(
-    scenes: List[dict],
-    voice: str = "am_adam",  # only used if a segment falls back to Kokoro
-    output_dir: str = "output/segments",
-    speed: float = 0.95,     # only used if a segment falls back to Kokoro
-) -> List[Dict]:
-    """
-    Each scene gets its own audio, generated via Chatterbox (with mystery
-    pauses and dark-tone exaggeration) or Kokoro as a per-segment fallback.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    segments = []
-    engine_counts = {}
-
-    for i, scene in enumerate(scenes):
-        caption = scene.get('caption', '').strip() if isinstance(scene, dict) else str(scene)
-        if not caption:
-            caption = " "
-
+class SKILLORPipeline:
+    def __init__(self):
+        """Initialize pipeline with all components"""
+        logger.info("Initializing SKILLOR Pipeline...")
+        
         try:
-            audio, sr, engine = _synthesize(caption, voice, speed)
+            self.quality_checker = QualityChecker()
+            self.scheduler = USAPeakTimeScheduler()
+            self.anti_spam = AntiSpamSystem()
+            self.video_history = self._load_video_history()
+            logger.info(f"Loaded {len(self.video_history)} videos from history")
         except Exception as e:
-            logger.error(f"Segment {i+1} TTS failed on both engines: {e} - inserting short silence instead")
-            audio = np.zeros(int(KOKORO_SAMPLE_RATE * 1.5), dtype=np.float32)
-            sr = KOKORO_SAMPLE_RATE
-            engine = "silence"
+            logger.error(f"Failed to initialize pipeline: {e}")
+            raise
 
-        engine_counts[engine] = engine_counts.get(engine, 0) + 1
-        path = os.path.join(output_dir, f"seg_{i}.wav")
-        sf.write(path, audio, sr)
-        duration = len(audio) / sr
+    def _load_video_history(self) -> list:
+        """Load video history from file"""
+        history_file = "output/video_history.json"
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r') as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                logger.warning("History file corrupted, creating new one")
+                return []
+            except Exception as e:
+                logger.warning(f"Could not load history: {e}")
+                return []
+        return []
 
-        segments.append({"path": path, "duration": duration, "caption": caption, "tts_engine": engine})
-        logger.info(f"Segment {i+1}/{len(scenes)} via {engine}: {duration:.2f}s - \"{caption[:50]}...\"")
+    def _save_video_history(self, video_data: dict):
+        """Save video history to file"""
+        try:
+            os.makedirs("output", exist_ok=True)
+            self.video_history.append(video_data)
+            # Keep only last 50 videos
+            if len(self.video_history) > 50:
+                self.video_history = self.video_history[-50:]
+            with open("output/video_history.json", 'w') as f:
+                json.dump(self.video_history, f, indent=2)
+            logger.info(f"Saved video to history: {video_data.get('title', 'Unknown')}")
+        except Exception as e:
+            logger.error(f"Failed to save video history: {e}")
 
-    total = sum(s['duration'] for s in segments)
-    logger.info(f"Total DARK voiceover duration: {total:.2f}s | engines used: {engine_counts}")
-    return segments
+    def _get_recent_topics(self, n: int = 20) -> list:
+        """Get recent topics to avoid repetition"""
+        return [v.get('topic') for v in self.video_history[-n:] if v.get('topic')]
+
+    def _generate_and_check_once(self, topic: str) -> dict:
+        """Generate script once and check quality"""
+        try:
+            # Get category and prompt
+            category = get_topic_category(topic)
+            specialized_prompt = get_script_prompt_for_niche(topic)
+            
+            # Generate script
+            logger.info(f"Generating script for topic: {topic}")
+            script_data = generate_script(topic, custom_prompt=specialized_prompt)
+            
+            if not script_data:
+                raise ValueError("Script generation returned empty data")
+            
+            # Medical accuracy check
+            med_check = validate_script_for_medical_accuracy(script_data)
+            if not med_check.get('valid', False):
+                logger.warning("Medical accuracy check failed, adding disclaimer")
+                script_data = auto_add_disclaimer(script_data)
+            
+            # Quality check
+            quality_result = self.quality_checker.check_script_quality(script_data)
+            if not quality_result:
+                quality_result = {'approved': False, 'scores': {'overall_quality': 0}}
+            
+            # Spam check
+            spam_result = self.anti_spam.check_for_spam_risks(script_data, self.video_history)
+            
+            # Generate SEO tags
+            tags = generate_seo_tags(topic, category, script_data.get('title', ''))
+            
+            # Add metadata
+            script_data['topic'] = topic
+            script_data['category'] = category
+            script_data['quality_scores'] = quality_result.get('scores', {})
+            script_data['spam_risk'] = spam_result.get('spam_risk_level', 'UNKNOWN')
+            script_data['tags'] = tags
+            
+            # Check if script has scenes
+            if not script_data.get('scenes') or len(script_data['scenes']) < 3:
+                raise ValueError("Script has insufficient scenes")
+            
+            return {
+                "script_data": script_data,
+                "quality_approved": quality_result.get('approved', False),
+                "quality_score": quality_result.get('scores', {}).get('overall_quality', 0),
+                "spam_ok": spam_result.get('spam_risk_level', 'UNKNOWN') not in ['CRITICAL', 'HIGH'],
+                "spam_level": spam_result.get('spam_risk_level', 'UNKNOWN'),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in _generate_and_check_once: {e}")
+            raise
+
+    def generate_with_niche_strategy(self, topic: str = None) -> dict:
+        """Generate script with retry logic"""
+        fixed_topic = topic
+        recent_topics = self._get_recent_topics()
+        best_attempt = None
+        last_error = None
+        
+        for attempt in range(1, MAX_SCRIPT_ATTEMPTS + 1):
+            try:
+                current_topic = fixed_topic or get_random_topic(exclude=recent_topics)
+                logger.info(f"Attempt {attempt}/{MAX_SCRIPT_ATTEMPTS} for topic: {current_topic}")
                 
+                result = self._generate_and_check_once(current_topic)
+                
+                # Keep best attempt
+                if best_attempt is None or result['quality_score'] > best_attempt['quality_score']:
+                    best_attempt = result
+                    logger.info(f"New best score: {result['quality_score']}")
+                
+                # Return if quality is good
+                if result['quality_approved'] and result['spam_ok']:
+                    logger.info(f"Quality approved! Score: {result['quality_score']}")
+                    return result['script_data']
+                    
+            except Exception as e:
+                last_error = e
+                logger.error(f"Attempt {attempt} failed: {e}")
+                continue
+        
+        # If all attempts failed but we have a best attempt
+        if best_attempt:
+            logger.warning(f"Using best attempt with score: {best_attempt['quality_score']}")
+            return best_attempt['script_data']
+        
+        # Complete failure
+        raise RuntimeError(
+            f"All {MAX_SCRIPT_ATTEMPTS} script-generation attempts failed. "
+            f"Last error: {last_error}"
+        )
+
+    def _generate_images_with_retry(self, script_data: dict) -> tuple:
+        """Generate images with retry logic"""
+        image_paths = []
+        image_sources = []
+        used_hashes = set()
+        used_fallbacks = set()
+        
+        total_scenes = len(script_data['scenes'])
+        logger.info(f"Generating images for {total_scenes} scenes...")
+        
+        for i, scene in enumerate(script_data['scenes']):
+            success = False
+            for retry in range(MAX_IMAGE_RETRIES):
+                try:
+                    logger.info(f"Scene {i+1}/{total_scenes} - Attempt {retry+1}")
+                    res = generate_images(i, scene, used_hashes, used_fallbacks)
+                    if res and res.get('path') and os.path.exists(res['path']):
+                        image_paths.append(res['path'])
+                        image_sources.append(res.get('source', 'unknown'))
+                        success = True
+                        break
+                except Exception as e:
+                    logger.warning(f"Image generation failed (attempt {retry+1}): {e}")
+                    time.sleep(2)  # Wait before retry
+            
+            if not success:
+                # generate_images() (== image_generator._generate_one) already tries every
+                # real fallback layer internally on each attempt - AI providers, local
+                # pool, Pexels, Pixabay, and finally a Playwright screenshot - so if all
+                # MAX_IMAGE_RETRIES attempts above still failed, there's genuinely nothing
+                # left to try for this scene.
+                logger.error(f"All {MAX_IMAGE_RETRIES} attempts (each trying every fallback layer) failed for scene {i+1}")
+                raise RuntimeError(f"Failed to generate image for scene {i+1}: every provider and fallback layer failed")
+        
+        if len(image_paths) != total_scenes:
+            raise RuntimeError(f"Generated {len(image_paths)} images for {total_scenes} scenes")
+        
+        return image_paths, image_sources
+
+    def run_pipeline(self, topic: str = None) -> dict:
+        """Main pipeline execution"""
+        start_time = time.time()
+        logger.info("="*60)
+        logger.info("🚀 STARTING SKILLOR - DARK BODY MYSTERY PIPELINE")
+        logger.info("="*60)
+        
+        try:
+            # Phase 0: Check posting interval
+            if self.video_history:
+                last_posted_at = self.video_history[-1].get('posted_at')
+                if last_posted_at:
+                    try:
+                        last_dt = datetime.fromisoformat(last_posted_at)
+                        if not self.scheduler.validate_posting_interval(last_dt):
+                            logger.warning("⚠️ Posting sooner than recommended 2h gap - monitor spam flags")
+                    except Exception as e:
+                        logger.warning(f"Could not validate posting interval: {e}")
+
+            # Phase 1: Script Generation
+            logger.info("\n📝 PHASE 1: SCRIPT GENERATION")
+            script_data = self.generate_with_niche_strategy(topic)
+            logger.info(f"✅ Script generated: {script_data.get('title', 'Untitled')}")
+
+            # Phase 1b: SEO Generation
+            logger.info("\n🔍 PHASE 1b: SEO GENERATION")
+            try:
+                seo_topic = script_data.get('topic', topic)
+                # Preserve the LLM's plain one-sentence summary. The formatted
+                # YouTube description must never be fed back into itself.
+                script_data['summary'] = script_data.get('description', '')
+                seo_package = generate_seo_package(seo_topic, script_data)
+                
+                script_data['title'] = seo_package.get('chosen_title', script_data.get('title', 'Untitled'))
+                script_data['title_options'] = seo_package.get('title_options', [])
+                script_data['description'] = seo_package.get('description', '')
+                script_data['tags'] = seo_package.get('tags', [])
+                script_data['hashtags'] = seo_package.get('hashtags', [])
+                script_data['pinned_comment'] = seo_package.get('pinned_comment', '')
+                script_data['playlist_suggestion'] = seo_package.get('playlist_suggestion', '')
+                script_data['seo_score'] = seo_package.get('seo_score', {})
+                
+                seo_overall = script_data['seo_score'].get('scores', {}).get('overall_seo_score', 0)
+                logger.info(f"✅ SEO score: {seo_overall}/100")
+                
+                if seo_overall < 50:
+                    logger.warning("⚠️ SEO score low - review before publishing")
+            except Exception as e:
+                logger.warning(f"SEO generation failed, continuing: {e}")
+
+            # CTR Prediction
+            try:
+                ctr_result = predict_ctr(script_data)
+                script_data['ctr_prediction'] = ctr_result
+                
+                ranked_hashtags = rank_hashtags(script_data.get('hashtags', []))
+                script_data['hashtags_ranked'] = ranked_hashtags
+
+                title_options = script_data.get('title_options', [])
+                if title_options:
+                    ab_variants = generate_ab_variants(script_data, title_options)
+                    script_data['ab_variants'] = ab_variants
+                    logger.info("✅ A/B title/description variants generated")
+
+                insights = get_historical_insights()
+                if insights.get('insights'):
+                    script_data['historical_insights'] = insights
+                    logger.info(f"📊 Historical insights: {len(insights['insights'])} pattern(s) found")
+            except Exception as e:
+                logger.warning(f"CTR prediction failed: {e}")
+
+            # Phase 2: Image Generation
+            logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
+            image_paths, image_sources = self._generate_images_with_retry(script_data)
+            logger.info(f"✅ Generated {len(image_paths)} images")
+            
+            # Quality Gate: Check fallback ratio
+            source_counts = Counter(image_sources)
+            unsafe_sources = {"Playwright-screenshot"}
+            fallback_count = sum(c for src, c in source_counts.items() if src in unsafe_sources)
+            fallback_ratio = fallback_count / len(image_paths) if image_paths else 1.0
+            
+            logger.info(f"📊 Image sources: {dict(source_counts)}")
+            logger.info(f"📊 Fallback ratio: {fallback_ratio:.1%}")
+            
+            if fallback_ratio > FALLBACK_ABORT_RATIO:
+                raise RuntimeError(
+                    f"Quality gate failed: {fallback_count}/{len(image_paths)} images ({fallback_ratio:.1%}) "
+                    f"are fallbacks (threshold: {FALLBACK_ABORT_RATIO:.1%})"
+                )
+
+            # Phase 3: Voice Generation
+            logger.info("\n🔊 PHASE 3: VOICE GENERATION")
+            try:
+                audio_segments = generate_voice_segments(
+                    script_data['scenes'], 
+                    voice="am_adam", 
+                    speed=0.95
+                )
+                logger.info(f"✅ Generated {len(audio_segments)} audio segments")
+                narration_seconds = sum(float(seg.get("duration", 0)) for seg in audio_segments)
+                if narration_seconds > 55.0:
+                    raise RuntimeError(
+                        f"Narration is {narration_seconds:.1f}s, above the 55s Shorts limit. "
+                        "Regenerate the script with 90-115 words."
+                    )
+
+                # Quality Gate: abort if too many segments had to fall back to
+                # silence (both Chatterbox and Kokoro failed for that segment).
+                # Without this gate, a systemic TTS failure (e.g. missing
+                # espeak-ng, no HF access) silently produces a video with no
+                # voiceover - only background music - and captions timed to
+                # the fake 1.5s silence duration instead of real speech.
+                silence_count = sum(1 for s in audio_segments if s.get('tts_engine') == 'silence')
+                silence_ratio = silence_count / len(audio_segments) if audio_segments else 1.0
+                logger.info(f"📊 Silent (failed-TTS) segments: {silence_count}/{len(audio_segments)} ({silence_ratio:.1%})")
+                if silence_ratio > FALLBACK_ABORT_RATIO:
+                    raise RuntimeError(
+                        f"Quality gate failed: {silence_count}/{len(audio_segments)} voice segments "
+                        f"({silence_ratio:.1%}) are silent - both Chatterbox and Kokoro failed "
+                        f"(threshold: {FALLBACK_ABORT_RATIO:.1%}). Check that espeak-ng is installed "
+                        f"and that Chatterbox/Kokoro model downloads are succeeding."
+                    )
+
+                engines = {s.get('tts_engine') for s in audio_segments}
+                if len(engines) != 1:
+                    raise RuntimeError(f"Mixed TTS voices are not publishable: {sorted(engines)}")
+                if os.environ.get("REQUIRE_CLONED_VOICE", "true").lower() == "true":
+                    if engines != {"chatterbox_clone"}:
+                        raise RuntimeError(
+                            f"Cloned voice required, but engine was {sorted(engines)}. "
+                            "Check Chatterbox and the private voice reference."
+                        )
+                if audio_segments and audio_segments[0].get('duration', 99) > 4.0:
+                    raise RuntimeError("First spoken scene exceeds 4 seconds; hook is too slow")
+            except Exception as e:
+                logger.error(f"Voice generation failed: {e}")
+                raise
+
+            # Phase 3b: Shorts Enhancements
+            logger.info("\n📝 PHASE 3b: SHORTS ENHANCEMENTS")
+            try:
+                shorts_report = build_shorts_report(
+                    script_data, 
+                    audio_segments, 
+                    script_data.get('tags', [])
+                )
+                script_data['shorts_report'] = shorts_report
+                
+                if shorts_report.get('caption_pacing', {}).get('all_readable') is False:
+                    issues = shorts_report.get('caption_pacing', {}).get('issues', [])
+                    raise RuntimeError("Caption pacing failed: " + "; ".join(issues[:3]))
+                
+                hook_score = shorts_report.get('hook_detail', {}).get('score', 0)
+                if hook_score < 70:
+                    raise RuntimeError(f"Hook failed publishing gate: {hook_score}/100")
+            except Exception as e:
+                logger.error(f"Shorts publishing checks failed: {e}")
+                raise
+
+            # Generate SRT
+            try:
+                os.makedirs("output", exist_ok=True)
+                srt_path = "output/captions.srt"
+                generate_srt(script_data['scenes'], audio_segments, output_path=srt_path)
+                script_data['srt_path'] = srt_path
+                logger.info(f"✅ SRT generated: {srt_path}")
+            except Exception as e:
+                logger.warning(f"SRT generation failed: {e}")
+
+            # Phase 4: Build Video
+            logger.info("\n🎬 PHASE 4: BUILD VIDEO")
+            try:
+                final_video = build_video(image_paths, audio_segments, script_data['scenes'])
+                thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
+                technical = probe_video(final_video)
+                logger.info(f"✅ Video built and validated: {final_video} ({technical})")
+                logger.info(f"✅ Thumbnail built: {thumb_path}")
+            except Exception as e:
+                logger.error(f"Video build failed: {e}")
+                raise
+
+            # Thumbnail SEO Score
+            try:
+                thumbnail_score = score_thumbnail(thumb_path, script_data['title'])
+                script_data['thumbnail_score'] = thumbnail_score
+                
+                thumb_overall = thumbnail_score.get('overall_thumbnail_score', 0)
+                logger.info(f"✅ Thumbnail score: {thumb_overall}/100")
+                
+                if thumb_overall < 60:
+                    logger.warning("⚠️ Thumbnail score low - check contrast/readability")
+            except Exception as e:
+                logger.warning(f"Thumbnail scoring failed: {e}")
+
+            # Phase 5: Upload
+            logger.info("\n📤 PHASE 5: UPLOAD")
+            try:
+                upload_result = upload_all(final_video, thumb_path, script_data)
+                logger.info(f"✅ Upload result: {upload_result}")
+            except Exception as e:
+                logger.error(f"Upload failed: {e}")
+                raise
+
+            # Save history
+            self._save_video_history({
+                'title': script_data.get('title', 'Untitled'),
+                'topic': script_data.get('topic'),
+                'voiceover': script_data.get('voiceover', '')[:500],
+                'posted_at': datetime.now(timezone.utc).isoformat() if (upload_result.get('youtube_success') or upload_result.get('facebook_success')) else None,
+                'facebook_success': upload_result.get('facebook_success', False),
+                'youtube_video_id': upload_result.get('youtube_video_id'),
+                'seo_score': script_data.get('seo_score', {}).get('scores', {}).get('overall_seo_score'),
+                'predicted_ctr': script_data.get('ctr_prediction', {}).get('ctr_prediction'),
+            })
+
+            elapsed = time.time() - start_time
+            logger.info("="*60)
+            logger.info(f"✅ PIPELINE COMPLETE in {elapsed:.1f}s")
+            logger.info(f"📹 Video: {script_data.get('title')}")
+            logger.info("="*60)
+            
+            return {
+                'success': True,
+                'title': script_data.get('title'),
+                'video_path': final_video,
+                'thumbnail_path': thumb_path,
+                'upload_result': upload_result,
+                'elapsed_time': elapsed
+            }
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error("="*60)
+            logger.error(f"❌ PIPELINE FAILED after {elapsed:.1f}s")
+            logger.error(f"Error: {e}")
+            logger.error(traceback.format_exc())
+            logger.error("="*60)
+            raise
+
+    def run_daily_batch(self, num_videos: int = 3):
+        """Run multiple videos in batch"""
+        logger.info(f"Starting daily batch: {num_videos} videos")
+        succeeded = 0
+        failed = 0
+        
+        for i in range(num_videos):
+            try:
+                logger.info(f"\n{'='*40}")
+                logger.info(f"VIDEO {i+1}/{num_videos}")
+                logger.info(f"{'='*40}")
+                
+                self.run_pipeline()
+                succeeded += 1
+                
+                # Wait between videos
+                if i < num_videos - 1:
+                    wait_time = 300  # 5 minutes
+                    logger.info(f"Waiting {wait_time}s before next video...")
+                    time.sleep(wait_time)
+                    
+            except Exception as e:
+                failed += 1
+                logger.error(f"Video {i+1} failed: {e}")
+                # Continue with next video
+                continue
+        
+        logger.info(f"Batch complete: {succeeded} succeeded, {failed} failed out of {num_videos}")
+
+def main():
+    """Main entry point"""
+    try:
+        pipeline = SKILLORPipeline()
+        topic = os.environ.get("VIDEO_TOPIC")
+        
+        if topic:
+            logger.info(f"Using specific topic: {topic}")
+            pipeline.run_pipeline(topic=topic)
+        else:
+            # Check if batch mode
+            batch_mode = os.environ.get("BATCH_MODE", "false").lower() == "true"
+            if batch_mode:
+                num_videos = int(os.environ.get("BATCH_COUNT", "3"))
+                pipeline.run_daily_batch(num_videos)
+            else:
+                pipeline.run_pipeline()
+                
+    except KeyboardInterrupt:
+        logger.info("Pipeline interrupted by user")
+    except Exception as e:
+        logger.error(f"Pipeline failed: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
