@@ -47,44 +47,16 @@ PLAYLISTS_BY_CATEGORY = {
 
 # EXPANDED TITLE TEMPLATES (20+ variations for diversity)
 _TITLE_TEMPLATES = [
-    # Original templates (preserved)
+    # Specific, credible, human-sounding patterns. Avoid fake conspiracy,
+    # "shocking", and "this is real" phrases that make automated content obvious.
     "{topic}",
-    "The Truth About {topic}",
-    "{topic} (Doctors Won't Tell You)",
-    "Why {topic} Actually Happens",
-    "{topic}... This Is Real",
-    
-    # NEW: Curiosity gap templates
-    "{topic} (Nobody Tells You This)",
-    "What Happens When {topic}? (Shocking)",
-    "The Hidden Truth About {topic}",
-    "{topic} — What They Don't Tell You",
-    
-    # NEW: Emotion-driven templates
-    "😱 {topic} — You Won't Believe!",
-    "⚠️ Stop Ignoring {topic}!",
-    "🤯 {topic} Will Blow Your Mind",
-    "❌ Everything You Know About {topic} Is Wrong",
-    
-    # NEW: Question-based templates
-    "Is {topic} True? (Science Answers)",
-    "Did You Know About {topic}?",
-    "Can {topic} Really Happen?",
-    
-    # NEW: Time-sensitive templates
-    "Your {topic} — Every Second Counts!",
-    "Why {topic} Happens To You Daily",
-    "The {topic} Crisis Nobody Talks About",
-    
-    # NEW: Benefit-driven templates
-    "How {topic} Changes Everything",
-    "This {topic} Hack Saves Your Life",
-    "What {topic} Means For Your Future",
-    
-    # NEW: Controversial templates
-    "Why {topic} Is A Lie!",
-    "The Dark Side Of {topic}",
-    "Forbidden Truth About {topic}",
+    "Why {topic} Happens",
+    "How {topic} Controls Your Day",
+    "What {topic} Does to Your Body",
+    "The Science Behind {topic}",
+    "What Your Body Clock Is Doing Right Now",
+    "Your Body Does This Every Day",
+    "The Daily Signal Your Body Follows",
 ]
 
 # HIGH-VOLUME TAGS BY CATEGORY
@@ -108,6 +80,7 @@ def _clean_topic_for_title(topic: str) -> str:
     would silently undo that for any templated title that wins on score."""
     t = topic.strip()
     t = re.sub(r'^(why|the)\s+', '', t, flags=re.IGNORECASE)
+    t = re.sub(r'^(secret|hidden|shocking)\s+', '', t, flags=re.IGNORECASE)
     return t[0].upper() + t[1:] if t else topic
 
 
@@ -167,79 +140,48 @@ def generate_hashtags(topic: str, category: str, n: int = 8) -> List[str]:
     return [f"#{t}" for t in unique_tags[:n]]
 
 
+def _normalise_tags(tags: List[str], limit: int = 3) -> List[str]:
+    """Return unique clean hashtag words regardless of whether callers pass
+    `science`, `#science`, or a mixture of both."""
+    clean, seen = [], set()
+    for raw in tags or []:
+        tag = re.sub(r"[^A-Za-z0-9_]", "", str(raw).lstrip("#")).strip()
+        if tag and tag.lower() not in seen:
+            seen.add(tag.lower())
+            clean.append(tag)
+        if len(clean) >= limit:
+            break
+    return clean
+
+
 def generate_description(script_data: Dict, tags: List[str]) -> str:
-    """Same structure as uploader._build_youtube_description, factored out
-    here so SEO generation and upload share one implementation instead of
-    drifting apart. uploader.py should import this going forward."""
-    title = script_data.get('title', '')
-    hook = script_data.get('hook', '')
-    cta = script_data.get('cta', 'Follow for more dark body secrets.')
-    description = script_data.get('description', '')
+    """Build one concise description exactly once.
 
-    first_line = hook[:120] if hook else title
-    yt_hashtags = ' '.join(f"#{t}" for t in tags[:3])
+    `main.py` stores the LLM's original summary as `summary`. We never feed a
+    previously formatted YouTube description back into this function; that
+    was the cause of duplicated paragraphs, dividers, CTAs and hashtags.
+    """
+    hook = re.sub(r"\s+", " ", script_data.get("hook", "")).strip()
+    summary = re.sub(r"\s+", " ", script_data.get("summary", "")).strip()
+    if not summary:
+        candidate = script_data.get("description", "")
+        # Old runs may contain an already-formatted description. Do not nest it.
+        if "━━━━━━━━" not in candidate and "#" not in candidate and len(candidate) <= 500:
+            summary = re.sub(r"\s+", " ", candidate).strip()
+    if not summary:
+        summary = "A clear, concise explanation of how this process works in your body."
 
-    # Random template selection for diversity (avoid duplicate flag)
-    templates = [
-        # Template 1: Original structure (preserved)
-        lambda: (
-            f"{first_line}\n\n"
-            f"{description}\n\n"
-            f"👇 {cta}\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🔬 Dark body science, explained simply\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"{yt_hashtags}"
-        ),
-        
-        # Template 2: Question-first
-        lambda: (
-            f"🤔 Did you know this?\n\n"
-            f"{description}\n\n"
-            f"💬 {cta}\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🔬 Science explained daily\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"{yt_hashtags}"
-        ),
-        
-        # Template 3: Hook-first (shorter, punchier)
-        lambda: (
-            f"{hook[:100]}\n\n"
-            f"{description[:200]}\n\n"
-            f"🎯 {cta}\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🔬 Stay curious, stay informed\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"{yt_hashtags}"
-        ),
-        
-        # Template 4: Story-first
-        lambda: (
-            f"📖 Here's the truth no one tells you...\n\n"
-            f"{description}\n\n"
-            f"👆 {cta}\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🔬 Daily science, made simple\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"{yt_hashtags}"
-        ),
-        
-        # Template 5: Benefit-first
-        lambda: (
-            f"⚠️ This changes everything you knew about {title[:30]}...\n\n"
-            f"{description}\n\n"
-            f"🔥 {cta}\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🔬 Your daily dose of science\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"{yt_hashtags}"
-        ),
-    ]
-    
-    # Randomly pick a template for diversity
-    description_text = random.choice(templates)()
-    return description_text[:DESCRIPTION_MAX_LEN]
+    # Avoid repeating the same sentence as both hook and summary.
+    parts = []
+    if hook:
+        parts.append(hook[:140].rstrip(" .") + ".")
+    if summary and summary.lower() not in hook.lower():
+        parts.append(summary[:320].rstrip())
+
+    hashtags = " ".join(f"#{tag}" for tag in _normalise_tags(tags, 3))
+    if hashtags:
+        parts.append(hashtags)
+    return "\n\n".join(parts)[:DESCRIPTION_MAX_LEN]
 
 
 def generate_pinned_comment(script_data: Dict) -> str:
@@ -286,19 +228,14 @@ def _score_title(title: str) -> int:
     else:
         score += 5
     
-    # EXPANDED power words
-    power_words = [
-        'secret', 'truth', 'real', 'hidden', 'actually', 'why', 
-        'what', 'how', 'when', 'never', 'always', 'every',
-        'shocking', 'crazy', 'insane', 'unbelievable', 'mind-blowing',
-        'danger', 'warning', 'stop', 'don\'t', 'must know',
-        'scientifically', 'proven', 'explained', 'finally',
-        'lie', 'dark', 'forbidden', 'exposed', 'revealed',
-        'hack', 'shortcut', 'trick', 'cheat', 'easy'
-    ]
-    if any(w in title.lower() for w in power_words):
+    # Reward useful specificity, not manipulative clickbait.
+    useful_words = ["why", "how", "what", "science", "body", "brain", "sleep", "daily", "your"]
+    if any(re.search(r"\b" + re.escape(w) + r"\b", title.lower()) for w in useful_words):
         score += 20
-    
+    clickbait = ["shocking", "won't believe", "doctors won't", "forbidden", "this is real", "blow your mind", "secret rhythms", "hidden truth"]
+    if any(w in title.lower() for w in clickbait):
+        score -= 30
+
     # Numbers (CTR booster)
     if re.search(r'\d', title):
         score += 15
@@ -437,3 +374,4 @@ if __name__ == "__main__":
     }
     result = generate_seo_package("Your Heart Has Its Own Brain", test_script)
     print(json.dumps(result, indent=2, ensure_ascii=False))
+  
