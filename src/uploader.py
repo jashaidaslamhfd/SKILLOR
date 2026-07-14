@@ -97,7 +97,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
         return False, None
 
     title = script_data.get('title', 'Untitled')
-    enhanced_title = _make_seo_title(title, script_data.get('topic', title))
+    enhanced_title = title  # already selected/scored by generate_seo_package
     desc = _build_youtube_description(script_data, tags)
 
     # NOTE: captions.insert (SRT upload) and commentThreads.insert (posting
@@ -352,3 +352,4 @@ def upload_all(video_path, thumb_path, script_data):
         "youtube_video_id": yt_video_id,
         "facebook_success": facebook_success,
     }
+    
