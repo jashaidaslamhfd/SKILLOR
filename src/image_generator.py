@@ -177,7 +177,11 @@ def _stock_photo_request(index, scene_text, source: str, used_fallbacks: set):
         photos = resp.json().get("photos", [])
         if not photos:
             raise RuntimeError(f"Pexels: no results for '{query}'")
-        img_urls = [p["src"]["large"] for p in photos]
+        img_urls = [
+            p["src"].get("portrait") or p["src"].get("large2x")
+            or p["src"].get("original") or p["src"]["large"]
+            for p in photos
+        ]
 
     elif source == "pixabay":
         key = os.environ.get("PIXABAY_API_KEY")
