@@ -608,10 +608,12 @@ def generate_thumbnail(image_path: str, title: str, output_path: str = "output/t
     except Exception:
         font = ImageFont.load_default()
 
-    # ✅ Priority: 3-5 words maximum on thumbnail
-    words = title.upper().split()
-    if len(words) > 5:
-        words = words[:5]
+    # Keep only 3-4 meaningful words. Taking the first five words produced
+    # vague phrases such as "SECRET RHYTHMS OF YOUR BODY" on mobile.
+    all_words = [re.sub(r"[^A-Z0-9']", "", w) for w in title.upper().split()]
+    stop = {"THE", "A", "AN", "OF", "TO", "IS", "ARE", "THIS", "THAT", "ABOUT", "BEHIND"}
+    meaningful = [w for w in all_words if w and w not in stop]
+    words = (meaningful or all_words)[:4]
     title = " ".join(words)
 
     # Word wrap
