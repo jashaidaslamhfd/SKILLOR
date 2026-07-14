@@ -283,10 +283,10 @@ BASE_TAGS = [
 # ============================================
 # 8. CONSTANTS
 # ============================================
-TARGET_WORD_RANGE = (130, 170)
+TARGET_WORD_RANGE = (90, 115)
 MAX_TAGS = 15
 MAX_TITLE_LENGTH = 55
-SCENES_PER_SCRIPT = 9  # Optimized for 3-5 second scenes
+SCENES_PER_SCRIPT = 7  # 35-55 second Shorts target
 
 # ============================================
 # 9. MEDICAL RED FLAGS
@@ -343,23 +343,23 @@ You are an expert mystery science communicator creating HIGH-RETENTION YouTube S
 TOPIC: {topic}
 
 🎯 RETENTION STRATEGY (CRITICAL):
-- Every scene must end with a CLIFFHANGER that makes the viewer WANT to see the next scene
+- Use no more than TWO natural open loops in the whole script; most scenes must clearly explain useful information
 - Use "YOU" language throughout (e.g., "Your brain", "You feel") - make it PERSONAL
 - Each scene MUST be 3-5 seconds of spoken content (short, punchy, intense)
-- Build CURIOSITY > REVEAL > CLIFFHANGER pattern in every scene
+- Build one clear CURIOSITY > EVIDENCE > PAYOFF arc across the whole video
 
 SCRIPT STRUCTURE:
 1. DARK HOOK: "{hook_preference}"
 2. RELATE the information to the viewer's daily life
 3. SCIENCE behind the phenomenon (simplified, intriguing)
 4. REVELATION that shocks or surprises
-5. CLIFFHANGER transition to next scene
+5. One natural transition where needed; do not force suspense into every scene
 6. CTA: "{cta}"
 7. DISCLAIMER: Educational/entertainment only, not medical advice
 
 TONE: Dark, mysterious, factual, engaging, personal
 PAIN POINT: {pain_point}
-SUGGESTED CLIFFHANGER TRANSITIONS (use similar style between scenes): {', '.join(transitions)}
+OPTIONAL TRANSITIONS (use at most two, only where natural): {', '.join(transitions)}
 
 📝 SCENE REQUIREMENTS:
 
@@ -370,10 +370,10 @@ WORD COUNT (HARD REQUIREMENT):
 - Each scene = 3-5 seconds of speech
 
 CAPTION QUALITY FOR RETENTION:
-- Start each scene with a MICRO-HOOK (e.g., "But here's the twist...")
-- End each scene with a CLIFFHANGER (e.g., "...and that's when it gets weird")
+- Start scene 1 with the hook; later scenes should continue naturally
+- Do not end every scene with “but”, “yet”, ellipses, or a cliffhanger
 - Use short, punchy sentences (5-10 words max per sentence)
-- Build tension with every sentence
+- Prefer concrete facts and clear explanations over artificial tension
 - NO filler words - every word must add value
 - Connect each scene to the viewer's personal experience
 
@@ -386,7 +386,7 @@ CAPTION QUALITY FOR RETENTION:
 SCENE FORMAT:
 For each scene, provide:
 - "visual": 5-8 words describing a CINEMATIC image (e.g., "Macro shot of a beating heart, dark background")
-- "caption": The EXACT spoken text (punchy, cliffhanger-driven, personal)
+- "caption": The EXACT natural spoken text (10-16 words; clear and personal)
 
 OUTPUT FORMAT:
 Return ONLY valid JSON, no other text:
@@ -403,7 +403,7 @@ Return ONLY valid JSON, no other text:
 }}
 
 ⚡ RETENTION CHECKLIST (BEFORE FINALIZING):
-✓ Every scene ends with a cliffhanger
+✓ No more than two natural open loops in the full script
 ✓ "YOU" language used throughout
 ✓ Each scene is 3-5 seconds of speech
 ✓ Visual descriptions are CINEMATIC and UNIQUE
@@ -412,7 +412,7 @@ Return ONLY valid JSON, no other text:
 ✓ No medical advice
 ✓ Dark, mysterious, scientific tone
 
-REMEMBER: The viewer should feel COMPELLED to watch the next scene. Make it ADDICTIVE.
+REMEMBER: Earn attention with a specific fact, clear payoff, and natural human delivery—not empty hype.
 """
     return prompt
 
@@ -780,10 +780,12 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
             cliffhanger_count += 1
     
     cliffhanger_ratio = cliffhanger_count / len(scenes) if scenes else 0
-    if cliffhanger_ratio >= 0.7:
+    if 1 <= cliffhanger_count <= 2:
         score += 30
+    elif cliffhanger_count > 2:
+        suggestions.append(f"Too many forced cliffhangers ({cliffhanger_count}); use at most two")
     else:
-        suggestions.append(f"Only {cliffhanger_ratio:.0%} scenes have cliffhangers - aim for 70%+")
+        suggestions.append("Add one natural open loop after the hook")
     
     # Check "YOU" language
     you_count = 0
