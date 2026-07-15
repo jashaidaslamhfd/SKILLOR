@@ -588,7 +588,7 @@ BASE_TAGS = [
 # ============================================
 # 8. CONSTANTS
 # ============================================
-TARGET_WORD_RANGE = (90, 115)
+TARGET_WORD_RANGE = (80, 115)
 MAX_TAGS = 15
 MAX_TITLE_LENGTH = 55
 SCENES_PER_SCRIPT = 7  # 35-55 second Shorts target
@@ -660,7 +660,7 @@ WORD COUNT (HARD REQUIREMENT):
 - Total voiceover MUST be {min_w}-{max_w} words
 - Split into exactly {num_scenes} scenes
 - Each scene caption: {per_scene_lo}-{per_scene_hi} words
-- Each scene = 3-5 seconds of speech
+- Each scene = 3-6 seconds of speech
 
 CAPTION QUALITY FOR RETENTION:
 - Start scene 1 with the hook; later scenes should continue naturally
