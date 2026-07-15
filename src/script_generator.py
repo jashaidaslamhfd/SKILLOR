@@ -360,6 +360,30 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
     return len(issues) == 0, issues
 
 
+# ---------------------------------------------------------------------------
+# PUBLIC API — stable importable interface.
+# ---------------------------------------------------------------------------
+
+def validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
+    """Validate a generated script for structural completeness.
+
+    Public wrapper around the internal ``_validate_script``.
+    Use this from external code (quality_checker, tests, etc.)
+    instead of importing the underscore-prefixed version.
+
+    Parameters
+    ----------
+    script_data : dict
+        Script dictionary with 'title', 'hook', 'scenes', 'cta', 'voiceover'.
+
+    Returns
+    -------
+    tuple[bool, list[str]]
+        (is_valid, issues_list)
+    """
+    return _validate_script(script_data)
+
+
 # ============================================
 # 5. RETENTION ANALYSIS
 # ============================================
