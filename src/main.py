@@ -341,21 +341,20 @@ class SKILLORPipeline:
                         "Regenerate the script with 90-115 words."
                     )
 
-                # Quality Gate: abort if too many segments had to fall back to
-                # silence (both Chatterbox and Kokoro failed for that segment).
-                # Without this gate, a systemic TTS failure (e.g. missing
-                # espeak-ng, no HF access) silently produces a video with no
-                # voiceover - only background music - and captions timed to
-                # the fake 1.5s silence duration instead of real speech.
+                # Quality Gate: safety net for silent segments.
+                # NOTE: voice_generator.py now raises RuntimeError immediately
+                # if ALL engines (Chatterbox x3 retries + Kokoro) fail for any
+                # segment — silence is never inserted. This check is a belt-and-
+                # suspenders guard that catches any edge case where a segment
+                # somehow ends up with engine="silence".
                 silence_count = sum(1 for s in audio_segments if s.get('tts_engine') == 'silence')
                 silence_ratio = silence_count / len(audio_segments) if audio_segments else 1.0
                 logger.info(f"📊 Silent (failed-TTS) segments: {silence_count}/{len(audio_segments)} ({silence_ratio:.1%})")
-                if silence_ratio > FALLBACK_ABORT_RATIO:
+                if silence_ratio > 0:
                     raise RuntimeError(
                         f"Quality gate failed: {silence_count}/{len(audio_segments)} voice segments "
-                        f"({silence_ratio:.1%}) are silent - both Chatterbox and Kokoro failed "
-                        f"(threshold: {FALLBACK_ABORT_RATIO:.1%}). Check that espeak-ng is installed "
-                        f"and that Chatterbox/Kokoro model downloads are succeeding."
+                        f"({silence_ratio:.1%}) are silent. voice_generator should have raised "
+                        f"before inserting silence — this indicates a bug."
                     )
 
                 engines = {s.get('tts_engine') for s in audio_segments}
