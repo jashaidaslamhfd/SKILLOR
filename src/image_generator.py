@@ -259,3 +259,7 @@ def _generate_one(index, scene, used_hashes: set, used_fallbacks: set):
             continue
 
     raise RuntimeError(f"Scene {index}: All generation layers failed.")
+
+
+# Public alias — main.py imports this name.
+generate_scene_image = _generate_one
