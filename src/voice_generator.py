@@ -58,6 +58,35 @@ CHATTERBOX_TEMPO = float(os.environ.get("CHATTERBOX_TEMPO", "0.98"))
 VOICE_REFERENCE_PATH = os.environ.get("VOICE_REFERENCE_PATH", "assets/voice_reference.wav")
 
 
+def _voice_reference_ok() -> bool:
+    """True only if the reference WAV is actually usable for cloning.
+
+    Guards against three silent failure modes that would otherwise make the
+    pipeline *think* it cloned when it didn't: (1) file missing, (2) file
+    present but empty/corrupt, (3) file readable but effectively silent
+    (all-zero / near-silent), which produces a garbage clone. Any problem
+    here just logs and returns False -> Chatterbox uses its default voice
+    instead of a broken clone.
+    """
+    path = VOICE_REFERENCE_PATH
+    if not path or not os.path.exists(path) or os.path.getsize(path) < 1024:
+        return False
+    try:
+        info = sf.info(path)
+        if info.frames <= 0 or info.duration < 1.0:
+            logger.warning(f"Voice reference too short ({info.duration:.1f}s) - using default voice.")
+            return False
+        # Quick loudness sanity check on a small slice (cheap, no full read).
+        sample, _ = sf.read(path, frames=min(info.frames, info.samplerate * 3), dtype="float32")
+        if sample.size == 0 or float(np.abs(sample).max()) < 1e-3:
+            logger.warning("Voice reference is silent/near-silent - using default voice.")
+            return False
+        return True
+    except Exception as e:
+        logger.warning(f"Voice reference unreadable ({e}) - using default voice.")
+        return False
+
+
 def _get_chatterbox():
     """Loads the Chatterbox model once and caches it. Returns None (and
     remembers not to retry) if loading fails for any reason - missing
@@ -122,7 +151,7 @@ def _synthesize_chatterbox(text: str):
         cfg_weight=CHATTERBOX_CFG_WEIGHT,
         temperature=CHATTERBOX_TEMPERATURE,
     )
-    if os.path.exists(VOICE_REFERENCE_PATH):
+    if _voice_reference_ok():
         kwargs["audio_prompt_path"] = VOICE_REFERENCE_PATH
 
     wav = model.generate(text, **kwargs)
@@ -229,7 +258,7 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
 
     try:
         audio, sr = _synthesize_chatterbox(text_with_pauses)
-        return audio, sr, ("chatterbox_clone" if os.path.exists(VOICE_REFERENCE_PATH) else "chatterbox_default")
+        return audio, sr, ("chatterbox_clone" if _voice_reference_ok() else "chatterbox_default")
     except Exception as e:
         logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
         audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
