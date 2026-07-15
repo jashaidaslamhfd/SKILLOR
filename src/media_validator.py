@@ -3,12 +3,35 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
-from pathlib import Path
 from typing import Dict
 
 import numpy as np
-from PIL import Image, ImageStat
+from PIL import Image
+
+
+def _ffprobe_exe() -> str:
+    """Return a usable ffprobe path.
+
+    Prefer a system 'ffprobe' on PATH; otherwise derive it from the
+    imageio-ffmpeg binary that this project already depends on (its ffmpeg
+    ships next to an ffprobe, or we can swap the filename). This stops
+    probe_video() from hard-failing on runners/machines where ffprobe isn't
+    installed as a bare command even though ffmpeg is available.
+    """
+    system = shutil.which("ffprobe")
+    if system:
+        return system
+    try:
+        import imageio_ffmpeg
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        candidate = ffmpeg.replace("ffmpeg", "ffprobe")
+        if os.path.isfile(candidate):
+            return candidate
+    except Exception:
+        pass
+    return "ffprobe"  # last resort; will raise a clear error below if missing
 
 
 class MediaValidationError(RuntimeError):
@@ -46,7 +69,7 @@ def probe_video(path: str) -> Dict:
     if not os.path.isfile(path) or os.path.getsize(path) < 100_000:
         raise MediaValidationError(f"Video missing or too small: {path}")
     command = [
-        "ffprobe", "-v", "error", "-show_streams", "-show_format",
+        _ffprobe_exe(), "-v", "error", "-show_streams", "-show_format",
         "-of", "json", path,
     ]
     try:
@@ -65,6 +88,12 @@ def probe_video(path: str) -> Dict:
     if (width, height) != (1080, 1920):
         raise MediaValidationError(f"Wrong canvas {width}x{height}; expected 1080x1920")
     max_seconds = float(os.environ.get("TARGET_MAX_SECONDS", "55")) + 0.25
+    # Minimum too: a Short that's far too short (e.g. a truncated render)
+    # would otherwise pass this gate and get published. Give a small 5s
+    # grace below the configured target so normal short intros don't trip it.
+    min_seconds = max(0.0, float(os.environ.get("TARGET_MIN_SECONDS", "35")) - 5.0)
     if duration <= 0 or duration > max_seconds:
         raise MediaValidationError(f"Wrong duration {duration:.2f}s; maximum {max_seconds:.2f}s")
+    if duration < min_seconds:
+        raise MediaValidationError(f"Video too short {duration:.2f}s; minimum {min_seconds:.2f}s")
     return {"width": width, "height": height, "duration": duration}
