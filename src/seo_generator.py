@@ -27,7 +27,7 @@ import logging
 import random
 from typing import Dict, List
 
-from niche_strategy import generate_seo_tags, _make_seo_title, get_topic_category
+from niche_strategy import generate_seo_tags, make_seo_title, get_topic_category
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -87,11 +87,11 @@ def _clean_topic_for_title(topic: str) -> str:
 def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[str]:
     """Returns up to n distinct SEO-friendly title variants for the same
     video. First option is always the enhanced original AI title (already
-    proven in production via niche_strategy._make_seo_title); the rest are
+    proven in production via niche_strategy.make_seo_title); the rest are
     template-driven alternates so there's real angle diversity, not just
     punctuation changes."""
     base_title = script_data.get('title') or topic
-    options = [_make_seo_title(base_title, topic)]
+    options = [make_seo_title(base_title, topic)]
 
     clean_topic = _clean_topic_for_title(topic)
     seen = {options[0].lower()}
@@ -111,12 +111,11 @@ def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[st
     return options[:n]
 
 
-def generate_hashtags(topic: str, category: str, n: int = 8) -> List[str]:
-    """Wraps niche_strategy.generate_seo_tags() into ready-to-use hashtags,
-    ranked broad-first (helps discovery) then niche-specific (helps
-    relevance). Capped at n since YouTube only surfaces the first few
-    hashtags above the title anyway, and Shorts specifically rewards a
-    tight, relevant set over a long list."""
+def generate_hashtags(topic: str, category: str, n: int = 3) -> List[str]:
+    """Wraps niche_strategy.generate_seo_tags() into ready-to-use hashtags.
+    Capped at 3 — YouTube only surfaces the first 3 above the title, and
+    >5 hashtags actively suppresses reach on both YouTube and Facebook.
+    """
     # Get base tags from niche_strategy
     tags = generate_seo_tags(topic, category)
     
