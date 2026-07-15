@@ -22,6 +22,7 @@ What DOES apply and add value on top of the existing pipeline:
 """
 
 import os
+import re
 import logging
 from typing import Dict, List
 
