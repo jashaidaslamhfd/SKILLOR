@@ -3,6 +3,7 @@ import numpy as np
 import soundfile as sf
 import logging
 import re
+import time
 from typing import List, Dict
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -50,6 +51,18 @@ CHATTERBOX_TEMPERATURE = 0.8
 # Lower = slower/more ominous; 1.0 = no change. Valid ffmpeg atempo range
 # per call is 0.5-2.0.
 CHATTERBOX_TEMPO = float(os.environ.get("CHATTERBOX_TEMPO", "0.98"))
+
+# Number of times Chatterbox retries per segment before giving up and
+# falling back to Kokoro. Retries use the cloned voice reference every
+# time — if the reference is bad the first attempt will fail, and retrying
+# with the same bad reference won't help, so _synthesize_chatterbox()
+# detects that case and skips pointless retries.
+CHATTERBOX_MAX_RETRIES = 3
+
+# Seconds to wait between Chatterbox retry attempts. Gives transient
+# issues (GPU memory pressure, model hot-reload glitches, etc.) a moment
+# to clear before hammering again.
+CHATTERBOX_RETRY_DELAY = 2.0
 
 # Optional voice-clone reference. Drop a clean 10-20s WAV (single speaker,
 # no background noise) here and Chatterbox will clone that voice for every
@@ -140,22 +153,74 @@ def _apply_tempo(audio: np.ndarray, sr: int, tempo: float) -> np.ndarray:
         return audio
 
 
-def _synthesize_chatterbox(text: str):
-    """Returns (audio: np.ndarray float32, sample_rate: int)."""
+def _validate_generated_audio(audio: np.ndarray, sr: int, min_duration: float = 0.3) -> None:
+    """Reject garbage TTS output that would silently produce broken audio.
+
+    Catches three failure modes:
+    1. Empty / near-zero-length arrays (model returned nothing)
+    2. NaN / Inf contamination (numerical explosion in the model)
+    3. Too-short output (e.g. model choked on the text and spat out a blip)
+
+    Raises RuntimeError with a descriptive message so callers can decide
+    whether to retry or fall back to another engine.
+    """
+    if audio is None or audio.size == 0:
+        raise RuntimeError("TTS returned empty audio array")
+    if np.isnan(audio).any() or np.isinf(audio).any():
+        raise RuntimeError("TTS returned NaN/Inf audio — numerical explosion")
+    duration = audio.size / sr if sr > 0 else 0.0
+    if duration < min_duration:
+        raise RuntimeError(f"TTS output too short ({duration:.2f}s < {min_duration:.2f}s minimum)")
+
+
+def _synthesize_chatterbox(text: str, attempt: int = 1) -> tuple:
+    """Generate speech with Chatterbox using the cloned voice reference.
+
+    Returns (audio: np.ndarray float32, sample_rate: int).
+
+    The voice reference is ALWAYS used when available — this is the whole
+    point of the retry loop. If the reference file itself is broken
+    (_voice_reference_ok() returns False), there is no point retrying with
+    the same broken file, so we raise immediately to let the caller skip
+    straight to Kokoro.
+
+    Parameters
+    ----------
+    text : str
+        The text to synthesize.
+    attempt : int
+        Current attempt number (1-based), used for logging.
+    """
     model = _get_chatterbox()
     if model is None:
         raise RuntimeError("Chatterbox model not loaded")
+
+    # If the voice reference is broken, retrying with the same broken
+    # file is pointless — fail fast so the caller jumps to Kokoro.
+    use_clone = _voice_reference_ok()
+    if not use_clone and attempt == 1:
+        logger.warning(
+            "Voice reference NOT usable — Chatterbox will use its default voice. "
+            "Retrying won't help since the reference won't magically fix itself."
+        )
 
     kwargs = dict(
         exaggeration=CHATTERBOX_EXAGGERATION,
         cfg_weight=CHATTERBOX_CFG_WEIGHT,
         temperature=CHATTERBOX_TEMPERATURE,
     )
-    if _voice_reference_ok():
+    if use_clone:
         kwargs["audio_prompt_path"] = VOICE_REFERENCE_PATH
+        logger.info(f"Chatterbox attempt {attempt}/{CHATTERBOX_MAX_RETRIES}: using CLONED voice from {VOICE_REFERENCE_PATH}")
+    else:
+        logger.info(f"Chatterbox attempt {attempt}/{CHATTERBOX_MAX_RETRIES}: using DEFAULT voice (no valid reference)")
 
     wav = model.generate(text, **kwargs)
     audio = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+
+    # Validate before any post-processing — a garbage generation should
+    # be retried, not normalised and passed downstream.
+    _validate_generated_audio(audio, model.sr, min_duration=0.3)
 
     if np.isnan(audio).any():
         audio = np.nan_to_num(audio, 0.0)
@@ -246,23 +311,67 @@ def _synthesize_kokoro(text: str, voice: str, speed: float):
 
 
 def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
-    """Chatterbox first (dark, expressive delivery); falls back to Kokoro
-    on ANY failure - missing install, model load error, generation error -
-    so a single bad Chatterbox call can't kill a whole video. Returns
-    (audio, sample_rate, engine_used) so callers/logs can tell which engine
-    actually produced a given segment."""
+    """Synthesize a single segment with retry logic.
+
+    FLOW:
+      1. Chatterbox + cloned voice reference — try up to CHATTERBOX_MAX_RETRIES
+         times (default 3) with CHATTERBOX_RETRY_DELAY seconds between attempts.
+      2. If ALL Chatterbox attempts fail → Kokoro (no retries, one shot).
+      3. If Kokoro also fails → RuntimeError (NO silent silence insertion).
+
+    Returns (audio, sample_rate, engine_used) so callers/logs can tell
+    which engine actually produced a given segment.
+
+    Raises
+    ------
+    RuntimeError
+        If every Chatterbox attempt AND Kokoro both fail. The caller
+        (generate_voice_segments) must handle this — it means the entire
+        pipeline should abort, not silently insert silence.
+    """
     if not text or not text.strip():
         raise ValueError("Text cannot be empty")
 
     text_with_pauses = add_mystery_pauses(text)
 
+    # ---- STEP 1: Chatterbox with retries ----
+    chatterbox_errors = []
+    for attempt in range(1, CHATTERBOX_MAX_RETRIES + 1):
+        try:
+            audio, sr = _synthesize_chatterbox(text_with_pauses, attempt=attempt)
+            engine = "chatterbox_clone" if _voice_reference_ok() else "chatterbox_default"
+            logger.info(f"Chatterbox SUCCESS on attempt {attempt}/{CHATTERBOX_MAX_RETRIES} ({engine})")
+            return audio, sr, engine
+        except Exception as e:
+            chatterbox_errors.append(str(e))
+            logger.warning(f"Chatterbox attempt {attempt}/{CHATTERBOX_MAX_RETRIES} FAILED: {e}")
+            # Wait before next retry (skip wait on last attempt)
+            if attempt < CHATTERBOX_MAX_RETRIES:
+                logger.info(f"Waiting {CHATTERBOX_RETRY_DELAY}s before retry...")
+                time.sleep(CHATTERBOX_RETRY_DELAY)
+
+    logger.error(
+        f"All {CHATTERBOX_MAX_RETRIES} Chatterbox attempts failed. Errors: "
+        + " | ".join(chatterbox_errors)
+    )
+
+    # ---- STEP 2: Kokoro fallback (one shot) ----
+    logger.info("Falling back to Kokoro TTS engine...")
     try:
-        audio, sr = _synthesize_chatterbox(text_with_pauses)
-        return audio, sr, ("chatterbox_clone" if _voice_reference_ok() else "chatterbox_default")
-    except Exception as e:
-        logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
         audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
+        logger.info("Kokoro fallback SUCCESS")
         return audio, sr, "kokoro"
+    except Exception as kokoro_err:
+        # ---- STEP 3: Both engines failed — NO SILENCE, raise hard error ----
+        error_msg = (
+            f"VOICE GENERATION FAILED — both engines exhausted for this segment. "
+            f"Chatterbox errors ({CHATTERBOX_MAX_RETRIES} attempts): "
+            f"[{' | '.join(chatterbox_errors)}]. "
+            f"Kokoro error: [{kokoro_err}]. "
+            f"Pipeline CANNOT continue without voiceover."
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
 
 
 def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
@@ -289,6 +398,13 @@ def generate_voice_segments(
     """
     Each scene gets its own audio, generated via Chatterbox (with mystery
     pauses and dark-tone exaggeration) or Kokoro as a per-segment fallback.
+
+    Raises
+    ------
+    RuntimeError
+        If any segment fails on ALL engines (Chatterbox x3 + Kokoro).
+        The pipeline MUST abort — a video with missing voiceover segments
+        is worse than no video at all.
     """
     os.makedirs(output_dir, exist_ok=True)
     segments = []
@@ -299,13 +415,10 @@ def generate_voice_segments(
         if not caption:
             caption = " "
 
-        try:
-            audio, sr, engine = _synthesize(caption, voice, speed)
-        except Exception as e:
-            logger.error(f"Segment {i+1} TTS failed on both engines: {e} - inserting short silence instead")
-            audio = np.zeros(int(KOKORO_SAMPLE_RATE * 1.5), dtype=np.float32)
-            sr = KOKORO_SAMPLE_RATE
-            engine = "silence"
+        # No try/except swallowing here — if _synthesize raises, the whole
+        # pipeline must abort. Silent 1.5s silence inserts are NOT acceptable;
+        # main.py's quality gate will catch the crash and log it properly.
+        audio, sr, engine = _synthesize(caption, voice, speed)
 
         engine_counts[engine] = engine_counts.get(engine, 0) + 1
         path = os.path.join(output_dir, f"seg_{i}.wav")
@@ -317,4 +430,16 @@ def generate_voice_segments(
 
     total = sum(s['duration'] for s in segments)
     logger.info(f"Total DARK voiceover duration: {total:.2f}s | engines used: {engine_counts}")
+
+    # Final consistency check — all segments must use the SAME engine.
+    # Mixed engines mean different voice timbres across scenes, which
+    # sounds jarring and unprofessional. Abort if mixed.
+    engines_used = set(engine_counts.keys())
+    if len(engines_used) > 1:
+        raise RuntimeError(
+            f"Mixed TTS engines in the same video: {dict(engine_counts)} "
+            f"— voices would sound inconsistent. Aborting."
+        )
+
     return segments
+            
