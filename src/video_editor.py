@@ -274,6 +274,120 @@ def _word_by_word_clips(text: str, total_duration: float, color_theme: Dict = No
 # 3. AUDIO PROCESSING (PRIORITY: MUSIC DUCKING)
 # ============================================
 
+# Ducking tunables (all overridable via env vars for quick iteration).
+# DUCK_LEVEL   = music volume MULTIPLIER when voice is active.
+#                0.15 means music drops to 15% of its normal volume.
+# UNDUCK_LEVEL = music volume MULTIPLIER when voice is silent.
+#                1.0 means music plays at full (MUSIC_VOLUME) level.
+# DUCK_THRESHOLD = RMS amplitude (0-1 float32) below which a window is
+#                  considered "silent".  0.015 works well for Chatterbox /
+#                  Kokoro output — loud enough to not duck on room-tone
+#                  hiss, quiet enough to catch real pauses.
+# DUCK_SMOOTH_SEC = fade ramp duration (seconds) at duck/unduck edges.
+#                   Prevents audible clicks.  0.08 = 80 ms ramp.
+DUCK_LEVEL = float(os.environ.get("DUCK_LEVEL", "0.15"))
+UNDUCK_LEVEL = float(os.environ.get("UNDUCK_LEVEL", "1.0"))
+DUCK_THRESHOLD = float(os.environ.get("DUCK_THRESHOLD", "0.015"))
+DUCK_SMOOTH_SEC = float(os.environ.get("DUCK_SMOOTH_SEC", "0.08"))
+
+
+def _build_ducking_envelope(audio_segments: list, total_duration: float,
+                            sample_rate: int = 24000,
+                            window_ms: int = 50) -> np.ndarray:
+    """Build a time-varying gain envelope from real voice activity.
+
+    Reads every voice segment WAV, computes per-window RMS energy, and
+    produces a smooth 1-D float32 array where:
+      - value ≈ DUCK_LEVEL   when the narrator is speaking
+      - value ≈ UNDUCK_LEVEL during pauses / silence between words
+
+    Parameters
+    ----------
+    audio_segments : list of dict
+        Each dict must have 'path' (WAV path) and 'duration' (seconds).
+        The segments are laid out sequentially starting at t=0.
+    total_duration : float
+        Total voiceover duration in seconds (sum of all segment durations).
+    sample_rate : int
+        Target sample rate for the envelope (matches music clip).
+    window_ms : int
+        Analysis window size in milliseconds.  50 ms is a good trade-off
+        between time resolution and stability.
+
+    Returns
+    -------
+    np.ndarray
+        1-D float32 array of length ``int(total_duration * sample_rate)``
+        with values in [DUCK_LEVEL, UNDUCK_LEVEL], smoothed to avoid clicks.
+    """
+    n_samples = max(int(total_duration * sample_rate), 1)
+    envelope = np.full(n_samples, UNDUCK_LEVEL, dtype=np.float32)
+
+    window_samples = max(int(sample_rate * window_ms / 1000), 1)
+    cursor = 0  # running sample offset into the global envelope
+
+    for seg in audio_segments:
+        seg_path = seg.get("path", "")
+        seg_dur = float(seg.get("duration", 0))
+        if seg_dur <= 0 or not seg_path or not os.path.isfile(seg_path):
+            cursor += max(int(seg_dur * sample_rate), 0)
+            continue
+
+        try:
+            audio_data, sr = sf.read(seg_path, dtype="float32")
+        except Exception as e:
+            logger.warning(f"Ducking: could not read {seg_path}: {e}")
+            cursor += max(int(seg_dur * sample_rate), 0)
+            continue
+
+        # Mono mix-down for energy analysis
+        if audio_data.ndim > 1:
+            audio_data = audio_data.mean(axis=1)
+
+        # Resample to target sample_rate if needed
+        if sr != sample_rate and sr > 0:
+            # Simple resample via linear interpolation (good enough for
+            # envelope detection — we don't need audiophile quality here).
+            duration_s = len(audio_data) / sr
+            target_len = int(duration_s * sample_rate)
+            if target_len > 0:
+                src_idx = np.linspace(0, len(audio_data) - 1, target_len)
+                audio_data = np.interp(src_idx, np.arange(len(audio_data)), audio_data)
+
+        n_seg = len(audio_data)
+        # Walk through the segment in windows and compute RMS per window
+        for win_start in range(0, n_seg, window_samples):
+            win_end = min(win_start + window_samples, n_seg)
+            chunk = audio_data[win_start:win_end]
+            if chunk.size == 0:
+                continue
+            rms = float(np.sqrt(np.mean(chunk ** 2)))
+
+            # Map RMS to gain: loud → duck, quiet → unduck
+            gain = DUCK_LEVEL if rms >= DUCK_THRESHOLD else UNDUCK_LEVEL
+
+            # Write into the global envelope at the correct offset
+            env_start = cursor + int(win_start * sample_rate / sr) if sr != sample_rate else cursor + win_start
+            env_end = cursor + int(win_end * sample_rate / sr) if sr != sample_rate else cursor + win_end
+            env_start = min(env_start, n_samples)
+            env_end = min(env_end, n_samples)
+            if env_start < env_end:
+                envelope[env_start:env_end] = gain
+
+        cursor += max(int(seg_dur * sample_rate), 0)
+
+    # --- Smooth the envelope to avoid clicks ---
+    # Convert smooth duration to samples and build a moving-average kernel.
+    smooth_n = max(int(DUCK_SMOOTH_SEC * sample_rate), 1)
+    if smooth_n > 1 and n_samples > smooth_n:
+        kernel = np.ones(smooth_n, dtype=np.float32) / smooth_n
+        # 'same' keeps the array length identical; edge artefacts are
+        # negligible because the video has fade-in/fade-out anyway.
+        envelope = np.convolve(envelope, kernel, mode="same")
+
+    return envelope
+
+
 def _synthesize_ambient_bed(duration: float, seed: int = None) -> np.ndarray:
     """Procedural dark-ambient drone for background."""
     rng = np.random.default_rng(seed)
@@ -432,42 +546,41 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         afx.audio_fadeout, 1.0
     )
 
-    # ✅ Priority: Music ducking (voice ke waqt music kam)
-    # NOTE: afx.volumex only accepts a fixed numeric factor - passing a
-    # function to it does NOT create time-varying gain, it crashes at
-    # render time (factor * gf(t) -> function * ndarray -> TypeError).
-    # Time-varying gain has to be done with clip.fl(), which is what
-    # we use below. MUSIC_VOLUME is folded in here directly instead of
-    # applying it twice (previously it was applied once via volumex and
-    # then multiplied again by duck_volume, making the music almost
-    # inaudible: 0.12 * 0.08 = ~0.01).
-    def duck_volume(t):
-        # Detect if voice is active (simplified: based on audio segments)
-        # For now, use a simple ducking curve.
-        # NOTE: `t` can arrive as a numpy array (moviepy reads audio in
-        # chunks), so this must be vectorized with np.where - a plain
-        # Python "x if cond else y" ternary raises "the truth value of
-        # an array is ambiguous" as soon as t has more than one sample.
-        t_arr = np.asarray(t)
-        return MUSIC_VOLUME * np.where((t_arr % 1.5) < 1.0, 0.65, 1.0)  # Speech = quieter, Silence = fuller
+    # ✅ REAL Voice-Activity Music Ducking
+    # Pre-compute a gain envelope from the actual voice audio.  Where the
+    # narrator is speaking the music drops to DUCK_LEVEL (default 15% of
+    # MUSIC_VOLUME); during pauses it rises back to UNDUCK_LEVEL (100%).
+    # The envelope is smoothed with an 80 ms ramp to avoid audible clicks.
+    logger.info("Building voice-activity ducking envelope...")
+    duck_env = _build_ducking_envelope(audio_segments, voice_audio.duration)
+    logger.info(
+        f"Ducking envelope: {len(duck_env)} samples, "
+        f"duck coverage ≈ {np.mean(duck_env < (DUCK_LEVEL + 0.01)) * 100:.0f}%"
+    )
 
-    def _duck_and_mix(gf, t):
-        # NOTE: music here can be stereo, so gf(t) may come back shaped
-        # (n_samples, n_channels) while duck_volume(t) is shaped
-        # (n_samples,). Multiplying those directly fails with
-        # "operands could not be broadcast together" (1999,) vs (1999,2).
-        # Reshape the gain envelope to (n_samples, 1) whenever the audio
-        # frame is 2D so it broadcasts across every channel instead of
-        # only working for mono audio.
+    def _apply_ducking(gf, t):
+        """Time-varying gain applied to the music track at render time.
+
+        ``t`` arrives as a float OR a numpy array (moviepy reads audio in
+        chunks), so everything is vectorised with np operations.
+        """
         frame = gf(t)
-        gain = duck_volume(t)
-        if frame.ndim == 2 and np.ndim(gain) == 1:
+        t_arr = np.atleast_1d(np.asarray(t, dtype=np.float64))
+        indices = np.clip(
+            (t_arr * MUSIC_SAMPLE_RATE).astype(np.int64),
+            0,
+            len(duck_env) - 1,
+        )
+        gain = duck_env[indices] * MUSIC_VOLUME
+        # Broadcast gain across channels if the audio frame is 2-D
+        # (stereo) while gain is 1-D.
+        if frame.ndim == 2 and gain.ndim == 1:
             gain = gain[:, np.newaxis]
         return gain * frame
 
-    ducked_music = music_clip.volumex(MUSIC_VOLUME)
+    ducked_music = music_clip.fl(_apply_ducking)
 
-    logger.info("Mixing voice + background music...")
+    logger.info("Mixing voice + ducked background music...")
     final_audio = CompositeAudioClip([ducked_music, voice_audio])
     final_video = final_video.set_audio(final_audio)
 
@@ -719,7 +832,7 @@ if __name__ == "__main__":
     print("   - Dynamic zoom on important words")
     print("   - Flash/zoom transitions between scenes")
     print("   - Random color themes per video")
-    print("   - Music ducking (voice = 8%, silence = 18%)")
+    print("   - Music ducking (real voice-activity detection, not fake modulo)")
     print("   - Better first 3-second hook")
     print("   - Dark ambient background music")
     print("   - High-contrast thumbnails with glow effect")
