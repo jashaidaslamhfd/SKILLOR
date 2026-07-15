@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Import modules with error handling
 try:
     from script_generator import generate_script
-    from image_generator import _generate_one as generate_images
+    from image_generator import generate_scene_image as generate_images
     from voice_generator import generate_voice_segments
     from video_editor import build_video, generate_thumbnail
     from uploader import upload_all
@@ -338,7 +338,7 @@ class SKILLORPipeline:
                 if narration_seconds > 55.0:
                     raise RuntimeError(
                         f"Narration is {narration_seconds:.1f}s, above the 55s Shorts limit. "
-                        "Regenerate the script with 90-115 words."
+                        "Regenerate the script with 80-115 words."
                     )
 
                 # Quality Gate: safety net for silent segments.
