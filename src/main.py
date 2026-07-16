@@ -41,7 +41,7 @@ try:
     from scheduler import USAPeakTimeScheduler
     from anti_spam import AntiSpamSystem
     from seo_generator import generate_seo_package
-    from shorts_enhancer import build_shorts_report, generate_srt
+    from shorts_enhancer import build_shorts_report, generate_srt, autofix_too_fast_captions
     from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
 except ImportError as e:
     logger.error(f"Failed to import modules: {e}")
@@ -380,6 +380,24 @@ class SKILLORPipeline:
                     audio_segments, 
                     script_data.get('tags', [])
                 )
+
+                # Auto-fix any scene whose caption reads too fast for its
+                # real spoken duration, instead of hard-failing the whole
+                # pipeline over it. Mutates script_data['scenes'] so the
+                # trimmed captions flow into the SRT export and build_video()
+                # below (both run after this block).
+                pacing = shorts_report.get('caption_pacing', {})
+                too_fast = [i for i in pacing.get('per_scene', []) if i.get('status') == 'too_fast']
+                if too_fast:
+                    script_data['scenes'] = autofix_too_fast_captions(
+                        script_data['scenes'], audio_segments
+                    )
+                    shorts_report = build_shorts_report(
+                        script_data,
+                        audio_segments,
+                        script_data.get('tags', [])
+                    )
+
                 script_data['shorts_report'] = shorts_report
                 
                 if shorts_report.get('caption_pacing', {}).get('all_readable') is False:
