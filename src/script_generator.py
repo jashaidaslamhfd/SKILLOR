@@ -515,7 +515,7 @@ def generate_script(
             # Call Groq API
             completion = client.chat.completions.create(
                 messages=messages,
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 response_format={"type": "json_object"},
                 temperature=TEMPERATURE,
                 max_tokens=MAX_TOKENS
