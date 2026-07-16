@@ -114,6 +114,34 @@ def _get_chatterbox():
         return _chatterbox_model
     try:
         import torch
+        # ------------------------------------------------------------------
+        # Known bug workaround (resemble-ai/chatterbox GitHub issue #198):
+        # in some environments perth.PerthImplicitWatermarker silently
+        # resolves to None (even though `import perth` succeeds and
+        # setuptools is present) - ChatterboxTTS.__init__ then does
+        # `self.watermarker = perth.PerthImplicitWatermarker()` and blows up
+        # with "TypeError: 'NoneType' object is not callable". Nobody in
+        # that issue thread found a root cause that reliably fixes it across
+        # environments, but the monkeypatch below (confirmed working by
+        # several people on the thread) sidesteps it entirely: if the real
+        # watermarker class is missing, swap in a harmless no-op before
+        # ChatterboxTTS ever touches it. This only skips audio watermarking
+        # - the actual voice cloning is completely unaffected.
+        # ------------------------------------------------------------------
+        import perth
+        if getattr(perth, "PerthImplicitWatermarker", None) is None:
+            logger.warning(
+                "perth.PerthImplicitWatermarker is None (known chatterbox/perth "
+                "issue #198) - patching in a no-op watermarker so Chatterbox can "
+                "still load and clone voices normally."
+            )
+            class _NoOpWatermarker:
+                def apply_watermark(self, wav, *args, **kwargs):
+                    return wav
+                def get_watermark(self, *args, **kwargs):
+                    return 0.0
+            perth.PerthImplicitWatermarker = _NoOpWatermarker
+
         from chatterbox.tts import ChatterboxTTS
         device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Loading Chatterbox TTS model on {device} (first call only, then cached)...")
