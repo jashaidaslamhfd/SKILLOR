@@ -345,7 +345,18 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
             issues.append(f"Scene {i+1} missing caption")
         else:
             scene_words = len(scene['caption'].split())
-            if scene_words < 8 or scene_words > 18:
+            if i == 0:
+                # Scene 1 IS the spoken hook. It must be short enough that its
+                # TTS audio stays under main.py's 4-second hook gate, or the
+                # whole pipeline wastes a full image+voice run before failing.
+                if scene_words > 9:
+                    issues.append(
+                        f"Scene 1 (hook) has {scene_words} words (max 9) — "
+                        "will likely exceed the 4s hook duration gate"
+                    )
+                elif scene_words < 4:
+                    issues.append(f"Scene 1 (hook) has {scene_words} words (minimum 4)")
+            elif scene_words < 8 or scene_words > 18:
                 issues.append(f"Scene {i+1} has {scene_words} words (allowed 8-18)")
 
     # The scored hook must be the line viewers actually hear first.
@@ -407,10 +418,10 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
     hook = script_data.get('hook', '')
     if hook:
         hook_words = len(hook.split())
-        if 5 <= hook_words <= 15:
+        if 4 <= hook_words <= 9:
             score += 15
         else:
-            suggestions.append("Hook should be 5-15 words for maximum impact")
+            suggestions.append("Hook should be 4-9 words to stay under the 4s hook duration gate")
         
         # Check for pattern interrupt
         if len(hook.split()) <= 9 and any(ch in hook for ch in ['?', '.', '!']):
