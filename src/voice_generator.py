@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _chatterbox_model = None
 _chatterbox_load_failed = False
+_chatterbox_load_error = None  # the real underlying exception, kept around so
+                                # every later "not loaded" error can still show
+                                # WHY, instead of just the first log line at
+                                # startup (which is easy to miss/lose in CI logs).
 
 # CORRECTED per Chatterbox's own docs: "higher exaggeration tends to speed
 # up speech." The previous settings here (exaggeration=0.7, cfg_weight=0.35)
@@ -105,7 +109,7 @@ def _get_chatterbox():
     remembers not to retry) if loading fails for any reason - missing
     package, no internet for the first-run model download, out-of-memory
     on a CPU-only runner, etc."""
-    global _chatterbox_model, _chatterbox_load_failed
+    global _chatterbox_model, _chatterbox_load_failed, _chatterbox_load_error
     if _chatterbox_model is not None or _chatterbox_load_failed:
         return _chatterbox_model
     try:
@@ -116,7 +120,11 @@ def _get_chatterbox():
         _chatterbox_model = ChatterboxTTS.from_pretrained(device=device)
         logger.info("Chatterbox loaded successfully.")
     except Exception as e:
-        logger.error(f"Chatterbox unavailable ({e}) - every segment will fall back to Kokoro.")
+        # Keep the full exception type + message around (not just this one
+        # log line) so every later "model not loaded" error downstream can
+        # still report WHY, even in a trimmed/partial log.
+        _chatterbox_load_error = f"{type(e).__name__}: {e}"
+        logger.error(f"Chatterbox unavailable ({_chatterbox_load_error}) - every segment will fall back to Kokoro.")
         _chatterbox_load_failed = True
         _chatterbox_model = None
     return _chatterbox_model
@@ -193,7 +201,8 @@ def _synthesize_chatterbox(text: str, attempt: int = 1) -> tuple:
     """
     model = _get_chatterbox()
     if model is None:
-        raise RuntimeError("Chatterbox model not loaded")
+        reason = _chatterbox_load_error or "unknown reason"
+        raise RuntimeError(f"Chatterbox model not loaded ({reason})")
 
     # If the voice reference is broken, retrying with the same broken
     # file is pointless — fail fast so the caller jumps to Kokoro.
@@ -442,4 +451,3 @@ def generate_voice_segments(
         )
 
     return segments
-            
