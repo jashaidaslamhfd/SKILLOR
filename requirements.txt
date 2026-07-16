@@ -7,6 +7,13 @@ google-genai>=0.5.0
 # the dark/mystery tone). Kokoro = automatic fallback if Chatterbox fails
 # to load or generate. See src/voice_generator.py for the fallback logic.
 chatterbox-tts>=0.1.7
+# Chatterbox needs this for its internal audio watermarker
+# (self.watermarker = perth.PerthImplicitWatermarker()). If this package is
+# missing or a name-clashing "perth" package gets installed instead,
+# ChatterboxTTS.from_pretrained() fails with:
+#   TypeError: 'NoneType' object is not callable
+# Pinning it explicitly here guarantees the real package is always present.
+resemble-perth>=1.0.1
 kokoro==0.9.4
 # Silences a FutureWarning from diffusers (used internally by Chatterbox):
 # "LoRACompatibleLinear is deprecated... switch to PEFT backend". Cosmetic
