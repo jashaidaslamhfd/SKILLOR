@@ -474,6 +474,37 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
 # 6. MAIN GENERATE FUNCTION
 # ============================================
 
+def _shorten_hook(caption: str, max_words: int = 9) -> str:
+    """
+    Trims an oversized hook/scene-1 caption down to max_words instead of
+    burning a full LLM retry over a small overage. Small models routinely
+    miss the exact word count by 1-3 words even after corrective feedback,
+    so this repairs the common case cheaply and deterministically.
+    """
+    words = caption.split()
+    if len(words) <= max_words:
+        return caption
+    trimmed = ' '.join(words[:max_words]).rstrip('.,;:!?- ')
+    return trimmed + '...'
+
+
+def _autofix_hook(script_data: Dict) -> Dict:
+    """Trims scene 1's caption (and mirrors it into 'hook') if it's oversized."""
+    scenes = script_data.get('scenes', [])
+    if not scenes:
+        return script_data
+    original = scenes[0].get('caption', '')
+    fixed = _shorten_hook(original)
+    if fixed != original:
+        logger.info(
+            f"✂️ Trimmed oversized hook from {len(original.split())} to "
+            f"{len(fixed.split())} words: \"{fixed}\""
+        )
+        scenes[0]['caption'] = fixed
+        script_data['hook'] = fixed
+    return script_data
+
+
 def generate_script(
     topic: str, 
     custom_prompt: Optional[str] = None, 
@@ -539,6 +570,9 @@ def generate_script(
             
             # Normalize scenes
             script_data = _normalize_scenes(script_data)
+
+            # Auto-repair a slightly-oversized hook instead of burning a retry
+            script_data = _autofix_hook(script_data)
             
             # Add metadata
             script_data['topic'] = topic
@@ -576,6 +610,7 @@ def generate_script(
                     )})
             else:
                 logger.warning(f"⚠️ Validation issues: {', '.join(issues[:3])}")
+                last_error = f"Validation failed: {', '.join(issues)}"
                 messages.append({"role": "assistant", "content": raw_reply})
                 messages.append({"role": "user", "content": (
                     f"The script has validation issues: {', '.join(issues[:3])}. "
