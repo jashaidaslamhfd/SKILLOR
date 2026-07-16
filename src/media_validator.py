@@ -64,6 +64,61 @@ def validate_scene_image(path: str, min_side: int = 512) -> Dict:
         raise MediaValidationError(f"Invalid image {path}: {exc}") from exc
 
 
+def pad_video_to_minimum(path: str, min_seconds: float) -> str:
+    """If video is slightly too short, pad it with a freeze frame at the end.
+    
+    Returns the path to the padded video (or original if no padding needed).
+    """
+    # First probe the current video
+    command = [
+        _ffprobe_exe(), "-v", "error", "-show_streams", "-show_format",
+        "-of", "json", path,
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=True)
+        data = json.loads(result.stdout)
+    except Exception as exc:
+        raise MediaValidationError(f"ffprobe failed during padding check: {exc}") from exc
+
+    duration = float(data.get("format", {}).get("duration") or 0)
+    
+    # If video is already long enough, return original
+    if duration >= min_seconds:
+        return path
+    
+    # Calculate how much padding we need
+    padding_needed = min_seconds - duration + 0.5  # Add 0.5s buffer
+    
+    # Create padded video using ffmpeg - freeze last frame
+    output_path = path.replace(".mp4", "_padded.mp4")
+    
+    # Use ffmpeg to pad with freeze frame
+    # tpad filter: duplicate last frame to extend video
+    filter_complex = f"tpad=stop={int(padding_needed * 1000)}:stop_mode=clone"
+    
+    command = [
+        "ffmpeg", "-y", "-i", path,
+        "-vf", filter_complex,
+        "-af", "apad=whole_len=int({}*44100)".format(int(min_seconds * 44100)),
+        "-c:v", "libx264", "-c:a", "aac",
+        "-shortest",
+        output_path
+    ]
+    
+    try:
+        subprocess.run(command, capture_output=True, text=True, timeout=60, check=True)
+        if os.path.isfile(output_path) and os.path.getsize(output_path) > 100000:
+            # Replace original with padded version
+            os.replace(output_path, path)
+            return path
+    except Exception:
+        # If padding fails, clean up and return original
+        if os.path.isfile(output_path):
+            os.remove(output_path)
+    
+    return path
+
+
 def probe_video(path: str) -> Dict:
     """Use ffprobe to enforce a playable 9:16 Short with audio."""
     if not os.path.isfile(path) or os.path.getsize(path) < 100_000:
@@ -97,3 +152,4 @@ def probe_video(path: str) -> Dict:
     if duration < min_seconds:
         raise MediaValidationError(f"Video too short {duration:.2f}s; minimum {min_seconds:.2f}s")
     return {"width": width, "height": height, "duration": duration}
+    
