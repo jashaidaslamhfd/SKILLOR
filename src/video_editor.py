@@ -5,6 +5,21 @@ import logging
 from typing import Dict
 import numpy as np
 import soundfile as sf
+from PIL import Image, ImageDraw, ImageFont
+
+# ------------------------------------------------------------------------
+# Compatibility shim: moviepy 1.x (pinned in requirements.txt because 2.x
+# removed the `moviepy.editor` import path we rely on) still calls the old
+# Pillow constant `Image.ANTIALIAS` internally (moviepy/video/fx/resize.py)
+# when resizing clips (e.g. Ken Burns zoom effects). Pillow >=9.1 deprecated
+# it and Pillow 10 removed it entirely in favor of `Image.Resampling.LANCZOS`
+# (aliased as `Image.LANCZOS`). Re-adding the old name here — before moviepy
+# is imported — keeps moviepy 1.x working on modern Pillow without pinning
+# Pillow to an old, less secure version.
+# ------------------------------------------------------------------------
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.LANCZOS
+
 from moviepy.editor import (
     ImageClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
@@ -12,7 +27,6 @@ from moviepy.editor import (
 )
 import moviepy.video.fx.all as vfx
 import moviepy.audio.fx.all as afx
-from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
