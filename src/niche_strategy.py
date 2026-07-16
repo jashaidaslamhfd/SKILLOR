@@ -423,7 +423,7 @@ def _generate_dynamic_topics(count: int = 50) -> List[str]:
             return []
         client = Groq(api_key=api_key)
         resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=[{
                 "role": "user",
                 "content": (
