@@ -119,6 +119,44 @@ def check_caption_pacing(scenes: List[Dict], audio_segments: List[Dict]) -> Dict
     }
 
 
+def autofix_too_fast_captions(scenes: List[Dict], audio_segments: List[Dict]) -> List[Dict]:
+    """Root-cause fix for 'too_fast' scenes: trims the caption down to the
+    number of words that actually fits the scene's real spoken duration at
+    MAX_WORDS_PER_SEC, instead of letting the pipeline hard-fail. This is the
+    mechanical version of the suggestion in the pacing message ("consider
+    splitting into two scenes") - since scenes are 1:1 with already-generated
+    audio segments, we can't add a new scene/audio segment here, so we shorten
+    the on-screen text to what's actually readable in the time available.
+
+    Only touches scenes flagged as too_fast; 'too_slow' scenes are left
+    alone since fixing those would mean fabricating extra words that were
+    never actually said - that needs a script rewrite, not a mechanical fix.
+    Returns a new list; does not mutate the input scenes.
+    """
+    fixed_scenes = []
+    for i, (scene, seg) in enumerate(zip(scenes, audio_segments)):
+        caption = scene.get('caption', '')
+        duration = max(seg.get('duration', 0), 0.01)
+        words = caption.split()
+        wps = len(words) / duration if words else 0
+
+        if wps > MAX_WORDS_PER_SEC and words:
+            max_words = max(1, int(MAX_WORDS_PER_SEC * duration))
+            trimmed = ' '.join(words[:max_words]).rstrip('.,;:')
+            new_scene = dict(scene)
+            new_scene['caption'] = trimmed
+            logger.info(
+                f"Scene {i+1} caption trimmed for pacing ({wps:.1f} -> "
+                f"{len(trimmed.split())/duration:.1f} words/sec): "
+                f"\"{caption}\" -> \"{trimmed}\""
+            )
+            fixed_scenes.append(new_scene)
+        else:
+            fixed_scenes.append(scene)
+
+    return fixed_scenes
+
+
 # ---------------------------------------------------------------------------
 # Shorts hashtags
 # ---------------------------------------------------------------------------
