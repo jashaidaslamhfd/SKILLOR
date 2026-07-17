@@ -41,8 +41,9 @@ try:
     from scheduler import USAPeakTimeScheduler
     from anti_spam import AntiSpamSystem
     from seo_generator import generate_seo_package
-    from shorts_enhancer import build_shorts_report, generate_srt, autofix_too_fast_captions
+    from shorts_enhancer import build_shorts_report, generate_srt, autofix_too_fast_captions, score_hook, predict_retention
     from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
+    from trend_fetcher import get_trending_topic
 except ImportError as e:
     logger.error(f"Failed to import modules: {e}")
     logger.error("Make sure all required modules are in the same directory")
@@ -52,6 +53,7 @@ except ImportError as e:
 MAX_SCRIPT_ATTEMPTS = 3
 MAX_IMAGE_RETRIES = 3
 FALLBACK_ABORT_RATIO = float(os.environ.get("FALLBACK_ABORT_RATIO", "0.5"))
+MIN_HOOK_SCORE = int(os.environ.get("MIN_HOOK_SCORE", "75"))
 
 
 class SKILLORPipeline:
@@ -157,7 +159,7 @@ class SKILLORPipeline:
             raise
 
     def generate_with_niche_strategy(self, topic: str = None) -> dict:
-        """Generate script with retry logic"""
+        """Generate script with retry logic - uses trending topics if no topic provided"""
         fixed_topic = topic
         recent_topics = self._get_recent_topics()
         best_attempt = None
@@ -165,20 +167,36 @@ class SKILLORPipeline:
 
         for attempt in range(1, MAX_SCRIPT_ATTEMPTS + 1):
             try:
-                current_topic = fixed_topic or get_random_topic(exclude=recent_topics)
+                # Use trending topic if no fixed topic
+                if fixed_topic:
+                    current_topic = fixed_topic
+                else:
+                    # Get trending topic
+                    current_topic = get_trending_topic(exclude=recent_topics)
+                
                 logger.info(f"Attempt {attempt}/{MAX_SCRIPT_ATTEMPTS} for topic: {current_topic}")
 
                 result = self._generate_and_check_once(current_topic)
+                script_data = result['script_data']
 
-                # Keep best attempt
-                if best_attempt is None or result['quality_score'] > best_attempt['quality_score']:
-                    best_attempt = result
-                    logger.info(f"New best score: {result['quality_score']}")
+                # Hook quality check
+                hook_result = score_hook(script_data)
+                hook_score = hook_result['score']
+                logger.info(f"Hook score: {hook_score}/100")
+                
+                if hook_result.get('suggestions'):
+                    for suggestion in hook_result['suggestions']:
+                        logger.info(f"Hook suggestion: {suggestion}")
 
-                # Return if quality is good
-                if result['quality_approved'] and result['spam_ok']:
-                    logger.info(f"Quality approved! Score: {result['quality_score']}")
-                    return result['script_data']
+                # Keep best attempt (prefer higher hook score)
+                if best_attempt is None or hook_score > best_attempt.get('hook_score', 0):
+                    best_attempt = {**result, 'hook_score': hook_score}
+                    logger.info(f"New best hook score: {hook_score}")
+
+                # Return if quality is good AND hook is strong
+                if result['quality_approved'] and result['spam_ok'] and hook_score >= MIN_HOOK_SCORE:
+                    logger.info(f"Quality approved! Score: {result['quality_score']}, Hook: {hook_score}")
+                    return script_data
 
             except Exception as e:
                 last_error = e
@@ -187,7 +205,7 @@ class SKILLORPipeline:
 
         # If all attempts failed but we have a best attempt
         if best_attempt:
-            logger.warning(f"Using best attempt with score: {best_attempt['quality_score']}")
+            logger.warning(f"Using best attempt with hook score: {best_attempt.get('hook_score', 0)}")
             return best_attempt['script_data']
 
         # Complete failure
@@ -219,16 +237,11 @@ class SKILLORPipeline:
                         break
                 except Exception as e:
                     logger.warning(f"Image generation failed (attempt {retry+1}): {e}")
-                    time.sleep(2)  # Wait before retry
+                    time.sleep(2)
 
             if not success:
-                # generate_images() (== image_generator._generate_one) already tries every
-                # real fallback layer internally on each attempt - AI providers, local
-                # pool, Pexels, Pixabay, and finally a Playwright screenshot - so if all
-                # MAX_IMAGE_RETRIES attempts above still failed, there's genuinely not
-                # left to try for this scene.
-                logger.error(f"All {MAX_IMAGE_RETRIES} attempts (each trying every fallback layer) failed for scene {i+1}")
-                raise RuntimeError(f"Failed to generate image for scene {i+1}: every provider and fallback layer failed")
+                logger.error(f"All {MAX_IMAGE_RETRIES} attempts failed for scene {i+1}")
+                raise RuntimeError(f"Failed to generate image for scene {i+1}")
 
         if len(image_paths) != total_scenes:
             raise RuntimeError(f"Generated {len(image_paths)} images for {total_scenes} scenes")
@@ -239,7 +252,7 @@ class SKILLORPipeline:
         """Main pipeline execution"""
         start_time = time.time()
         logger.info("=" * 60)
-        logger.info("🚀 STARTING SKILLOR - DARK BODY MYSTERY PIPELINE")
+        logger.info("🚀 STARTING SKILLOR - TRENDING VIRAL PIPELINE")
         logger.info("=" * 60)
 
         try:
@@ -250,12 +263,12 @@ class SKILLORPipeline:
                     try:
                         last_dt = datetime.fromisoformat(last_posted_at)
                         if not self.scheduler.validate_posting_interval(last_dt):
-                            logger.warning("⚠️ Posting sooner than recommended 2h gap - monitor spam flags")
+                            logger.warning("⚠️ Posting sooner than recommended 2h gap")
                     except Exception as e:
                         logger.warning(f"Could not validate posting interval: {e}")
 
-            # Phase 1: Script Generation
-            logger.info("\n📝 PHASE 1: SCRIPT GENERATION")
+            # Phase 1: Script Generation (with trending topics)
+            logger.info("\n📝 PHASE 1: SCRIPT GENERATION (TRENDING)")
             script_data = self.generate_with_niche_strategy(topic)
             logger.info(f"✅ Script generated: {script_data.get('title', 'Untitled')}")
 
@@ -263,8 +276,6 @@ class SKILLORPipeline:
             logger.info("\n🔍 PHASE 1b: SEO GENERATION")
             try:
                 seo_topic = script_data.get('topic', topic)
-                # Preserve the LLM's plain one-sentence summary. The formatted
-                # YouTube description must never be fed back into itself.
                 script_data['summary'] = script_data.get('description', '')
                 seo_package = generate_seo_package(seo_topic, script_data)
 
@@ -279,9 +290,6 @@ class SKILLORPipeline:
 
                 seo_overall = script_data['seo_score'].get('scores', {}).get('overall_seo_score', 0)
                 logger.info(f"✅ SEO score: {seo_overall}/100")
-
-                if seo_overall < 50:
-                    logger.warning("⚠️ SEO score low - review before publishing")
             except Exception as e:
                 logger.warning(f"SEO generation failed, continuing: {e}")
 
@@ -289,20 +297,15 @@ class SKILLORPipeline:
             try:
                 ctr_result = predict_ctr(script_data)
                 script_data['ctr_prediction'] = ctr_result
-
                 ranked_hashtags = rank_hashtags(script_data.get('hashtags', []))
                 script_data['hashtags_ranked'] = ranked_hashtags
-
                 title_options = script_data.get('title_options', [])
                 if title_options:
                     ab_variants = generate_ab_variants(script_data, title_options)
                     script_data['ab_variants'] = ab_variants
-                    logger.info("✅ A/B title/description variants generated")
-
                 insights = get_historical_insights()
                 if insights.get('insights'):
                     script_data['historical_insights'] = insights
-                    logger.info(f"📊 Historical insights: {len(insights['insights'])} pattern(s) found")
             except Exception as e:
                 logger.warning(f"CTR prediction failed: {e}")
 
@@ -321,10 +324,7 @@ class SKILLORPipeline:
             logger.info(f"📊 Fallback ratio: {fallback_ratio:.1%}")
 
             if fallback_ratio > FALLBACK_ABORT_RATIO:
-                raise RuntimeError(
-                    f"Quality gate failed: {fallback_count}/{len(image_paths)} images ({fallback_ratio:.1%}) "
-                    f"are fallbacks (threshold: {FALLBACK_ABORT_RATIO:.1%})"
-                )
+                raise RuntimeError(f"Quality gate failed: {fallback_ratio:.1%} fallbacks")
 
             # Phase 3: Voice Generation
             logger.info("\n🔊 PHASE 3: VOICE GENERATION")
@@ -337,38 +337,20 @@ class SKILLORPipeline:
                 logger.info(f"✅ Generated {len(audio_segments)} audio segments")
                 narration_seconds = sum(float(seg.get("duration", 0)) for seg in audio_segments)
                 if narration_seconds > 55.0:
-                    raise RuntimeError(
-                        f"Narration is {narration_seconds:.1f}s, above the 55s Shorts limit. "
-                        "Regenerate the script with 80-115 words."
-                    )
+                    raise RuntimeError(f"Narration too long: {narration_seconds:.1f}s")
 
-                # Quality Gate: safety net for silent segments.
-                # NOTE: voice_generator.py now raises RuntimeError immediately
-                # if ALL engines (Chatterbox x3 retries + Kokoro) fail for any
-                # segment — silence is never inserted. This check is a belt-and-
-                # suspenders guard that catches any edge case where a segment
-                # somehow ends up with engine="silence".
                 silence_count = sum(1 for s in audio_segments if s.get('tts_engine') == 'silence')
-                silence_ratio = silence_count / len(audio_segments) if audio_segments else 1.0
-                logger.info(f"📊 Silent (failed-TTS) segments: {silence_count}/{len(audio_segments)} ({silence_ratio:.1%})")
-                if silence_ratio > 0:
-                    raise RuntimeError(
-                        f"Quality gate failed: {silence_count}/{len(audio_segments)} voice segments "
-                        f"({silence_ratio:.1%}) are silent. voice_generator should have raised "
-                        f"before inserting silence — this indicates a bug."
-                    )
+                if silence_count > 0:
+                    raise RuntimeError(f"Silent segments: {silence_count}")
 
                 engines = {s.get('tts_engine') for s in audio_segments}
                 if len(engines) != 1:
-                    raise RuntimeError(f"Mixed TTS voices are not publishable: {sorted(engines)}")
+                    raise RuntimeError(f"Mixed TTS voices: {sorted(engines)}")
                 if os.environ.get("REQUIRE_CLONED_VOICE", "true").lower() == "true":
                     if engines != {"chatterbox_clone"}:
-                        raise RuntimeError(
-                            f"Cloned voice required, but engine was {sorted(engines)}. "
-                            "Check Chatterbox and the private voice reference."
-                        )
+                        raise RuntimeError(f"Cloned voice required, got: {sorted(engines)}")
                 if audio_segments and audio_segments[0].get('duration', 99) > 4.0:
-                    raise RuntimeError("First spoken scene exceeds 4 seconds; hook is too slow")
+                    raise RuntimeError("First scene exceeds 4 seconds")
             except Exception as e:
                 logger.error(f"Voice generation failed: {e}")
                 raise
@@ -382,11 +364,6 @@ class SKILLORPipeline:
                     script_data.get('tags', [])
                 )
 
-                # Auto-fix any scene whose caption reads too fast for its
-                # real spoken duration, instead of hard-failing the whole
-                # pipeline over it. Mutates script_data['scenes'] so the
-                # trimmed captions flow into the SRT export and build_video()
-                # below (both run after this block).
                 pacing = shorts_report.get('caption_pacing', {})
                 too_fast = [i for i in pacing.get('per_scene', []) if i.get('status') == 'too_fast']
                 if too_fast:
@@ -401,13 +378,24 @@ class SKILLORPipeline:
 
                 script_data['shorts_report'] = shorts_report
 
+                # Log retention prediction
+                retention_pred = shorts_report.get('retention_prediction', {})
+                if retention_pred:
+                    logger.info(f"📊 Predicted avg retention: {retention_pred.get('predicted_avg_retention', 0):.1%}")
+                    logger.info(f"📊 Predicted swipe-away: {retention_pred.get('predicted_swipe_away', 0):.1%}")
+                    for suggestion in retention_pred.get('suggestions', []):
+                        logger.info(f"💡 {suggestion}")
+
                 if shorts_report.get('caption_pacing', {}).get('all_readable') is False:
                     issues = shorts_report.get('caption_pacing', {}).get('issues', [])
                     raise RuntimeError("Caption pacing failed: " + "; ".join(issues[:3]))
 
                 hook_score = shorts_report.get('hook_detail', {}).get('score', 0)
-                if hook_score < 70:
-                    raise RuntimeError(f"Hook failed publishing gate: {hook_score}/100")
+                if hook_score < MIN_HOOK_SCORE:
+                    raise RuntimeError(f"Hook failed: {hook_score}/{MIN_HOOK_SCORE}")
+                
+                logger.info(f"✅ Hook score: {hook_score}/100")
+                
             except Exception as e:
                 logger.error(f"Shorts publishing checks failed: {e}")
                 raise
@@ -422,21 +410,19 @@ class SKILLORPipeline:
             except Exception as e:
                 logger.warning(f"SRT generation failed: {e}")
 
-            # Phase 4: Build Video
-            logger.info("\n🎬 PHASE 4: BUILD VIDEO")
+            # Phase 4: Build Video (with visual effects)
+            logger.info("\n🎬 PHASE 4: BUILD VIDEO (WITH EFFECTS)")
             try:
                 final_video = build_video(image_paths, audio_segments, script_data['scenes'])
                 thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
                 
-                # === FIX: Pad video if slightly too short ===
+                # Pad video if slightly too short
                 target_min = float(os.environ.get("TARGET_MIN_SECONDS", "35"))
                 min_seconds = max(0.0, target_min - 5.0)
                 logger.info(f"Checking video duration against minimum {min_seconds:.2f}s...")
                 
-                # Try to pad if needed
                 try:
                     final_video = pad_video_to_minimum(final_video, min_seconds)
-                    logger.info("Video padding check complete")
                 except Exception as pad_err:
                     logger.warning(f"Video padding skipped: {pad_err}")
                 
@@ -451,12 +437,8 @@ class SKILLORPipeline:
             try:
                 thumbnail_score = score_thumbnail(thumb_path, script_data['title'])
                 script_data['thumbnail_score'] = thumbnail_score
-
                 thumb_overall = thumbnail_score.get('overall_thumbnail_score', 0)
                 logger.info(f"✅ Thumbnail score: {thumb_overall}/100")
-
-                if thumb_overall < 60:
-                    logger.warning("⚠️ Thumbnail score low - check contrast/readability")
             except Exception as e:
                 logger.warning(f"Thumbnail scoring failed: {e}")
 
@@ -479,12 +461,15 @@ class SKILLORPipeline:
                 'youtube_video_id': upload_result.get('youtube_video_id'),
                 'seo_score': script_data.get('seo_score', {}).get('scores', {}).get('overall_seo_score'),
                 'predicted_ctr': script_data.get('ctr_prediction', {}).get('ctr_prediction'),
+                'hook_score': script_data.get('shorts_report', {}).get('hook_detail', {}).get('score'),
+                'predicted_retention': script_data.get('shorts_report', {}).get('retention_prediction', {}).get('predicted_avg_retention'),
             })
 
             elapsed = time.time() - start_time
             logger.info("=" * 60)
             logger.info(f"✅ PIPELINE COMPLETE in {elapsed:.1f}s")
             logger.info(f"📹 Video: {script_data.get('title')}")
+            logger.info(f"🎯 Hook Score: {script_data.get('shorts_report', {}).get('hook_detail', {}).get('score', 'N/A')}")
             logger.info("=" * 60)
 
             return {
@@ -522,14 +507,13 @@ class SKILLORPipeline:
 
                 # Wait between videos
                 if i < num_videos - 1:
-                    wait_time = 300  # 5 minutes
+                    wait_time = 300
                     logger.info(f"Waiting {wait_time}s before next video...")
                     time.sleep(wait_time)
 
             except Exception as e:
                 failed += 1
                 logger.error(f"Video {i + 1} failed: {e}")
-                # Continue with next video
                 continue
 
         logger.info(f"Batch complete: {succeeded} succeeded, {failed} failed out of {num_videos}")
@@ -545,7 +529,6 @@ def main():
             logger.info(f"Using specific topic: {topic}")
             pipeline.run_pipeline(topic=topic)
         else:
-            # Check if batch mode
             batch_mode = os.environ.get("BATCH_MODE", "false").lower() == "true"
             if batch_mode:
                 num_videos = int(os.environ.get("BATCH_COUNT", "3"))
