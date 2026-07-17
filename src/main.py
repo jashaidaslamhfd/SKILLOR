@@ -287,6 +287,9 @@ class SKILLORPipeline:
                 script_data['description'] = seo_package.get('description', '')
                 script_data['tags'] = seo_package.get('tags', [])
                 script_data['hashtags'] = seo_package.get('hashtags', [])
+                script_data['thumbnail_text'] = seo_package.get(
+                    'thumbnail_text', script_data.get('thumbnail_text', '')
+                )
                 script_data['pinned_comment'] = seo_package.get('pinned_comment', '')
                 script_data['playlist_suggestion'] = seo_package.get('playlist_suggestion', '')
                 script_data['seo_score'] = seo_package.get('seo_score', {})
@@ -424,7 +427,8 @@ class SKILLORPipeline:
             logger.info("\n🎬 PHASE 4: BUILD VIDEO (WITH EFFECTS)")
             try:
                 final_video = build_video(image_paths, audio_segments, script_data['scenes'])
-                thumb_path = generate_thumbnail(image_paths[0], script_data['title'])
+                thumb_text = script_data.get('thumbnail_text') or script_data['title']
+                thumb_path = generate_thumbnail(image_paths[0], thumb_text)
                 
                 # Pad video if slightly too short
                 target_min = float(os.environ.get("TARGET_MIN_SECONDS", "35"))
