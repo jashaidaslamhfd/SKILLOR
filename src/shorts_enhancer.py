@@ -84,10 +84,29 @@ def score_hook_detailed(hook: str) -> Dict:
 
 
 # Backward/alt-compatible alias: some callers import the shorter name
-# `score_hook` instead of `score_hook_detailed`. Keep both working.
-def score_hook(hook: str) -> Dict:
-    """Alias for score_hook_detailed (same signature and return value)."""
-    return score_hook_detailed(hook)
+# `score_hook` instead of `score_hook_detailed`. main.py calls this with
+# the *whole script_data dict* (not just the hook string) and expects a
+# 'suggestions' list in the result (used for hook_result.get('suggestions')),
+# so this wraps score_hook_detailed to accept either input shape and always
+# include 'suggestions' alongside the original 'checks' detail.
+def score_hook(hook_or_script_data) -> Dict:
+    """Score a hook. Accepts either the hook string directly, or a
+    script_data dict (uses its 'hook' field) - main.py passes the dict.
+    Returns {'score', 'checks', 'suggestions'} - 'suggestions' is a plain
+    list of fix-it strings for any check that didn't pass, derived from
+    score_hook_detailed's 'checks'.
+    """
+    if isinstance(hook_or_script_data, dict):
+        hook = hook_or_script_data.get('hook', '')
+    else:
+        hook = hook_or_script_data or ''
+
+    result = score_hook_detailed(hook)
+    result['suggestions'] = [
+        check['note'] for check in result.get('checks', [])
+        if not check.get('passed', True)
+    ]
+    return result
 
 
 # ---------------------------------------------------------------------------
