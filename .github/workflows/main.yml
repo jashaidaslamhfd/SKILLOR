@@ -4,18 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       topic:
-        description: "Optional video topic (empty = automatic topic)"
+        description: "Optional video topic (empty = trending topic)"
         required: false
         type: string
   schedule:
     # GitHub cron uses UTC.
-    # One quality upload per day while the channel builds reliable analytics.
     - cron: "0 18 * * *"
 
 permissions:
   contents: read
 
-# Prevent two expensive video-generation runs from overlapping.
 concurrency:
   group: skillor-video-generation
   cancel-in-progress: false
@@ -46,7 +44,6 @@ jobs:
             fonts-dejavu-core \
             imagemagick \
             espeak-ng
-          # MoviePy 1.x may use ImageMagick for text rendering.
           POLICY_FILE="$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n 1 || true)"
           if [ -n "$POLICY_FILE" ]; then
             sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
@@ -76,13 +73,9 @@ jobs:
       - name: Generate and upload Short
         shell: bash
         env:
-          # Script generation
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          # AI Horde: create AI_HORDE_API_KEY as a Repository Secret.
-          # A registered key receives better priority than anonymous 0000000000.
           AI_HORDE_API_KEY: ${{ secrets.AI_HORDE_API_KEY }}
           AI_HORDE_MAX_WAIT: "300"
-          # Optional image providers
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -91,25 +84,21 @@ jobs:
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          # YouTube OAuth user credentials
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
-          # Optional Facebook Reels
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          # Strict Shorts settings
-          TARGET_MIN_SECONDS: "29"
-          TARGET_MAX_SECONDS: "55"
-          CHATTERBOX_TEMPO: "0.98"
+          # OPTIMIZED FOR RETENTION & TRENDS
+          TARGET_MIN_SECONDS: "20"
+          TARGET_MAX_SECONDS: "35"
+          CHATTERBOX_TEMPO: "1.05"
           REQUIRE_CLONED_VOICE: "true"
           MUSIC_VOLUME: "0.07"
           ENABLE_SCREENSHOT_FALLBACK: "false"
-          # Valid Pexels/Pixabay images should not fail the run. This variable
-          # remains for compatibility with the current main.py quality gate.
+          MIN_HOOK_SCORE: "75"
           FALLBACK_ABORT_RATIO: "0.80"
-          # workflow_dispatch topic; scheduled runs receive an empty value.
           VIDEO_TOPIC: ${{ inputs.topic || '' }}
           IMAGEMAGICK_BINARY: /usr/bin/convert
           PYTHONUNBUFFERED: "1"
@@ -127,4 +116,3 @@ jobs:
             pipeline.log
           if-no-files-found: ignore
           retention-days: 7
-          
