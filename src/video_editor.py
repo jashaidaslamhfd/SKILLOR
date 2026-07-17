@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List
 import numpy as np
 import soundfile as sf
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # Compatibility shim for moviepy 1.x with modern Pillow
 if not hasattr(Image, "ANTIALIAS"):
