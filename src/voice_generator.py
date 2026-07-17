@@ -54,7 +54,7 @@ CHATTERBOX_TEMPERATURE = 0.8
 # exaggeration/cfg_weight side effects. 0.85 = 15% slower, same pitch.
 # Lower = slower/more ominous; 1.0 = no change. Valid ffmpeg atempo range
 # per call is 0.5-2.0.
-CHATTERBOX_TEMPO = float(os.environ.get("CHATTERBOX_TEMPO", "0.98"))
+CHATTERBOX_TEMPO = float(os.environ.get("CHATTERBOX_TEMPO", "0.85"))
 
 # Number of times Chatterbox retries per segment before giving up and
 # falling back to Kokoro. Retries use the cloned voice reference every
