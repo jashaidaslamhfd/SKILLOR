@@ -90,7 +90,7 @@ HARD FORMAT RULES:
 - Scene 1: {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} words. Scenes 2–6: {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} words each.
 - `hook` must match scene 1 caption exactly.
 - Every scene must have a distinct 5–12 word visual description with no text, logos or UI.
-- Title: specific, honest and under 60 characters. Do not use generic hype.
+- Title: exactly five simple, specific words. Do not use generic hype, emojis or fake urgency.
 - `thumbnail_text`: 2–4 clear words that complement—not repeat—the title.
 - `cta`: one brief, natural follow/subscribe prompt. It is metadata, not narration.
 - `description`: one accurate sentence summarising the real payoff.
