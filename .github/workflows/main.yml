@@ -74,6 +74,13 @@ jobs:
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Optional official trend APIs. Google Trends RSS still works when
+          # these are empty; never fall back to brittle HTML scraping.
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          TREND_REGION: "US"
+          YOUTUBE_REGION_CODE: "US"
           AI_HORDE_API_KEY: ${{ secrets.AI_HORDE_API_KEY }}
           AI_HORDE_MAX_WAIT: "300"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -93,11 +100,16 @@ jobs:
           # OPTIMIZED FOR RETENTION & TRENDS
           TARGET_MIN_SECONDS: "20"
           TARGET_MAX_SECONDS: "35"
-          CHATTERBOX_TEMPO: "1.05"
+          # Natural, clear creator narration; slightly slower than the raw
+          # model without the artificial dramatic pace.
+          CHATTERBOX_TEMPO: "0.96"
+          CHATTERBOX_EXAGGERATION: "0.35"
+          CHATTERBOX_CFG_WEIGHT: "0.70"
+          CHATTERBOX_TEMPERATURE: "0.60"
           REQUIRE_CLONED_VOICE: "true"
           MUSIC_VOLUME: "0.07"
           ENABLE_SCREENSHOT_FALLBACK: "false"
-          MIN_HOOK_SCORE: "75"
+          MIN_HOOK_SCORE: "70"
           FALLBACK_ABORT_RATIO: "0.80"
           VIDEO_TOPIC: ${{ inputs.topic || '' }}
           IMAGEMAGICK_BINARY: /usr/bin/convert
