@@ -269,22 +269,12 @@ def generate_script(topic: str, custom_prompt: str = None) -> Optional[Dict]:
             raw_reply = response.choices[0].message.content
             script_data = _clean_json_response(raw_reply)
             script_data = _normalize_scenes(script_data)
-
-            # Validate structure
-            if not script_data.get('scenes') or len(script_data['scenes']) < MIN_SCENES:
-                logger.warning(f"Too few scenes ({len(script_data.get('scenes', []))}), retrying...")
-                continue
-
-            # Validate word count
-            total_words = sum(len(s.get('caption', '').split()) for s in script_data['scenes'])
-            if total_words < MIN_WORDS or total_words > MAX_WORDS:
-                logger.warning(f"Word count {total_words} out of range ({MIN_WORDS}-{MAX_WORDS}), retrying...")
-                continue
+            script_data = _validate_script(script_data)
 
             # Add topic
             script_data['topic'] = topic
 
-            logger.info(f"Script generated: {len(script_data['scenes'])} scenes, {total_words} words")
+            logger.info(f"Script generated: {len(script_data['scenes'])} scenes")
             return script_data
 
         except Exception as e:
@@ -293,3 +283,20 @@ def generate_script(topic: str, custom_prompt: str = None) -> Optional[Dict]:
 
     logger.error("All script generation attempts failed")
     return None
+
+
+def _validate_script(script_data: Dict) -> Dict:
+    """Validate and fix script structure."""
+    if not script_data.get('scenes'):
+        raise ValueError("No scenes in script")
+    
+    # Ensure minimum scenes
+    if len(script_data['scenes']) < MIN_SCENES:
+        raise ValueError(f"Too few scenes: {len(script_data['scenes'])}")
+    
+    # Validate word count
+    total_words = sum(len(s.get('caption', '').split()) for s in script_data['scenes'])
+    if total_words < MIN_WORDS or total_words > MAX_WORDS:
+        raise ValueError(f"Word count {total_words} out of range ({MIN_WORDS}-{MAX_WORDS})")
+    
+    return script_data
