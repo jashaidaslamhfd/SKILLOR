@@ -27,9 +27,17 @@ MIN_SCENES = 6
 MAX_SCENES = 8
 MIN_WORDS = 90
 MAX_WORDS = 115
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 TEMPERATURE = 0.7
 MAX_TOKENS = 2000
+
+# Scene 1 (the hook) gets a tighter word cap than the rest: main.py's
+# quality gate rejects the whole pipeline run if the first spoken scene's
+# audio runs longer than 4 seconds (a slow hook kills Shorts retention).
+HOOK_MIN_WORDS = 8
+HOOK_MAX_WORDS = 10
+MIN_SCENE_WORDS = 8
+MAX_SCENE_WORDS = 18
 
 # ============================================
 # 1. SYSTEM PROMPT (NATIVE TONE + RETENTION)
@@ -275,6 +283,26 @@ def _clean_json_response(raw_reply: str) -> Dict:
 # 4. SCRIPT VALIDATION & NORMALIZATION
 # ============================================
 
+def _trim_to_word_limit(caption: str, max_words: int) -> str:
+    """Trim a caption down to at most max_words, preferring to stop at the
+    last complete sentence within the limit; falls back to a hard cut with
+    a trailing period. Used to auto-fix scenes the LLM wrote too long,
+    instead of burning a full retry (and more Groq tokens) over something
+    a simple trim already fixes."""
+    words = caption.split()
+    if len(words) <= max_words:
+        return caption
+    truncated = " ".join(words[:max_words])
+    # Prefer cutting at the last sentence-ending punctuation within range.
+    last_stop = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
+    if last_stop >= len(truncated) * 0.5:  # only use it if it's not too early
+        return truncated[:last_stop + 1]
+    truncated = truncated.rstrip(",;:")
+    if not truncated.endswith((".", "!", "?")):
+        truncated += "."
+    return truncated
+
+
 def _normalize_scenes(script_data: Dict) -> Dict:
     """
     Normalizes scene data from various formats.
@@ -302,10 +330,25 @@ def _normalize_scenes(script_data: Dict) -> Dict:
                 "visual": f"Dark cinematic shot of {caption[:30]}...",
                 "caption": caption
             })
-    
+
+    # Auto-fix: trim any scene that's over its word limit instead of
+    # spending a full LLM retry on something a simple trim already solves.
+    # Scene 1 (the hook) has a tighter cap - see _validate_script for why.
+    for i, scene in enumerate(normalized):
+        limit = HOOK_MAX_WORDS if i == 0 else MAX_SCENE_WORDS
+        scene['caption'] = _trim_to_word_limit(scene['caption'], limit)
+
     script_data['scenes'] = normalized
     script_data['voiceover'] = ' '.join(s['caption'] for s in normalized)
-    
+
+    # Auto-fix: the scored hook must be the exact line viewers hear first.
+    # Rather than relying on the LLM to retype the hook identically to
+    # scene 1's caption (a common, easy mistake for smaller models), just
+    # force them to match - scene 1's caption is the source of truth since
+    # that's what's actually spoken.
+    if normalized:
+        script_data['hook'] = normalized[0]['caption']
+
     return script_data
 
 
@@ -340,14 +383,10 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
         issues.append(f"Too many words: {word_count} (maximum {MAX_WORDS})")
     
     # Check each scene
-    # Scene 1 (the hook) gets a tighter word cap than the rest: main.py's
-    # quality gate rejects the whole pipeline run if the first spoken scene's
-    # audio runs longer than 4 seconds (a slow hook kills Shorts retention).
-    # At the cloned voice's speaking rate (speed=0.95), 18 words can run
-    # 6-7+ seconds, well past that cap - so scene 1 needs its own, shorter
-    # range instead of reusing the general 8-18 word limit.
-    HOOK_MIN_WORDS = 8
-    HOOK_MAX_WORDS = 10
+    # (HOOK_MIN_WORDS/HOOK_MAX_WORDS/MAX_SCENE_WORDS are the same constants
+    # _normalize_scenes already auto-trims to, so a script that's been
+    # normalized should always pass this - this check is now mostly a
+    # safety net for anything normalization didn't catch.)
     for i, scene in enumerate(scenes):
         if not scene.get('visual'):
             issues.append(f"Scene {i+1} missing visual description")
@@ -361,8 +400,8 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
                         f"Scene {i+1} (hook) has {scene_words} words "
                         f"(allowed {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} to stay under the 4s hook-duration gate)"
                     )
-            elif scene_words < 8 or scene_words > 18:
-                issues.append(f"Scene {i+1} has {scene_words} words (allowed 8-18)")
+            elif scene_words < MIN_SCENE_WORDS or scene_words > MAX_SCENE_WORDS:
+                issues.append(f"Scene {i+1} has {scene_words} words (allowed {MIN_SCENE_WORDS}-{MAX_SCENE_WORDS})")
 
     # The scored hook must be the line viewers actually hear first.
     if scenes and script_data.get('hook'):
