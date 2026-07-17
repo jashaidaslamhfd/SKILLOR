@@ -34,14 +34,14 @@ try:
     from video_editor import build_video, generate_thumbnail
     from uploader import upload_all
     from niche_strategy import (
-        get_script_prompt_for_niche, get_random_topic, get_topic_category,
-        generate_seo_tags, validate_script_for_medical_accuracy, auto_add_disclaimer,
+        get_topic_category, generate_seo_tags, validate_script_for_medical_accuracy,
+        auto_add_disclaimer,
     )
     from quality_checker import QualityChecker
     from scheduler import USAPeakTimeScheduler
     from anti_spam import AntiSpamSystem
     from seo_generator import generate_seo_package
-    from shorts_enhancer import build_shorts_report, generate_srt, autofix_too_fast_captions, score_hook, predict_retention
+    from shorts_enhancer import build_shorts_report, generate_srt, autofix_too_fast_captions, score_hook
     from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
     from trend_fetcher import get_trending_topic
 except ImportError as e:
@@ -53,7 +53,9 @@ except ImportError as e:
 MAX_SCRIPT_ATTEMPTS = 3
 MAX_IMAGE_RETRIES = 3
 FALLBACK_ABORT_RATIO = float(os.environ.get("FALLBACK_ABORT_RATIO", "0.5"))
-MIN_HOOK_SCORE = int(os.environ.get("MIN_HOOK_SCORE", "75"))
+# 70 accepts a clear, specific natural hook while still rejecting vague or
+# manipulative openings. The scorer and generator use the same 6–9 word policy.
+MIN_HOOK_SCORE = int(os.environ.get("MIN_HOOK_SCORE", "70"))
 
 
 class SKILLORPipeline:
@@ -109,11 +111,12 @@ class SKILLORPipeline:
         try:
             # Get category and prompt
             category = get_topic_category(topic)
-            specialized_prompt = get_script_prompt_for_niche(topic)
 
-            # Generate script
+            # The generator owns one unified prompt/validation policy. Passing
+            # the legacy niche prompt here used to overwrite it with conflicting
+            # scene and word-count rules, causing needless script failures.
             logger.info(f"Generating script for topic: {topic}")
-            script_data = generate_script(topic, custom_prompt=specialized_prompt)
+            script_data = generate_script(topic)
 
             if not script_data:
                 raise ValueError("Script generation returned empty data")
@@ -332,12 +335,19 @@ class SKILLORPipeline:
                 audio_segments = generate_voice_segments(
                     script_data['scenes'],
                     voice="am_adam",
-                    speed=0.95
+                    speed=1.0
                 )
                 logger.info(f"✅ Generated {len(audio_segments)} audio segments")
                 narration_seconds = sum(float(seg.get("duration", 0)) for seg in audio_segments)
-                if narration_seconds > 55.0:
-                    raise RuntimeError(f"Narration too long: {narration_seconds:.1f}s")
+                target_max_seconds = float(os.environ.get("TARGET_MAX_SECONDS", "35"))
+                # video_editor may make a small (<=12%) transparent speed
+                # correction. Anything beyond that must be regenerated instead
+                # of producing rushed, low-retention narration.
+                if narration_seconds > target_max_seconds * 1.12:
+                    raise RuntimeError(
+                        f"Narration too long: {narration_seconds:.1f}s "
+                        f"(maximum before regeneration: {target_max_seconds * 1.12:.1f}s)"
+                    )
 
                 silence_count = sum(1 for s in audio_segments if s.get('tts_engine') == 'silence')
                 if silence_count > 0:
