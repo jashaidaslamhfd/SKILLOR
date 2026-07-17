@@ -32,7 +32,8 @@ from niche_strategy import generate_seo_tags, make_seo_title, get_topic_category
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-TITLE_MAX_LEN = 70          # YouTube truncates further titles in search UI
+TITLE_MAX_LEN = 60
+TITLE_MAX_WORDS = 5  # concise mobile-first titles, per channel strategy
 DESCRIPTION_MAX_LEN = 5000  # YouTube hard limit
 PINNED_COMMENT_MAX_LEN = 200
 
@@ -45,19 +46,21 @@ PLAYLISTS_BY_CATEGORY = {
     "Health": "Health & Science Shorts",
 }
 
-# EXPANDED TITLE TEMPLATES (20+ variations for diversity)
-_TITLE_TEMPLATES = [
-    # Specific, credible, human-sounding patterns. Avoid fake conspiracy,
-    # "shocking", and "this is real" phrases that make automated content obvious.
-    "{topic}",
-    "Why {topic} Happens",
-    "How {topic} Controls Your Day",
-    "What {topic} Does to Your Body",
-    "The Science Behind {topic}",
-    "What Your Body Clock Is Doing Right Now",
-    "Your Body Does This Every Day",
-    "The Daily Signal Your Body Follows",
-]
+# Short title frames. ``generate_title_options`` only uses a frame when it
+# remains grammatical after enforcing the channel's five-word maximum.
+_TITLE_TEMPLATES = (
+    "Why {topic} Matters",
+    "How {topic} Works",
+    "{topic} Explained Simply",
+    "The Science Of {topic}",
+)
+
+_TITLE_STOP_WORDS = {
+    "a", "an", "and", "are", "at", "does", "do", "for", "from", "helps",
+    "how", "in", "is", "it", "make", "of", "on", "the", "this", "to", "what",
+    "when", "why", "with", "your", "you",
+}
+
 
 # HIGH-VOLUME TAGS BY CATEGORY
 _HIGH_VOLUME_TAGS = {
@@ -71,72 +74,97 @@ _HIGH_VOLUME_TAGS = {
 _TRENDING_TAGS = ["shorts", "viralfacts", "didyouknow", "interestingfacts", "education", "sciencefacts"]
 
 
-def _clean_topic_for_title(topic: str) -> str:
-    """Templates like 'The Truth About Why Your Heart Skips a Beat' read
-    awkwardly - strip a leading 'Why'/'The' so templated titles stay
-    grammatical. Deliberately does NOT strip a leading 'Your' - personal
-    'YOU language' is a core retention technique used throughout this
-    codebase (see niche_strategy/script_generator), so dropping it here
-    would silently undo that for any templated title that wins on score."""
-    t = topic.strip()
-    t = re.sub(r'^(why|the)\s+', '', t, flags=re.IGNORECASE)
-    t = re.sub(r'^(secret|hidden|shocking)\s+', '', t, flags=re.IGNORECASE)
-    return t[0].upper() + t[1:] if t else topic
+def _title_words(value: str) -> List[str]:
+    """Return readable title tokens without punctuation-only fragments."""
+    return re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?", value or "")
+
+
+def _five_word_title(value: str, *, fallback: str = "Science Made Simple Today") -> str:
+    """Create a clean title of no more than five words and 60 characters.
+
+    Truncating by word—not character—prevents ugly cut-off mobile titles. A
+    script title is preferred because it carries the video's actual angle.
+    """
+    words = _title_words(value)[:TITLE_MAX_WORDS]
+    if not words:
+        words = _title_words(fallback)[:TITLE_MAX_WORDS]
+    return " ".join(words)[:TITLE_MAX_LEN].strip()
+
+
+def _topic_keywords(topic: str, limit: int = 2) -> str:
+    """Extract a grammatical short subject for title frames.
+
+    Common science pairs get a natural phrase instead of raw keyword soup such
+    as “Sleep Brain”.
+    """
+    words = [w.lower() for w in _title_words(topic) if w.lower() not in _TITLE_STOP_WORDS and len(w) > 2]
+    word_set = set(words)
+    if "sleep" in word_set and ({"memory", "memories"} & word_set):
+        return "Sleep And Memory"
+    if "brain" in word_set and "sleep" in word_set:
+        return "Sleep And Your Brain"
+    if "brain" in word_set:
+        return "Your Brain"
+    if "body" in word_set:
+        return "Your Body"
+    return " ".join(words[:limit]).title() or "Science Facts"
 
 
 def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[str]:
-    """Returns up to n distinct SEO-friendly title variants for the same
-    video. First option is always the enhanced original AI title (already
-    proven in production via niche_strategy.make_seo_title); the rest are
-    template-driven alternates so there's real angle diversity, not just
-    punctuation changes."""
-    base_title = script_data.get('title') or topic
-    options = [make_seo_title(base_title, topic)]
-
-    clean_topic = _clean_topic_for_title(topic)
-    seen = {options[0].lower()}
-    
-    # Shuffle templates for variety (but keep original first)
-    templates = _TITLE_TEMPLATES.copy()
-    random.shuffle(templates)
-    
-    for template in templates:
+    """Return topic-relevant, mobile-readable titles of at most five words."""
+    base_title = script_data.get("title") or topic
+    keyword_phrase = _topic_keywords(topic)
+    templates = _TITLE_TEMPLATES
+    if " And " in keyword_phrase:
+        # Compound subjects take “work”, not “works”.
+        templates = tuple(
+            "How {topic} Work" if template == "How {topic} Works" else template
+            for template in _TITLE_TEMPLATES
+        )
+    candidates = [
+        base_title,
+        topic,
+        *[template.format(topic=keyword_phrase) for template in templates],
+    ]
+    options: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        title = _five_word_title(candidate)
+        key = title.lower()
+        if title and key not in seen:
+            seen.add(key)
+            options.append(title)
         if len(options) >= n:
             break
-        candidate = template.format(topic=clean_topic)[:TITLE_MAX_LEN]
-        if candidate.lower() not in seen:
-            options.append(candidate)
-            seen.add(candidate.lower())
+    return options
 
-    return options[:n]
+
+def _topic_tag_phrases(topic: str, category: str) -> List[str]:
+    """Build useful searchable tag phrases and discard grammar/filler words."""
+    words = [w.lower() for w in _title_words(topic) if w.lower() not in _TITLE_STOP_WORDS and len(w) > 2]
+    # Topic-specific useful combinations are stronger than generic verbs or
+    # mechanically joined word pairs such as “sleep brain”.
+    word_set = set(words)
+    phrases: List[str] = []
+    if {"sleep", "memory"} <= word_set or {"sleep", "memories"} <= word_set:
+        phrases.extend(["sleep science", "sleep and memory", "memory formation"])
+    if "brain" in word_set:
+        phrases.extend(["brain facts", "brain science", "neuroscience"])
+    if category == "Body":
+        phrases.extend(["human body", "body science"])
+    phrases.extend(words)
+    return phrases
 
 
 def generate_hashtags(topic: str, category: str, n: int = 3) -> List[str]:
-    """Wraps niche_strategy.generate_seo_tags() into ready-to-use hashtags.
-    Capped at 3 — YouTube only surfaces the first 3 above the title, and
-    >5 hashtags actively suppresses reach on both YouTube and Facebook.
-    """
-    # Get base tags from niche_strategy
-    tags = generate_seo_tags(topic, category)
-    
-    # Add category-specific high-volume tags
-    volume_tags = _HIGH_VOLUME_TAGS.get(category, ["science", "facts", "education"])
-    
-    # Add trending tags (YouTube Shorts specific)
-    trending_tags = random.sample(_TRENDING_TAGS, min(3, len(_TRENDING_TAGS)))
-    
-    # Combine all tags
-    all_tags = tags + volume_tags + trending_tags
-    
-    # Deduplicate while preserving order
-    seen = set()
-    unique_tags = []
-    for tag in all_tags:
-        if tag.lower() not in seen:
-            seen.add(tag.lower())
-            unique_tags.append(tag)
-    
-    return [f"#{t}" for t in unique_tags[:n]]
+    """Return up to three searchable, topic-specific hashtags."""
+    candidates = _topic_tag_phrases(topic, category)
+    candidates.extend(_HIGH_VOLUME_TAGS.get(category, ["science facts"]))
+    # Prefer descriptive two-word phrases over broad one-word labels.
+    specific = [tag for tag in candidates if " " in str(tag).strip()]
+    clean = _normalise_tags(specific or candidates, limit=n)
+    return [f"#{tag.replace(' ', '')}" for tag in clean]
+
 
 
 def _normalise_tags(tags: List[str], limit: int = 3) -> List[str]:
@@ -144,9 +172,31 @@ def _normalise_tags(tags: List[str], limit: int = 3) -> List[str]:
     `science`, `#science`, or a mixture of both."""
     clean, seen = [], set()
     for raw in tags or []:
-        tag = re.sub(r"[^A-Za-z0-9_]", "", str(raw).lstrip("#")).strip()
+        tag = re.sub(r"[^A-Za-z0-9_ ]", "", str(raw).lstrip("#"))
+        tag = re.sub(r"\s+", " ", tag).strip()
         if tag and tag.lower() not in seen:
             seen.add(tag.lower())
+            clean.append(tag)
+        if len(clean) >= limit:
+            break
+    return clean
+
+
+def generate_upload_tags(topic: str, category: str, limit: int = 12) -> List[str]:
+    """Return meaningful YouTube tag phrases, never grammar/filler tokens."""
+    candidates = _topic_tag_phrases(topic, category)
+    candidates.extend(_HIGH_VOLUME_TAGS.get(category, []))
+    candidates.extend(generate_seo_tags(topic, category))
+    clean: List[str] = []
+    seen = set()
+    for raw in candidates:
+        tag = re.sub(r"\s+", " ", str(raw).strip().lstrip("#"))
+        # A one-word tag that is only a grammar verb has no search value.
+        if not tag or tag.lower() in _TITLE_STOP_WORDS:
+            continue
+        key = tag.lower()
+        if key not in seen:
+            seen.add(key)
             clean.append(tag)
         if len(clean) >= limit:
             break
@@ -186,7 +236,7 @@ def generate_description(script_data: Dict, tags: List[str]) -> str:
         readable = ", ".join(t.replace("_", " ") for t in context_tags)
         parts.append(
             f"Learn the science behind {readable}. "
-            "Subscribe for more dark body & brain facts in under a minute."
+            "Follow for clear science and brain facts explained simply."
         )
 
     # #Shorts FIRST so YouTube categorises this correctly as a Short, then
@@ -198,6 +248,15 @@ def generate_description(script_data: Dict, tags: List[str]) -> str:
     if hashtags:
         parts.append(hashtags)
     return "\n\n".join(parts)[:DESCRIPTION_MAX_LEN]
+
+
+def generate_thumbnail_text(script_data: Dict, title: str) -> str:
+    """Use the script's short thumbnail angle, with a safe 2–4 word fallback."""
+    raw = script_data.get("thumbnail_text") or title
+    words = _title_words(raw)[:4]
+    if len(words) < 2:
+        words = _title_words(title)[:4]
+    return " ".join(words).upper()
 
 
 def generate_pinned_comment(script_data: Dict) -> str:
@@ -252,17 +311,12 @@ def _score_title(title: str) -> int:
     if any(w in title.lower() for w in clickbait):
         score -= 30
 
-    # Numbers (CTR booster)
-    if re.search(r'\d', title):
+    # Mobile titles are strongest when concise. Reward clarity instead of
+    # random numbers/emojis/question marks, which are not universal CTR wins.
+    if len(_title_words(title)) <= TITLE_MAX_WORDS:
         score += 15
-    
-    # Emojis (attention grabber)
-    if re.search(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF]', title):
-        score += 10
-    
-    # Question marks (curiosity)
-    if '?' in title:
-        score += 10
+    else:
+        score -= 20
     
     # Personal pronouns (YOU/Your)
     if re.search(r'\b(your|you)\b', title, re.IGNORECASE):
@@ -355,7 +409,7 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
     what actually applies to a YouTube Short (chapters are skipped - not
     supported on sub-60s videos)."""
     category = get_topic_category(topic)
-    tags = generate_seo_tags(topic, category, script_data.get('title', ''))
+    tags = generate_upload_tags(topic, category)
     title_options = generate_title_options(topic, script_data)
     # Score every candidate and pick the best-scoring one instead of
     # always taking title_options[0] - the score was previously computed
@@ -365,6 +419,7 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
     chosen_title = max(title_options, key=_score_title) if title_options else script_data.get('title', 'Untitled')
     description = generate_description(script_data, tags)
     hashtags = generate_hashtags(topic, category)
+    thumbnail_text = generate_thumbnail_text(script_data, chosen_title)
     pinned_comment = generate_pinned_comment(script_data)
     playlist = suggest_playlist(category)
     seo_score = calculate_seo_score(chosen_title, description, tags, script_data)
@@ -377,6 +432,7 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
         'description': description,
         'tags': tags,
         'hashtags': hashtags,
+        'thumbnail_text': thumbnail_text,
         'pinned_comment': pinned_comment,
         'playlist_suggestion': playlist,
         'seo_score': seo_score,
@@ -393,3 +449,4 @@ if __name__ == "__main__":
     }
     result = generate_seo_package("Your Heart Has Its Own Brain", test_script)
     print(json.dumps(result, indent=2, ensure_ascii=False))
+      
