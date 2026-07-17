@@ -428,15 +428,43 @@ def _synthesize_ambient_bed(duration: float, seed: int = None) -> np.ndarray:
 
 
 def _get_music_track(duration: float, output_dir: str) -> str:
-    """Get background music (real track or synthesized)."""
-    if os.path.isdir(MUSIC_DIR):
-        real_tracks = [
-            os.path.join(MUSIC_DIR, f) for f in os.listdir(MUSIC_DIR)
-            if f.lower().endswith((".wav", ".mp3", ".m4a", ".ogg"))
-        ]
-        if real_tracks:
-            return random.choice(real_tracks)
+    """Select a licensed background track from ``assets/music``.
 
+    ``MUSIC_TRACK`` may name one exact file (for example
+    ``paulyudin-suspense-513011.mp3``). When it is empty, one real local track
+    is selected at random. The procedural drone exists only as an explicit
+    last-resort fallback when the asset folder is missing/empty; normal videos
+    always use the creator-provided music files.
+    """
+    configured_track = os.environ.get("MUSIC_TRACK", "").strip()
+    supported_extensions = (".wav", ".mp3", ".m4a", ".ogg", ".aac", ".flac")
+
+    if configured_track:
+        # Accept only a filename, not an arbitrary path outside the approved
+        # music directory.
+        candidate = os.path.join(MUSIC_DIR, os.path.basename(configured_track))
+        if not os.path.isfile(candidate):
+            raise FileNotFoundError(
+                f"MUSIC_TRACK={configured_track!r} was requested but does not exist in {MUSIC_DIR}"
+            )
+        if not candidate.lower().endswith(supported_extensions):
+            raise ValueError(f"MUSIC_TRACK has an unsupported audio type: {configured_track}")
+        logger.info("Using configured asset music: %s", candidate)
+        return candidate
+
+    if os.path.isdir(MUSIC_DIR):
+        real_tracks = sorted(
+            os.path.join(MUSIC_DIR, filename)
+            for filename in os.listdir(MUSIC_DIR)
+            if filename.lower().endswith(supported_extensions)
+            and os.path.getsize(os.path.join(MUSIC_DIR, filename)) > 10_000
+        )
+        if real_tracks:
+            selected = random.choice(real_tracks)
+            logger.info("Using asset music: %s", selected)
+            return selected
+
+    logger.warning("No playable track found in %s; using generated ambient fallback.", MUSIC_DIR)
     os.makedirs(output_dir, exist_ok=True)
     music_path = os.path.join(output_dir, "bg_music.wav")
     bed = _synthesize_ambient_bed(duration, seed=random.randint(1, 999999))
