@@ -23,100 +23,46 @@ logger = logging.getLogger(__name__)
 # ============================================
 # CONSTANTS
 # ============================================
+# One unified policy for a 25–35 second, natural-English Short. These values
+# must be mirrored by the prompt, validator and quality scorer—do not create
+# separate hidden rules in other modules.
 MIN_SCENES = 6
-MAX_SCENES = 8
-MIN_WORDS = 90
-MAX_WORDS = 115
-MAX_RETRIES = 5
-TEMPERATURE = 0.7
-MAX_TOKENS = 2000
+MAX_SCENES = 6
+MIN_WORDS = 60
+MAX_WORDS = 78
+MAX_RETRIES = 3
+TEMPERATURE = 0.65
+MAX_TOKENS = 1400
 
-# Scene 1 (the hook) gets a tighter word cap than the rest: main.py's
-# quality gate rejects the whole pipeline run if the first spoken scene's
-# audio runs longer than 4 seconds (a slow hook kills Shorts retention).
-HOOK_MIN_WORDS = 8
-HOOK_MAX_WORDS = 10
-MIN_SCENE_WORDS = 8
-MAX_SCENE_WORDS = 18
+# A fast, clear opening that comfortably fits in the first 2–3 seconds.
+HOOK_MIN_WORDS = 6
+HOOK_MAX_WORDS = 9
+MIN_SCENE_WORDS = 9
+MAX_SCENE_WORDS = 14
 
 # ============================================
 # 1. SYSTEM PROMPT (NATIVE TONE + RETENTION)
 # ============================================
 
 def _get_system_prompt() -> str:
+    """Instructions shared by every script request.
+
+    The aim is clarity and earned curiosity, not medical fear, fake urgency or
+    recycled clickbait. A trend is a topic signal, never proof of a claim.
     """
-    2026 System Prompt with NATIVE ENGLISH TONE and RETENTION FOCUS.
-    """
-    return """You are a top-tier Social Media Strategist for 2026 specializing in YouTube Shorts/Facebook Reels.
+    return """You write concise, natural American-English YouTube Shorts about
+science, the human body and the brain for a general adult audience.
 
-YOUR EXPERTISE:
-- Creating VIRAL scripts with 70%+ retention rate
-- Writing in NATIVE, CONVERSATIONAL ENGLISH (USA/UK)
-- Pattern Interrupt Hooks that stop the scroll
-- Psychological pacing that keeps viewers engaged
-
-**CRITICAL - NATIVE TONE RULES:**
-1. Write like a HUMAN talking to a FRIEND - not an AI
-2. Use CONTRACTIONS: "don't" not "do not", "you're" not "you are"
-3. Use IDIOMATIC PHRASES: "blow your mind", "freak you out", "makes total sense"
-4. AVOID ROBOTIC WORDS: "thus", "hence", "therefore", "furthermore"
-5. Use COLLOQUIAL LANGUAGE: "honestly", "seriously", "literally"
-6. Keep it NATURAL - read it aloud, it should sound like a real person
-
-**RETENTION RULES (CRITICAL):**
-1. **Pattern Interrupt Hook**: First 3 seconds must be SHOCKING or COUNTER-INTUITIVE
-   - "Your heart is lying to you right now..."
-   - "This happens inside your brain every night..."
-
-2. **The "3-Second Rule"**: Every scene must have a MICRO-HOOK
-   - Start each scene with tension
-   - End each scene with a CLIFFHANGER
-   - Example: "...but that's only half the story"
-
-3. **"YOU" Language**: Use direct personal address
-   - "Your brain", "Your heart", "You feel"
-   - Creates emotional connection
-
-4. **Emotional Arc**: 
-   - Hook (Curiosity/Shock) → State the Problem → Reveal the Solution → Loop back to Hook
-
-5. **MANDATORY 4-PART STRUCTURE**:
-   - PART 1 - HOOK: Shocking/counter-intuitive opening line (first scene)
-   - PART 2 - PROBLEM: Clearly state what's wrong / what the viewer doesn't know
-   - PART 3 - SOLUTION: Reveal the answer, fix, or truth behind the problem
-   - PART 4 - LOOP BACK: Final line must callback to the hook's wording or imagery,
-     so the video feels like it can replay seamlessly (boosts rewatch rate)
-
-6. **Loopable Outro**: End should naturally lead back to the start
-   - Encourages rewatching
-   - The last caption should echo a phrase or image from the hook
-
-**STRICT SHORTS LENGTH RULES:**
-- The complete narration must contain 90-115 spoken words total.
-- Return exactly 6-8 scenes; each caption must contain 10-16 words.
-- The first spoken sentence must be 9 words or fewer and instantly open a curiosity gap.
-- No greeting, channel introduction, filler, repeated point, fake urgency, or unsupported claim.
-- Do not use the generic opener "Did you know".
-- Deliver the promised answer before the final line; never use empty clickbait.
-- Aim for 38-50 seconds at a natural speaking pace.
-- CTA is metadata only: do not add it to scene narration unless it fits inside 115 words.
-
-**OUTPUT FORMAT:**
-Return ONLY valid JSON with this exact structure:
-{
-  "title": "Catchy click-worthy title (under 55 chars)",
-  "hook": "The first 3-second hook (most important part)",
-  "scenes": [
-    {
-      "visual": "Cinematic visual description (5-8 words)",
-      "caption": "Natural spoken text (10-16 words)"
-    }
-  ],
-  "cta": "Natural call-to-action",
-  "description": "1-2 sentence video description"
-}
-
-REMEMBER: Write like a HUMAN, not an AI. Be NATURAL. Be CONVERSATIONAL. Focus on RETENTION.
+NON-NEGOTIABLE QUALITY RULES:
+- Explain one verified, useful idea per video in simple everyday English.
+- Make a specific curiosity promise in the opening, then fully answer it.
+- Never invent studies, statistics, quotes, diagnoses, cures, dangers or advice.
+- Avoid fear bait, "doctors don't want you to know", "secret", fake urgency,
+  unsupported certainty and repetitive AI-sounding phrases.
+- Every scene must add new information. Do not repeat the hook or pad length.
+- Write for speech: short sentences, concrete words, smooth transitions.
+- Use a natural follow CTA only as metadata; do not force it into narration.
+- Return valid JSON only—no Markdown and no commentary.
 """
 
 
@@ -125,58 +71,46 @@ REMEMBER: Write like a HUMAN, not an AI. Be NATURAL. Be CONVERSATIONAL. Focus on
 # ============================================
 
 def _default_prompt(topic: str) -> str:
-    """
-    Default prompt with NATIVE TONE and RETENTION enforcement.
-    """
+    """Build one internally consistent short-form script brief."""
     return f"""
-Create a HIGH-RETENTION 45-second viral script for YouTube Shorts on: "{topic}"
+Create one original 25–35 second YouTube Short on this topic:
+TOPIC: {topic}
 
-**CRITICAL - NATIVE ENGLISH TONE:**
-- Write like a HUMAN talking to a friend
-- Use CONTRACTIONS: "don't", "you're", "that's"
-- Use natural everyday English; avoid repeated hype phrases
-- AVOID: "thus", "hence", "therefore", "furthermore"
-- Sound NATURAL when read aloud
+Use EXACTLY six scenes and return the JSON schema below.
 
-**SCRIPT REQUIREMENTS:**
+STORY ARC:
+1. HOOK — scene 1; 6–9 words. State a concrete, intriguing fact or question.
+2. SUSPENSE — scene 2; explain why the idea matters and open one honest question.
+3. PROBLEM — scenes 3–4; describe the relatable confusion or misconception.
+4. SOLUTION / PAYOFF — scene 5; give the clear science-based answer.
+5. LOOP-BACK — scene 6; connect the payoff to the opening idea so it feels complete.
 
-1. **HOOK** (First 3 seconds - CRITICAL):
-   - Must stop the scroll immediately
-   - Use conversational tone
-   - Pattern interrupt or shocking statement
+HARD FORMAT RULES:
+- Total spoken captions: {MIN_WORDS}–{MAX_WORDS} words.
+- Scene 1: {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} words. Scenes 2–6: {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} words each.
+- `hook` must match scene 1 caption exactly.
+- Every scene must have a distinct 5–12 word visual description with no text, logos or UI.
+- Title: specific, honest and under 60 characters. Do not use generic hype.
+- `thumbnail_text`: 2–4 clear words that complement—not repeat—the title.
+- `cta`: one brief, natural follow/subscribe prompt. It is metadata, not narration.
+- `description`: one accurate sentence summarising the real payoff.
 
-2. **SCENES** ({MIN_SCENES}-{MAX_SCENES} scenes):
-   - Each scene: 10-16 words caption
-   - Use at most TWO open loops in the whole script; most scenes should explain clearly
-   - Each scene: Cinematic visual description
-
-3. **WORD COUNT** (HARD REQUIREMENT):
-   - Total: {MIN_WORDS}-{MAX_WORDS} words
-   - Count your words BEFORE finalizing
-
-4. **STRUCTURE (MANDATORY 4-PART ARC):**
-   - Scene 1: HOOK - shocking/counter-intuitive opener that stops the scroll.
-     MUST be 8-10 words only (short = punchy, and keeps the spoken hook
-     under 4 seconds so viewers don't scroll past before it lands).
-   - Scenes 2-4: PROBLEM - clearly explain what's wrong, what viewer doesn't know, build tension
-   - Scenes 5-8: SOLUTION - reveal the answer/truth/fix, resolve the tension
-   - Final scene: LOOP BACK - CTA that echoes a word, phrase, or image from Scene 1's
-     hook, so the ending flows straight back into the beginning (seamless replay)
-
-5. **TONE**:
-   - Dark, mysterious, factual
-   - Engaging, not boring
-   - NATURAL, CONVERSATIONAL
-
-**SCENE FORMAT:**
+JSON ONLY:
 {{
-  "visual": "Cinematic description (macro-lens, high-contrast, dramatic lighting)",
-  "caption": "Natural spoken text (10-16 words; first scene equals hook)"
+  "title": "...",
+  "thumbnail_text": "...",
+  "hook": "...",
+  "scenes": [
+    {{"visual": "...", "caption": "..."}},
+    {{"visual": "...", "caption": "..."}},
+    {{"visual": "...", "caption": "..."}},
+    {{"visual": "...", "caption": "..."}},
+    {{"visual": "...", "caption": "..."}},
+    {{"visual": "...", "caption": "..."}}
+  ],
+  "cta": "...",
+  "description": "..."
 }}
-
-**Return ONLY valid JSON with title, hook, scenes, cta, and description.**
-
-**REMEMBER:** Retention is EVERYTHING. Write like a HUMAN. Make every second count.
 """
 
 
@@ -462,10 +396,10 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
     hook = script_data.get('hook', '')
     if hook:
         hook_words = len(hook.split())
-        if 5 <= hook_words <= 15:
+        if HOOK_MIN_WORDS <= hook_words <= HOOK_MAX_WORDS:
             score += 15
         else:
-            suggestions.append("Hook should be 5-15 words for maximum impact")
+            suggestions.append(f"Hook should be {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} words for a fast, clear opening")
         
         # Check for pattern interrupt
         if len(hook.split()) <= 9 and any(ch in hook for ch in ['?', '.', '!']):
@@ -474,10 +408,10 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
     # Check "YOU" language
     voiceover = script_data.get('voiceover', '')
     you_count = voiceover.lower().count('you')
-    if you_count >= len(scenes) * 1.5:
+    if you_count >= 2:
         score += 15
     else:
-        suggestions.append("Use more 'YOU' language for personal connection")
+        suggestions.append("Use the viewer naturally once or twice where it helps clarity")
     
     # Check cliffhangers
     cliffhanger_count = 0
