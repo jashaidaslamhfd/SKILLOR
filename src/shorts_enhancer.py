@@ -127,6 +127,123 @@ def check_caption_pacing(scenes: List[Dict], audio_segments: List[Dict]) -> Dict
 
 
 # ---------------------------------------------------------------------------
+# Autofix: trim captions that read too fast for their scene's spoken duration
+# ---------------------------------------------------------------------------
+
+def autofix_too_fast_captions(scenes: List[Dict], audio_segments: List[Dict]) -> List[Dict]:
+    """For any scene whose words-per-second (per check_caption_pacing) is
+    above MAX_WORDS_PER_SEC, trim the on-screen caption down to the number
+    of words that actually fit its spoken duration at a readable pace.
+
+    This only shortens the *on-screen caption text* - it does not touch or
+    re-generate the audio, so spoken narration timing is unaffected; this
+    just keeps burned-in/SRT captions from flashing by unreadably fast.
+    Scenes that are already OK (or "too_slow") are returned unchanged.
+    Returns a new list; the input `scenes` list/dicts are not mutated.
+    """
+    fixed_scenes = []
+    for i, scene in enumerate(scenes):
+        seg = audio_segments[i] if i < len(audio_segments) else {}
+        duration = max(seg.get('duration', 0), 0.01)
+        caption = scene.get('caption', '')
+        words = caption.split()
+        wps = len(words) / duration if words else 0
+
+        new_scene = dict(scene)
+        if wps > MAX_WORDS_PER_SEC and len(words) > 1:
+            # Keep as many words as fit at the max readable pace, but
+            # never trim down to nothing.
+            max_words = max(1, int(duration * MAX_WORDS_PER_SEC))
+            if max_words < len(words):
+                trimmed = " ".join(words[:max_words]).rstrip(",;:")
+                if not trimmed.endswith((".", "!", "?")):
+                    trimmed += "."
+                logger.info(
+                    f"Scene {i+1}: autofixed caption from {len(words)} to "
+                    f"{max_words} words ({wps:.1f} -> "
+                    f"{max_words/duration:.1f} words/sec)"
+                )
+                new_scene['caption'] = trimmed
+        fixed_scenes.append(new_scene)
+    return fixed_scenes
+
+
+# ---------------------------------------------------------------------------
+# Retention prediction (heuristic, not ML - gives directional signal +
+# concrete suggestions, same spirit as quality_checker's scoring)
+# ---------------------------------------------------------------------------
+
+# Shorts retention drops off fastest in the first ~3s (the hook) and again
+# past the ~45-50s mark where swipe-away rates climb sharply.
+_IDEAL_MIN_SECONDS = 25.0
+_IDEAL_MAX_SECONDS = 45.0
+
+
+def predict_retention(script_data: Dict, audio_segments: List[Dict]) -> Dict:
+    """Heuristic (non-ML) retention estimate combining hook strength,
+    caption pacing, and total video length. Returns predicted_avg_retention
+    and predicted_swipe_away as 0-1 fractions, plus actionable suggestions.
+    Intentionally conservative/simple - it's a directional signal for the
+    pipeline logs, not a trained model.
+    """
+    suggestions = []
+
+    hook = script_data.get('hook', '')
+    hook_score = score_hook_detailed(hook).get('score', 0)  # 0-100
+
+    scenes = script_data.get('scenes', [])
+    pacing = check_caption_pacing(scenes, audio_segments)
+    unreadable_ratio = (
+        len(pacing.get('issues', [])) / len(scenes) if scenes else 0
+    )
+
+    total_seconds = sum(float(s.get('duration', 0)) for s in audio_segments)
+
+    # Base retention scales with hook strength - a weak hook loses viewers
+    # before anything else in the video matters.
+    retention = 0.35 + 0.45 * (hook_score / 100.0)
+
+    # Unreadable captions cost retention roughly proportional to how much
+    # of the video is affected.
+    retention -= 0.25 * unreadable_ratio
+    if unreadable_ratio > 0:
+        suggestions.append(
+            "Some captions are hard to read at their spoken pace - "
+            "shortening them (or letting autofix_too_fast_captions run) "
+            "should help viewers stay through those scenes."
+        )
+
+    # Length penalty outside the sweet spot.
+    if total_seconds < _IDEAL_MIN_SECONDS:
+        retention -= 0.05
+        suggestions.append(
+            f"Video is {total_seconds:.0f}s, a bit short for strong Shorts "
+            f"retention curves - {_IDEAL_MIN_SECONDS:.0f}-{_IDEAL_MAX_SECONDS:.0f}s tends to perform better."
+        )
+    elif total_seconds > _IDEAL_MAX_SECONDS:
+        retention -= 0.08
+        suggestions.append(
+            f"Video is {total_seconds:.0f}s, past the "
+            f"{_IDEAL_MAX_SECONDS:.0f}s point where swipe-away rises - consider trimming a scene."
+        )
+
+    if hook_score < 60:
+        suggestions.append(
+            "Hook score is below 60 - a sharper, more specific opening "
+            "line usually recovers the most retention per fix."
+        )
+
+    retention = max(0.05, min(retention, 0.95))
+    swipe_away = max(0.0, min(1.0 - retention, 0.95))
+
+    return {
+        'predicted_avg_retention': round(retention, 3),
+        'predicted_swipe_away': round(swipe_away, 3),
+        'suggestions': suggestions,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Shorts hashtags
 # ---------------------------------------------------------------------------
 
@@ -195,11 +312,13 @@ def build_shorts_report(script_data: Dict, audio_segments: List[Dict], topic_tag
     hook_detail = score_hook_detailed(script_data.get('hook', ''))
     pacing = check_caption_pacing(script_data.get('scenes', []), audio_segments)
     hashtags = generate_shorts_hashtags(topic_tags)
+    retention_prediction = predict_retention(script_data, audio_segments)
 
     return {
         'hook_detail': hook_detail,
         'caption_pacing': pacing,
         'shorts_hashtags': hashtags,
+        'retention_prediction': retention_prediction,
     }
 
 
