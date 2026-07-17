@@ -340,7 +340,11 @@ def _caption_clip(text: str, duration: float, is_important: bool = False,
         y += line_height
 
     # Position caption on screen
-    caption_img = ImageClip(canvas, transparent=True)
+    # ImageClip expects a numpy array (or file path) here, not a PIL Image
+    # directly - this moviepy 1.x build calls img.shape internally, which
+    # PIL Image objects don't have (that's np.ndarray.shape). np.array()
+    # preserves the RGBA alpha channel, which ImageClip auto-detects.
+    caption_img = ImageClip(np.array(canvas), transparent=True)
     caption_y = int(CANVAS_H * CAPTION_Y_FRACTION)
     
     # Apply text effect
