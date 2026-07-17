@@ -1,350 +1,311 @@
-"""Trend Fetcher Module for SKILLOR Pipeline
-Fetches trending topics from Google Trends, YouTube, and Reddit.
+"""Reliable, best-effort topic research for the SKILLOR Shorts pipeline.
+
+This module deliberately uses documented APIs where credentials are available:
+* Google Trends daily RSS feed (public, no key)
+* YouTube Data API v3 (optional YOUTUBE_API_KEY)
+* Reddit OAuth API (optional REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET)
+
+Every source is optional. A source failure is logged with its HTTP status and
+never prevents a video from being made; a curated, non-duplicated topic pool
+is the final fallback. Do not treat a trending headline as evidence for a
+medical/scientific claim: the script/fact-review layer must still verify it.
 """
 from __future__ import annotations
 
-import os
-import json
-import time
-import random
+import base64
 import logging
+import os
+import random
 import re
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+import time
+import xml.etree.ElementTree as ET
+from typing import Dict, Iterable, List, Optional, Set
 
 import requests
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ============================================
-# CONFIGURATION
-# ============================================
+REQUEST_TIMEOUT = 15
+MAX_SOURCE_RETRIES = 2
+TARGET_REGION = os.environ.get("TREND_REGION", "US").upper()
+YOUTUBE_REGION = os.environ.get("YOUTUBE_REGION_CODE", TARGET_REGION).upper()
 
-# High-performing niches for YouTube Shorts (2026)
-HIGH_PERFORMING_NICHES = [
-    "human_body", "brain", "health", "psychology", "science",
-    "space", "technology", "history", "animals", "nature",
-    "mystery", "crime", "finance", "motivation", "relationships"
+# The channel is science/body/brain-oriented. Restricting external headlines
+# prevents unrelated politics, celebrity stories and sports results from being
+# turned into off-brand Shorts merely because they are trending.
+RELEVANCE_TERMS = (
+    "brain", "body", "health", "medical", "medicine", "doctor", "science",
+    "space", "nasa", "technology", "tech", "ai", "robot", "climate",
+    "nature", "animal", "ocean", "planet", "earth", "physics", "history",
+    "archaeology", "psychology", "sleep", "heart", "human", "research",
+    "study", "discovery", "scientist", "disease", "virus", "nutrition",
+)
+
+# These are UI/navigation strings sometimes accidentally extracted by fragile
+# HTML scrapers. The project no longer scrapes YouTube HTML, but retaining the
+# filter protects all sources and future integrations.
+INVALID_TOPIC_PATTERNS = (
+    r"^try searching to get started$",
+    r"^keyboard shortcuts$",
+    r"^sign in$",
+    r"^home$",
+    r"^shorts$",
+    r"^subscriptions$",
+    r"^youtube$",
+    r"^reddit$",
+)
+
+# Safe, evergreen fallbacks. These are prompts/topics, not claims. The LLM
+# should not turn them into medical advice or unsupported sensational claims.
+FALLBACK_TOPICS = [
+    "Why sleep is essential for memory formation",
+    "How the human brain filters everyday information",
+    "What scientists know about the gut-brain connection",
+    "How astronauts adapt to living in microgravity",
+    "Why octopuses are so intelligent",
+    "How vaccines train the immune system",
+    "What causes the Northern Lights",
+    "How artificial intelligence recognizes patterns",
+    "Why deep ocean ecosystems are difficult to study",
+    "How stress affects attention and decision making",
+    "What archaeology can reveal about ancient cities",
+    "How the heart adapts during regular exercise",
 ]
 
-# Trending topic templates (proven to get views)
-TRENDING_TEMPLATES = {
-    "human_body": [
-        "Your {organ} is hiding a secret that doctors don't tell you",
-        "What happens to your body when you {action} every day",
-        "The terrifying truth about your {organ} that 99% don't know",
-        "Scientists discovered something disturbing inside your {organ}",
-        "Your body does this every night and you have no idea",
-        "The hidden organ that controls everything in your body",
-        "Why your {organ} is slowly killing you without symptoms",
-        "Ancient humans had a {organ} feature we lost - here's why",
-    ],
-    "brain": [
-        "Your brain lies to you every {time_period} and here's the proof",
-        "Scientists found a switch in your brain that controls {thing}",
-        "What happens to your brain when you don't sleep for {hours} hours",
-        "The dark secret your brain keeps from your consciousness",
-        "Your brain makes decisions before you even know it",
-        "Why you can't stop thinking about {thing} at night",
-        "The brain chemical that makes you addicted to {thing}",
-        "Your brain has a second hidden brain inside it",
-    ],
-    "health": [
-        "Doctors don't want you to know this about {thing}",
-        "The {food} in your kitchen is secretly {effect}",
-        "Why {common_habit} is destroying your health",
-        "This 30-second trick fixes {health_issue} instantly",
-        "The hidden danger of {common_item} in your home",
-        "Ancient remedy for {health_issue} that actually works",
-        "Why doctors are quitting {treatment} and switching to this",
-        "The vitamin deficiency that causes {symptom}",
-    ],
-    "psychology": [
-        "Why you can't stop scrolling (the dark psychology)",
-        "The personality trait that predicts your success",
-        "Why narcissists always win - the psychology explained",
-        "Your childhood determines your {thing} in adulthood",
-        "The dark triad trait hidden in your personality",
-        "Why you attract toxic people (it's not your fault)",
-        "The psychological trick that makes anyone like you",
-        "Your phone addiction is a trauma response",
-    ],
-    "science": [
-        "Scientists just discovered {thing} and it changes everything",
-        "The experiment that was too dangerous to publish",
-        "What happens when you {action} in space",
-        "The scientific reason you feel {emotion} right now",
-        "Scientists found a new {thing} that shouldn't exist",
-        "The physics trick that makes {thing} possible",
-        "Why time moves slower when you {action}",
-        "The scientific explanation for {phenomenon}",
-    ],
-    "space": [
-        "NASA just found something terrifying on {planet}",
-        "What happens if you fall into a black hole",
-        "The sound space makes will give you nightmares",
-        "Why astronauts can't see stars in space",
-        "The planet where it rains diamonds",
-        "What's inside a black hole according to physics",
-        "The space anomaly that breaks all laws of physics",
-        "Why the sun is actually white not yellow",
-    ],
-    "technology": [
-        "AI just did something that wasn't supposed to be possible",
-        "The hidden feature in your phone that spies on you",
-        "Why your smart TV is watching you right now",
-        "The technology that will replace smartphones in {years} years",
-        "What happens to your data after you delete it",
-        "The secret code hidden in every {device}",
-        "Why self-driving cars are afraid of {thing}",
-        "The AI that can read your thoughts now",
-    ],
-    "history": [
-        "The ancient civilization that had electricity",
-        "What they don't teach you about {historical_event}",
-        "The historical figure who was actually {surprising_fact}",
-        "Ancient people knew about {modern_thing} before us",
-        "The lost technology of {ancient_civilization}",
-        "Why historians are hiding the truth about {thing}",
-        "The ancient text that predicted {modern_event}",
-        "What really happened to {historical_mystery}",
-    ],
-    "animals": [
-        "The animal that can survive in space",
-        "Why {animal} is actually smarter than humans",
-        "The terrifying predator that lives in your {place}",
-        "Animals that can predict {natural_disaster}",
-        "The animal that never dies naturally",
-        "Why {animal} is the most dangerous creature on Earth",
-        "The extinct animal that scientists are bringing back",
-        "Animals that have a sixth sense humans lost",
-    ],
-    "mystery": [
-        "The unsolved mystery that even FBI can't crack",
-        "What really happened at {mysterious_place}",
-        "The disappearance that makes no sense",
-        "The object found in {place} that shouldn't exist",
-        "The mystery that scientists gave up trying to solve",
-        "What the government is hiding about {thing}",
-        "The ancient mystery that was just solved (terrifying)",
-        "The phenomenon that breaks all logic",
-    ],
-}
-
-# Fill-in values for templates
-FILL_VALUES = {
-    "organ": ["heart", "brain", "liver", "lungs", "stomach", "kidneys", "skin", "eyes"],
-    "action": ["sleep", "eat", "drink water", "exercise", "scroll phone", "dream"],
-    "thing": ["love", "money", "success", "happiness", "fear", "time", "memory"],
-    "time_period": ["3 seconds", "5 seconds", "minute", "hour", "night"],
-    "hours": ["24", "48", "72", "96"],
-    "food": ["salt", "sugar", "honey", "milk", "bread", "rice"],
-    "effect": ["poisonous", "healing", "addictive", "toxic", "miraculous"],
-    "common_habit": ["sitting", "scrolling", "snoring", "cracking knuckles", "holding sneeze"],
-    "health_issue": ["back pain", "headache", "anxiety", "insomnia", "fatigue"],
-    "common_item": ["toothbrush", "pillow", "phone", "microwave", "plastic bottle"],
-    "symptom": ["fatigue", "brain fog", "anxiety", "weight gain", "hair loss"],
-    "emotion": ["anxious", "sad", "angry", "tired", "restless"],
-    "phenomenon": ["deja vu", "aurora borealis", "ball lightning", "spontaneous combustion"],
-    "planet": ["Mars", "Jupiter", "Saturn", "Venus", "Neptune"],
-    "years": ["5", "10", "15", "20", "30"],
-    "device": ["WiFi router", "smartwatch", "laptop", "car key", "credit card"],
-    "historical_event": ["the Titanic", "the Moon Landing", "the Pyramids", "the Ice Age"],
-    "surprising_fact": ["a woman", "a child", "from the future", "an alien"],
-    "modern_thing": ["electricity", "flight", "computers", "surgery", "satellites"],
-    "ancient_civilization": ["Egypt", "Atlantis", "Maya", "Rome", "Greece"],
-    "historical_mystery": ["Atlantis", "the Loch Ness Monster", "Bigfoot", "the Bermuda Triangle"],
-    "animal": ["octopus", "crow", "dolphin", "elephant", "ant", "jellyfish"],
-    "place": ["backyard", "ocean", "desert", "forest", "attic"],
-    "natural_disaster": ["earthquakes", "tsunamis", "volcanoes", "storms"],
-    "mysterious_place": ["Bermuda Triangle", "Area 51", "the Mariana Trench", "Easter Island"],
-}
+REDDIT_SUBREDDITS = ("science", "technology", "space", "todayilearned")
+USER_AGENT = "SKILLOR/1.1 (automated topic research; contact: channel-owner)"
 
 
-def _fill_template(template: str) -> str:
-    """Fill in template placeholders with random values."""
-    result = template
-    for key, values in FILL_VALUES.items():
-        placeholder = "{" + key + "}"
-        if placeholder in result:
-            result = result.replace(placeholder, random.choice(values))
+def _normalise_topic(value: str) -> str:
+    """Create a comparison key; preserve the original title for display."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", value.lower())).strip()
+
+
+def _clean_topic(value: object) -> str:
+    """Return a short, printable title or an empty string."""
+    if not isinstance(value, str):
+        return ""
+    title = re.sub(r"\s+", " ", value).strip().strip("-–—: ")
+    if len(title) < 12 or len(title) > 160:
+        return ""
+    lowered = title.lower()
+    if any(re.fullmatch(pattern, lowered) for pattern in INVALID_TOPIC_PATTERNS):
+        return ""
+    return title
+
+
+def _is_relevant(title: str) -> bool:
+    """Match whole terms so e.g. football club “Hearts” is not body content."""
+    lowered = title.lower()
+    return any(re.search(r"\b" + re.escape(term) + r"\b", lowered) for term in RELEVANCE_TERMS)
+
+
+def _request(method: str, url: str, *, source: str, **kwargs) -> Optional[requests.Response]:
+    """Perform a bounded request and log useful diagnostics on failure."""
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    headers = dict(kwargs.pop("headers", {}) or {})
+    headers.setdefault("User-Agent", USER_AGENT)
+
+    for attempt in range(1, MAX_SOURCE_RETRIES + 1):
+        try:
+            response = requests.request(method, url, headers=headers, **kwargs)
+            if 200 <= response.status_code < 300:
+                return response
+            logger.warning(
+                "%s unavailable (HTTP %s, attempt %s/%s): %s",
+                source, response.status_code, attempt, MAX_SOURCE_RETRIES,
+                response.text[:180].replace("\n", " "),
+            )
+            # Retrying a permanent auth/not-found failure only wastes a run.
+            if response.status_code in (400, 401, 403, 404):
+                return None
+        except requests.RequestException as exc:
+            logger.warning("%s request failed (attempt %s/%s): %s", source, attempt, MAX_SOURCE_RETRIES, exc)
+        if attempt < MAX_SOURCE_RETRIES:
+            time.sleep(1.5 * attempt)
+    return None
+
+
+def _topic_record(topic: str, source: str, **extra: object) -> Dict:
+    record: Dict[str, object] = {"topic": topic, "title": topic, "source": source}
+    record.update(extra)
+    return record
+
+
+def _deduplicate(records: Iterable[Dict], excluded: Optional[Iterable[str]] = None) -> List[Dict]:
+    excluded_keys: Set[str] = {_normalise_topic(x) for x in (excluded or []) if x}
+    seen: Set[str] = set()
+    result: List[Dict] = []
+    for record in records:
+        title = _clean_topic(record.get("topic", ""))
+        key = _normalise_topic(title)
+        if not title or not key or key in seen or key in excluded_keys:
+            continue
+        seen.add(key)
+        clean_record = dict(record)
+        clean_record["topic"] = title
+        clean_record["title"] = title
+        result.append(clean_record)
     return result
 
 
-def get_google_trends_topics() -> List[Dict]:
-    """Fetch trending topics from Google Trends (via unofficial API)."""
-    topics = []
-    
+def get_google_trends_topics(region: Optional[str] = None) -> List[Dict]:
+    """Fetch daily Google trends through its XML RSS feed.
+
+    The former ``/trends/api/dailytrends`` JSON endpoint used by this project
+    now returns HTTP 404 in normal requests. RSS is simpler to parse and has a
+    stable public response. Google Trends is a discovery signal only.
+    """
+    region = (region or TARGET_REGION).upper()
+    response = _request(
+        "GET", "https://trends.google.com/trending/rss", source="Google Trends RSS",
+        params={"geo": region}, headers={"Accept": "application/rss+xml, application/xml;q=0.9"},
+    )
+    if response is None:
+        return []
     try:
-        # Google Trends daily search trends (unofficial)
-        url = "https://trends.google.com/trends/api/dailytrends"
-        params = {
-            "hl": "en-US",
-            "tz": "-330",  # Pakistan timezone
-            "geo": "PK",  # Pakistan (change to US for US trends)
-            "ns": "15",
-        }
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        if response.status_code == 200:
-            # Parse the JSON response (Google Trends returns JSON with some prefix)
-            text = response.text
-            # Remove the first 6 characters which are ")]}',\n"
-            if text.startswith(")]}"):
-                text = text[6:]
-            data = json.loads(text)
-            
-            for trend in data.get("default", {}).get("trendingSearchesDays", [{}])[0].get("trendingSearches", [])[:10]:
-                title = trend.get("title", {}).get("query", "")
-                if title:
-                    topics.append({
-                        "topic": title,
-                        "source": "google_trends",
-                        "title": title,
-                    })
-    except Exception as e:
-        logger.warning(f"Google Trends fetch failed: {e}")
-    
-    return topics
+        root = ET.fromstring(response.content)
+    except ET.ParseError as exc:
+        logger.warning("Google Trends RSS returned invalid XML: %s", exc)
+        return []
+
+    topics: List[Dict] = []
+    for item in root.findall("./channel/item"):
+        title = _clean_topic(item.findtext("title", default=""))
+        if title and _is_relevant(title):
+            topics.append(_topic_record(title, "google_trends", region=region))
+    logger.info("Google Trends RSS: %s relevant topics for %s.", len(topics), region)
+    return _deduplicate(topics)
 
 
-def get_youtube_trending_topics() -> List[Dict]:
-    """Fetch trending topics from YouTube (via unofficial endpoint)."""
-    topics = []
-    
+def get_youtube_trending_topics(region: Optional[str] = None) -> List[Dict]:
+    """Use the official YouTube Data API; never scrape the changing HTML UI."""
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        logger.info("YouTube trends skipped: YOUTUBE_API_KEY is not configured.")
+        return []
+    region = (region or YOUTUBE_REGION).upper()
+    response = _request(
+        "GET", "https://www.googleapis.com/youtube/v3/videos", source="YouTube Data API",
+        params={
+            "part": "snippet,statistics", "chart": "mostPopular", "regionCode": region,
+            "maxResults": 25, "key": api_key,
+        },
+    )
+    if response is None:
+        return []
     try:
-        # YouTube trending page (unofficial)
-        url = "https://www.youtube.com/feed/trending"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            # Extract video titles from the page
-            titles = re.findall(r'"title":\{"runs":\[\{"text":"([^"]+)"\}\]', response.text)
-            for title in titles[:10]:
-                # Clean up the title
-                clean_title = title.replace("\\u0026", "&").replace("\\", "")
-                if len(clean_title) > 10:
-                    topics.append({
-                        "topic": clean_title,
-                        "source": "youtube_trending",
-                        "title": clean_title,
-                    })
-    except Exception as e:
-        logger.warning(f"YouTube trending fetch failed: {e}")
-    
-    return topics
+        payload = response.json()
+    except ValueError as exc:
+        logger.warning("YouTube Data API returned non-JSON data: %s", exc)
+        return []
+
+    topics: List[Dict] = []
+    for item in payload.get("items", []):
+        snippet = item.get("snippet", {})
+        title = _clean_topic(snippet.get("title", ""))
+        if title and _is_relevant(title):
+            topics.append(_topic_record(
+                title, "youtube_trending", region=region,
+                video_id=item.get("id", ""), category_id=snippet.get("categoryId", ""),
+            ))
+    logger.info("YouTube Data API: %s relevant topics for %s.", len(topics), region)
+    return _deduplicate(topics)
+
+
+def _reddit_access_token() -> Optional[str]:
+    """Return an app-only Reddit OAuth token, or None when not configured."""
+    client_id = os.environ.get("REDDIT_CLIENT_ID")
+    client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        logger.info("Reddit trends skipped: REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET are not configured.")
+        return None
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
+    response = _request(
+        "POST", "https://www.reddit.com/api/v1/access_token", source="Reddit OAuth",
+        headers={"Authorization": f"Basic {basic}"}, data={"grant_type": "client_credentials"},
+    )
+    if response is None:
+        return None
+    try:
+        token = response.json().get("access_token")
+    except ValueError:
+        token = None
+    if not token:
+        logger.warning("Reddit OAuth returned no access token.")
+    return token
 
 
 def get_reddit_trending_topics() -> List[Dict]:
-    """Fetch trending topics from Reddit (science, psychology, etc.)."""
-    topics = []
-    
-    subreddits = ["science", "psychology", "technology", "space", "todayilearned"]
-    
-    for subreddit in subreddits:
+    """Fetch niche-relevant hot posts through Reddit OAuth, not HTML scraping."""
+    token = _reddit_access_token()
+    if not token:
+        return []
+    topics: List[Dict] = []
+    headers = {"Authorization": f"Bearer {token}"}
+    for subreddit in REDDIT_SUBREDDITS:
+        response = _request(
+            "GET", f"https://oauth.reddit.com/r/{subreddit}/hot", source=f"Reddit r/{subreddit}",
+            headers=headers, params={"limit": 15, "raw_json": 1},
+        )
+        if response is None:
+            continue
         try:
-            url = f"https://www.reddit.com/r/{subreddit}/hot.json"
-            headers = {
-                "User-Agent": "SKILLOR-Bot/1.0"
-            }
-            params = {"limit": 5}
-            
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                for post in data.get("data", {}).get("children", []):
-                    title = post.get("data", {}).get("title", "")
-                    if title and len(title) > 15:
-                        topics.append({
-                            "topic": title,
-                            "source": f"reddit_r/{subreddit}",
-                            "title": title,
-                        })
-        except Exception as e:
-            logger.warning(f"Reddit r/{subreddit} fetch failed: {e}")
-    
+            children = response.json().get("data", {}).get("children", [])
+        except ValueError as exc:
+            logger.warning("Reddit r/%s returned non-JSON data: %s", subreddit, exc)
+            continue
+        for child in children:
+            post = child.get("data", {})
+            title = _clean_topic(post.get("title", ""))
+            if title and _is_relevant(title) and not post.get("over_18", False):
+                topics.append(_topic_record(
+                    title, f"reddit_r/{subreddit}", subreddit=subreddit,
+                    permalink=post.get("permalink", ""), score=post.get("score", 0),
+                ))
+    topics = _deduplicate(topics)
+    logger.info("Reddit OAuth: %s relevant topics.", len(topics))
     return topics
 
 
 def get_template_topics() -> List[Dict]:
-    """Generate topics from proven templates."""
-    topics = []
-    
-    for niche in HIGH_PERFORMING_NICHES:
-        templates = TRENDING_TEMPLATES.get(niche, [])
-        for template in random.sample(templates, min(2, len(templates))):
-            filled = _fill_template(template)
-            topics.append({
-                "topic": filled,
-                "source": f"template_{niche}",
-                "title": filled,
-            })
-    
-    return topics
+    """Return a varied local fallback pool without pretending it is trending."""
+    return [_topic_record(topic, "curated_fallback") for topic in FALLBACK_TOPICS]
 
 
-def get_trending_topic(exclude: List[str] = None) -> str:
-    """Get a trending topic from any available source.
-    
-    Priority:
-    1. Google Trends (real-time data)
-    2. YouTube Trending
-    3. Reddit trending
-    4. Template-based fallback
+def get_trending_topic(exclude: Optional[List[str]] = None) -> str:
+    """Select one fresh, relevant topic with transparent source fallback.
+
+    Real trend sources are preferred. A curated topic is selected only when
+    they are unavailable/irrelevant, or occasionally for channel consistency.
+    ``exclude`` uses normalized comparison, so punctuation/case variations do
+    not bypass the recent-topic guard.
     """
-    if exclude is None:
-        exclude = []
-    
-    all_topics = []
-    
-    # Try Google Trends
-    google_topics = get_google_trends_topics()
-    all_topics.extend(google_topics)
-    
-    # Try YouTube Trending
-    youtube_topics = get_youtube_trending_topics()
-    all_topics.extend(youtube_topics)
-    
-    # Try Reddit
-    reddit_topics = get_reddit_trending_topics()
-    all_topics.extend(reddit_topics)
-    
-    # Always add template topics as backup
-    template_topics = get_template_topics()
-    all_topics.extend(template_topics)
-    
-    # Filter out excluded topics
-    filtered = [t for t in all_topics if t["topic"] not in exclude]
-    
-    if not filtered:
-        # Ultimate fallback
-        fallback = random.choice(list(TRENDING_TEMPLATES.get("mystery", [])))
-        return _fill_template(fallback)
-    
-    # Prefer real trends, but mix in templates for variety
-    real_trends = [t for t in filtered if not t["source"].startswith("template")]
-    
-    if real_trends and random.random() < 0.6:
-        # 60% chance to use real trend
-        chosen = random.choice(real_trends)
+    records: List[Dict] = []
+    records.extend(get_google_trends_topics())
+    records.extend(get_youtube_trending_topics())
+    records.extend(get_reddit_trending_topics())
+    real_topics = _deduplicate(records, exclude)
+    fallback_topics = _deduplicate(get_template_topics(), exclude)
+
+    # Real niche trends should normally win. Use the local pool occasionally
+    # so a channel is not forced off-topic on a low-quality trend day.
+    if real_topics and (not fallback_topics or random.random() < 0.85):
+        chosen = random.choice(real_topics)
+    elif fallback_topics:
+        chosen = random.choice(fallback_topics)
+    elif real_topics:
+        chosen = random.choice(real_topics)
     else:
-        # 40% chance to use template
-        chosen = random.choice(filtered)
-    
-    logger.info(f"Selected topic from {chosen['source']}: {chosen['topic']}")
-    return chosen["topic"]
+        # All current topics are excluded. Reusing a curated topic is better
+        # than crashing, but leave an explicit warning for the run log.
+        chosen = random.choice(get_template_topics())
+        logger.warning("All trend/fallback topics were excluded; reusing a curated fallback.")
+
+    logger.info("Selected topic from %s: %s", chosen["source"], chosen["topic"])
+    return str(chosen["topic"])
 
 
 if __name__ == "__main__":
-    # Test the trend fetcher
-    print("Fetching trending topics...")
-    topic = get_trending_topic()
-    print(f"\nSelected topic: {topic}")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    print(get_trending_topic())
