@@ -13,12 +13,10 @@ logger = logging.getLogger(__name__)
 # PRIMARY ENGINE: Chatterbox (Resemble AI, MIT license - safe for a
 # monetized channel).
 #
-# Why Chatterbox over Kokoro: Kokoro has no emotion/delivery control at all
-# - every line comes out at the same flat intensity regardless of content,
-# which is exactly why the channel's "dark mystery" voiceovers read as
-# monotone. Chatterbox's `exaggeration` parameter is the first open-source
-# control of its kind for this, so it's what actually fixes the tone
-# instead of just changing which model renders the same flat delivery.
+# Why Chatterbox over Kokoro: Chatterbox can condition generation on the
+# creator's approved voice reference, whereas Kokoro is a generic fallback
+# voice. Its delivery controls let us keep narration clear and conversational
+# instead of giving every scene an artificial dramatic tone.
 #
 # Lazy-loaded on first use (not at import time) so a missing pip install or
 # a failed model download doesn't crash the whole pipeline before it even
@@ -34,27 +32,36 @@ _chatterbox_load_error = None  # the real underlying exception, kept around so
                                 # WHY, instead of just the first log line at
                                 # startup (which is easy to miss/lose in CI logs).
 
-# CORRECTED per Chatterbox's own docs: "higher exaggeration tends to speed
-# up speech." The previous settings here (exaggeration=0.7, cfg_weight=0.35)
-# were following Chatterbox's own "dramatic delivery" recipe, but that
-# combination is documented to net out FASTER than default, not slower -
-# which matches the "has emotion but talks too fast, loses the mystery
-# vibe" feedback. Dialing exaggeration back down and cfg_weight back up
-# keeps some expressiveness without the speedup side effect. Reliable
-# pacing control now comes from CHATTERBOX_TEMPO below instead of fighting
-# the model's internal speed/emotion coupling.
-CHATTERBOX_EXAGGERATION = 0.6
-CHATTERBOX_CFG_WEIGHT = 0.5
-CHATTERBOX_TEMPERATURE = 0.8
+# NATURAL YOUTUBE VOICE PROFILE
+#
+# Chatterbox's higher exaggeration values make delivery more theatrical and
+# can also make it feel faster. That is useful for character acting, but it
+# weakens speaker similarity for a creator's regular YouTube narration.
+# These defaults deliberately favour a calm, clear, conversational delivery:
+# natural energy, stable pronunciation and recognisable cloned identity.
+# Every value can be overridden in .env / GitHub Actions secrets.
+def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    """Read a bounded float setting and fall back safely on bad input."""
+    raw = os.environ.get(name, str(default))
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using %s", name, raw, default)
+        return default
+    if not minimum <= value <= maximum:
+        logger.warning("%s=%s is outside [%s, %s]; using %s", name, value, minimum, maximum, default)
+        return default
+    return value
 
-# Chatterbox has no direct "speed" parameter like Kokoro does, so this
-# applies an explicit pitch-preserving tempo change via ffmpeg after
-# generation (ffmpeg's atempo filter) - this is what actually delivers a
-# slow, deliberate "dark mystery" pace reliably, rather than relying on
-# exaggeration/cfg_weight side effects. 0.85 = 15% slower, same pitch.
-# Lower = slower/more ominous; 1.0 = no change. Valid ffmpeg atempo range
-# per call is 0.5-2.0.
-CHATTERBOX_TEMPO = float(os.environ.get("CHATTERBOX_TEMPO", "0.85"))
+
+CHATTERBOX_EXAGGERATION = _env_float("CHATTERBOX_EXAGGERATION", 0.35, 0.0, 1.0)
+CHATTERBOX_CFG_WEIGHT = _env_float("CHATTERBOX_CFG_WEIGHT", 0.70, 0.0, 1.0)
+CHATTERBOX_TEMPERATURE = _env_float("CHATTERBOX_TEMPERATURE", 0.60, 0.05, 1.5)
+
+# Chatterbox has no native speed control. atempo changes tempo while keeping
+# pitch, so 0.96 is slightly calmer than normal without sounding slow or
+# artificial. FFmpeg accepts 0.5–2.0 for one atempo filter.
+CHATTERBOX_TEMPO = _env_float("CHATTERBOX_TEMPO", 0.96, 0.5, 2.0)
 
 # Number of times Chatterbox retries per segment before giving up and
 # falling back to Kokoro. Retries use the cloned voice reference every
@@ -90,14 +97,33 @@ def _voice_reference_ok() -> bool:
         return False
     try:
         info = sf.info(path)
-        if info.frames <= 0 or info.duration < 1.0:
-            logger.warning(f"Voice reference too short ({info.duration:.1f}s) - using default voice.")
+        if info.frames <= 0 or info.duration < 3.0:
+            logger.warning("Voice reference is too short (%.1fs). Use at least 10 seconds.", info.duration)
             return False
-        # Quick loudness sanity check on a small slice (cheap, no full read).
-        sample, _ = sf.read(path, frames=min(info.frames, info.samplerate * 3), dtype="float32")
+        # A 30–60 second clean sample is noticeably more reliable for speaker
+        # similarity. Shorter samples still work, so do not silently disable a
+        # creator's clone merely because it is below the recommendation.
+        if info.duration < 30.0:
+            logger.warning(
+                "Voice reference is only %.1fs. Cloning will work, but a 30–60s clean, "
+                "single-speaker WAV usually sounds much closer to the original voice.",
+                info.duration,
+            )
+        # Check a small slice for silence and severe clipping. This is a
+        # validity gate, not a substitute for a clean recording.
+        sample, _ = sf.read(path, frames=min(info.frames, info.samplerate * 5), dtype="float32")
+        if sample.ndim > 1:
+            sample = sample.mean(axis=1)
         if sample.size == 0 or float(np.abs(sample).max()) < 1e-3:
             logger.warning("Voice reference is silent/near-silent - using default voice.")
             return False
+        clipping_ratio = float(np.mean(np.abs(sample) >= 0.995))
+        if clipping_ratio > 0.005:
+            logger.warning(
+                "Voice reference may be clipped (%.2f%% samples near full scale). "
+                "Re-record with lower input gain for a cleaner clone.",
+                clipping_ratio * 100,
+            )
         return True
     except Exception as e:
         logger.warning(f"Voice reference unreadable ({e}) - using default voice.")
@@ -300,25 +326,20 @@ def _get_kokoro():
     return _kokoro_tts
 
 KOKORO_SAMPLE_RATE = 24000
-SILENCE_PAD_SEC = 0.25  # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
 
 
-def add_mystery_pauses(text: str) -> str:
-    """Adds a beat of suspense after dark hooks/reveals for retention.
+def prepare_natural_narration(text: str) -> str:
+    """Prepare natural YouTube narration without changing its meaning.
 
-    Neither Kokoro nor Chatterbox reads SSML tags like '<break time="0.5s"/>'
-    - both read plain text/punctuation, so a literal SSML tag would get
-    spoken aloud as text. Real neural TTS models DO respect
-    punctuation-driven pauses though, so we use an ellipsis (natural
-    trailing-off pause) or a short standalone clause instead - actually
-    audible, not spoken as text."""
-    # "you too?" -> trailing pause via ellipsis
-    text = re.sub(r'you too\?', 'you too?..', text, flags=re.IGNORECASE)
-    # already-present ".." -> stretch into a longer natural pause
-    text = re.sub(r'(?<!\.)\.\.(?!\.)', '...', text)
-    # "right now." -> comma-separated beat before continuing
-    text = re.sub(r'right now\.', 'right now...', text, flags=re.IGNORECASE)
-    return text
+    Previous versions injected ellipses into phrases such as “right now” and
+    “you too” for a dark/suspense delivery. Those artificial pauses make a
+    clone sound unlike the real creator. Respect the script's punctuation and
+    only clean whitespace and accidental repeated punctuation.
+    """
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    cleaned = re.sub(r"(?<![.!?])\.{2}(?!\.)", ".", cleaned)
+    cleaned = re.sub(r"([!?]){2,}", r"\1", cleaned)
+    return cleaned
 
 
 def _synthesize_kokoro(text: str, voice: str, speed: float):
@@ -347,7 +368,7 @@ def _synthesize_kokoro(text: str, voice: str, speed: float):
     return full_audio, KOKORO_SAMPLE_RATE
 
 
-def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
+def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
     """Synthesize a single segment with retry logic.
 
     FLOW:
@@ -369,13 +390,13 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
     if not text or not text.strip():
         raise ValueError("Text cannot be empty")
 
-    text_with_pauses = add_mystery_pauses(text)
+    narration_text = prepare_natural_narration(text)
 
-    # ---- STEP 1: Chatterbox with retries ----
+    # ---- STEP 1: Chatterbox with the creator's voice reference ----
     chatterbox_errors = []
     for attempt in range(1, CHATTERBOX_MAX_RETRIES + 1):
         try:
-            audio, sr = _synthesize_chatterbox(text_with_pauses, attempt=attempt)
+            audio, sr = _synthesize_chatterbox(narration_text, attempt=attempt)
             engine = "chatterbox_clone" if _voice_reference_ok() else "chatterbox_default"
             logger.info(f"Chatterbox SUCCESS on attempt {attempt}/{CHATTERBOX_MAX_RETRIES} ({engine})")
             return audio, sr, engine
@@ -395,7 +416,7 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
     # ---- STEP 2: Kokoro fallback (one shot) ----
     logger.info("Falling back to Kokoro TTS engine...")
     try:
-        audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
+        audio, sr = _synthesize_kokoro(narration_text, voice, speed)
         logger.info("Kokoro fallback SUCCESS")
         return audio, sr, "kokoro"
     except Exception as kokoro_err:
@@ -411,11 +432,14 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 0.95):
         raise RuntimeError(error_msg)
 
 
-def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
-    """USA Dark Science Voice: deep, slow, mysterious. Tries Chatterbox
-    (expressive) first, Kokoro (flat but reliable) as fallback."""
+def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 1.0) -> str:
+    """Generate clear, natural YouTube narration.
+
+    Chatterbox with the approved creator reference is always tried first.
+    Kokoro is only a technical fallback and cannot reproduce that voice.
+    """
     try:
-        logger.info(f"Generating DARK voiceover (voice='{voice}', speed={speed})...")
+        logger.info("Generating natural YouTube voiceover (fallback_voice=%r, speed=%s)...", voice, speed)
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         audio, sr, engine = _synthesize(text, voice, speed)
         sf.write(output_path, audio, sr)
@@ -430,11 +454,11 @@ def generate_voice_segments(
     scenes: List[dict],
     voice: str = "am_adam",  # only used if a segment falls back to Kokoro
     output_dir: str = "output/segments",
-    speed: float = 0.95,     # only used if a segment falls back to Kokoro
+    speed: float = 1.0,      # only used if a segment falls back to Kokoro
 ) -> List[Dict]:
     """
-    Each scene gets its own audio, generated via Chatterbox (with mystery
-    pauses and dark-tone exaggeration) or Kokoro as a per-segment fallback.
+    Each scene gets clear, conversational narration via Chatterbox using the
+    creator's voice reference, with Kokoro as a technical per-segment fallback.
 
     Raises
     ------
@@ -466,7 +490,7 @@ def generate_voice_segments(
         logger.info(f"Segment {i+1}/{len(scenes)} via {engine}: {duration:.2f}s - \"{caption[:50]}...\"")
 
     total = sum(s['duration'] for s in segments)
-    logger.info(f"Total DARK voiceover duration: {total:.2f}s | engines used: {engine_counts}")
+    logger.info(f"Total natural voiceover duration: {total:.2f}s | engines used: {engine_counts}")
 
     # Final consistency check — all segments must use the SAME engine.
     # Mixed engines mean different voice timbres across scenes, which
