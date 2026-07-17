@@ -179,13 +179,23 @@ def gen_ai_horde(prompt, seed, scene_text=None):
     # Anonymous requests share a dynamic, demand-based max PIXEL-AREA cap,
     # expressed by AI Horde as "requests over NxN" (i.e. width*height must
     # stay under N*N). Observed caps in practice range ~576x576 (331,776px)
-    # up to ~669x669 (447,561px), and fluctuate run to run with load. Try
-    # progressively smaller sizes - multiples of 64, as required by the
+    # up to ~669x669 (447,561px), and fluctuate run to run with load.
+    #
+    # HD tip: that cap applies to the *anonymous* "0000000000" key. A free
+    # AI Horde account (https://aihorde.net/register - no card, just an
+    # email) gets a real API key with a much higher priority + resolution
+    # allowance, and costs nothing. Set it as the AI_HORDE_API_KEY secret
+    # in your GitHub repo (Settings -> Secrets and variables -> Actions) and
+    # this function picks it up automatically (falls back to anonymous if
+    # unset) - that alone is usually enough to get the top (768x1344) tier
+    # below through consistently instead of falling back to the small ones.
+    #
+    # Try progressively smaller sizes - multiples of 64, as required by the
     # underlying SD models - until one fits under whatever the current cap
-    # happens to be. All three tiers below stay under even the lowest
-    # observed cap except tier 1, which is worth trying first for the
-    # common case where demand (and therefore the cap) is higher.
-    size_tiers = [(448, 768), (384, 640), (320, 512)]
+    # happens to be. The first two tiers are HD-ish (close to the final
+    # 1080x1920 Shorts canvas); the rest are the original small fallbacks
+    # for when demand is high and even a registered key gets capped.
+    size_tiers = [(768, 1344), (640, 1152), (576, 1024), (448, 768), (384, 640), (320, 512)]
 
     submit = None
     last_size_err = None
@@ -194,7 +204,7 @@ def gen_ai_horde(prompt, seed, scene_text=None):
             "https://aihorde.net/api/v2/generate/async",
             json={
                 "prompt": text,
-                "params": {"width": width, "height": height, "steps": 20, "n": 1},
+                "params": {"width": width, "height": height, "steps": 25, "n": 1},
                 "nsfw": False,
                 "censor_nsfw": True,
             },
