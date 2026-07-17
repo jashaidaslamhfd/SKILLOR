@@ -265,7 +265,8 @@ def _word_by_word_clips(text: str, total_duration: float, color_theme: Dict = No
         current.append(word)
         closes_phrase = word.rstrip().endswith((",", ".", "?", "!", ";", ":"))
         if len(current) >= 2 or closes_phrase:
-            groups.append(" ".join(current)); current = []
+            groups.append(" ".join(current))
+            current = []
     if current:
         groups.append(" ".join(current))
 
@@ -607,7 +608,7 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         else:
             raise RuntimeError(
                 f"Narration is {duration:.1f}s; refusing destructive speed-up. "
-                f"Regenerate a 90-115 word script (maximum {TARGET_MAX_SEC:.0f}s)."
+                f"Regenerate a script that fits the {TARGET_MAX_SEC:.0f}s target."
             )
     elif duration < TARGET_MIN_SEC:
         logger.warning("Short is %.1fs (target starts at %.1fs); keeping natural speed", duration, TARGET_MIN_SEC)
