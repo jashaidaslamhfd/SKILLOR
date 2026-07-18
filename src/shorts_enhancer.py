@@ -63,9 +63,9 @@ def score_hook_detailed(hook: str) -> Dict:
         return {'score': 0, 'checks': [{'name': 'present', 'passed': False, 'note': 'Hook is missing.'}]}
 
     checks, score = [], 35
-    length_ok = 6 <= len(words) <= 9
+    length_ok = 6 <= len(words) <= 8
     checks.append({'name': 'spoken_length', 'passed': length_ok,
-                   'note': f'{len(words)} words; target is 6-9.'})
+                   'note': f'{len(words)} words; target is 6-8.'})
     if length_ok:
         score += 25
 
