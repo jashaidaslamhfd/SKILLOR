@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import time
+import hashlib
 import google.oauth2.credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -72,27 +73,86 @@ def _build_facebook_description(script_data: dict, tags: list) -> str:
     )[:2200]
 
 
-def _already_uploaded_to_facebook(script_data: dict) -> bool:
-    """Checks output/video_history.json to see if this exact video title
-    was already successfully posted to Facebook — prevents the same video
-    being uploaded 3x on retries/re-runs of the same pipeline execution."""
-    history_file = "output/video_history.json"
-    if not os.path.exists(history_file):
-        return False
+VIDEO_HISTORY_PATH = os.environ.get("VIDEO_HISTORY_PATH", "data/video_history.json")
+UPLOAD_STATE_PATH = os.environ.get("UPLOAD_STATE_PATH", "data/upload_state.json")
+
+
+def _load_upload_state() -> dict:
+    if not os.path.exists(UPLOAD_STATE_PATH):
+        return {}
     try:
-        with open(history_file) as f:
-            history = json.load(f)
-        title = script_data.get('title', '')
-        return any(
-            v.get('title') == title and v.get('facebook_success')
-            for v in history
+        with open(UPLOAD_STATE_PATH, encoding="utf-8") as file_handle:
+            data = json.load(file_handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not load upload state: %s", exc)
+        return {}
+
+
+def _save_upload_state(state: dict) -> None:
+    os.makedirs(os.path.dirname(UPLOAD_STATE_PATH) or ".", exist_ok=True)
+    temp_path = UPLOAD_STATE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file_handle:
+        json.dump(state, file_handle, indent=2)
+    os.replace(temp_path, UPLOAD_STATE_PATH)
+
+
+def _content_fingerprint(script_data: dict) -> str:
+    """Stable identity for a script, independent of temporary media paths."""
+    material = "|".join(
+        str(script_data.get(key, "")).strip().lower()
+        for key in ("topic", "title", "voiceover", "hook")
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _load_upload_history() -> list:
+    if not os.path.exists(VIDEO_HISTORY_PATH):
+        return []
+    try:
+        with open(VIDEO_HISTORY_PATH, encoding="utf-8") as file_handle:
+            data = json.load(file_handle)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not load upload history: %s", exc)
+        return []
+
+
+def _existing_youtube_upload(script_data: dict) -> str | None:
+    """Return a prior upload ID for the exact script, preventing retry duplicates."""
+    fingerprint = _content_fingerprint(script_data)
+    state = _load_upload_state().get(fingerprint, {})
+    if state.get("status") == "completed" and state.get("youtube_video_id"):
+        return str(state["youtube_video_id"])
+    if state.get("status") == "started":
+        # We cannot safely know whether a timeout happened before or after
+        # YouTube accepted the binary. Block rather than risk a duplicate.
+        raise RuntimeError(
+            "An earlier YouTube upload has unknown completion state for this script. "
+            "Review YouTube Studio, then clear or resolve its data/upload_state.json record."
         )
-    except Exception:
-        return False
+    for item in reversed(_load_upload_history()):
+        if item.get("content_fingerprint") == fingerprint and item.get("youtube_video_id"):
+            return str(item["youtube_video_id"])
+    return None
+
+
+def _already_uploaded_to_facebook(script_data: dict) -> bool:
+    """Prevent a duplicate Facebook Reel for an already recorded script."""
+    fingerprint = _content_fingerprint(script_data)
+    return any(
+        item.get("content_fingerprint") == fingerprint and item.get("facebook_success")
+        for item in _load_upload_history()
+    )
 
 
 def _upload_youtube(video_path, thumb_path, script_data, tags):
     """Returns (success: bool, video_id: str|None)."""
+    existing_video_id = _existing_youtube_upload(script_data)
+    if existing_video_id:
+        logger.warning("Duplicate script blocked; existing YouTube upload: %s", existing_video_id)
+        return True, existing_video_id
+
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
     google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
     refresh_token = os.environ.get("REFRESH_TOKEN")
@@ -150,6 +210,15 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
         }
     }
 
+    fingerprint = _content_fingerprint(script_data)
+    upload_state = _load_upload_state()
+    upload_state[fingerprint] = {
+        "status": "started",
+        "title": enhanced_title,
+        "started_at": time.time(),
+    }
+    _save_upload_state(upload_state)
+
     logger.info("Uploading to YouTube...")
     yt_video_id = None
     youtube_success = False
@@ -163,6 +232,15 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
             )
             res = req.execute()
             yt_video_id = res.get('id')
+            if not yt_video_id:
+                raise RuntimeError(f"YouTube upload returned no video ID: {res}")
+            upload_state[fingerprint] = {
+                "status": "completed",
+                "title": enhanced_title,
+                "youtube_video_id": yt_video_id,
+                "completed_at": time.time(),
+            }
+            _save_upload_state(upload_state)
             logger.info(f"YouTube upload successful: https://youtu.be/{yt_video_id}")
             youtube_success = True
 
@@ -252,6 +330,13 @@ def _upload_facebook_reels(video_path, script_data, tags):
       3. upload_phase=finish  -> attach description/hashtags and publish
     Returns success: bool.
     """
+    # Facebook Reels has no equivalent private-review workflow in this code.
+    # Keep it opt-in so a private YouTube review run never publishes a public
+    # Reel by surprise.
+    if os.environ.get("FB_UPLOAD_ENABLED", "false").lower() != "true":
+        logger.info("Facebook upload disabled (set FB_UPLOAD_ENABLED=true to publish a Reel).")
+        return False
+
     fb_token = os.environ.get("FB_ACCESS_TOKEN")
     fb_page = os.environ.get("FB_PAGE_ID")
 
