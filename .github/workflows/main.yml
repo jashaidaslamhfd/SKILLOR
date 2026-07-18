@@ -149,6 +149,7 @@ jobs:
           MUSIC_VOLUME: "0.07"
           ENABLE_SCREENSHOT_FALLBACK: "false"
           MIN_HOOK_SCORE: "70"
+          MAX_HOOK_SECONDS: "5.0"
           FALLBACK_ABORT_RATIO: "0.80"
           VIDEO_TOPIC: ${{ inputs.topic || '' }}
           IMAGEMAGICK_BINARY: /usr/bin/convert
@@ -183,3 +184,4 @@ jobs:
             pipeline.log
           if-no-files-found: ignore
           retention-days: 7
+          
