@@ -9,7 +9,11 @@ import time
 import logging
 import re
 from typing import Dict, List, Optional, Tuple
-from groq import Groq, BadRequestError
+try:
+    from groq import Groq, BadRequestError
+except ImportError:  # lets offline validation/tests import this module
+    Groq = None
+    BadRequestError = Exception
 
 # ============================================
 # LOGGING CONFIGURATION
@@ -483,7 +487,10 @@ def generate_script(
     if not api_key:
         raise ValueError("GROQ_API_KEY is missing. Please set it in environment variables.")
     
-    # Initialize client
+    # Initialize client only for an actual generation call. Structural checks
+    # and offline tests do not require the optional runtime dependency.
+    if Groq is None:
+        raise RuntimeError("groq package is not installed; run pip install -r requirements.txt")
     client = Groq(api_key=api_key)
     
     # Prepare prompt
