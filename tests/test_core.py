@@ -1,10 +1,17 @@
 """Fast, offline regression tests for the production-critical content rules."""
+import sys
 import unittest
+from pathlib import Path
 
-from script_generator import _normalize_scenes, validate_script
-from seo_generator import generate_seo_package
-from shorts_enhancer import score_hook
-from trend_fetcher import _deduplicate, _is_relevant
+# Tests are run from the repository root in GitHub Actions; source modules
+# live in src/ rather than the root package.
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SRC_DIR))
+
+from script_generator import _normalize_scenes, validate_script  # noqa: E402
+from seo_generator import generate_seo_package  # noqa: E402
+from shorts_enhancer import score_hook  # noqa: E402
+from trend_fetcher import _deduplicate, _is_relevant  # noqa: E402
 
 
 class ScriptPolicyTests(unittest.TestCase):
