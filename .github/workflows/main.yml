@@ -8,8 +8,10 @@ on:
         required: false
         type: string
   schedule:
-    # GitHub cron uses UTC.
-    - cron: "0 18 * * *"
+    # Six UTC triggers cover New York daylight-saving changes. The gate step
+    # below runs the expensive pipeline only at 12:00, 17:00 and 21:00 in
+    # America/New_York, producing exactly three private review videos/day.
+    - cron: "0 1,2,16,17,21,22 * * *"
 
 permissions:
   contents: read
@@ -24,10 +26,27 @@ jobs:
     timeout-minutes: 180
 
     steps:
+      - name: Gate the run to three New York publishing windows
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ny_hour="$(TZ=America/New_York date +%H)"
+          case "$ny_hour" in
+            12|17|21) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Checkout repository
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python 3.11
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -35,6 +54,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install system dependencies
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +72,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Restore topic and upload history
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: output/video_history.json
@@ -60,17 +81,24 @@ jobs:
             skillor-history-
 
       - name: Validate required secrets
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
           set -euo pipefail
-          if [ -z "${GROQ_API_KEY:-}" ]; then
-            echo "::error::GROQ_API_KEY repository secret is missing."
-            exit 1
-          fi
+          for secret_name in GROQ_API_KEY YOUTUBE_API_KEY REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET; do
+            if [ -z "${!secret_name:-}" ]; then
+              echo "::error::${secret_name} repository secret is missing. Daily trend-only publishing requires it."
+              exit 1
+            fi
+          done
 
       - name: Generate and upload Short
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -95,6 +123,9 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
+          # User-selected safety mode: videos upload privately for review.
+          YT_PRIVACY_STATUS: "private"
+          REQUIRE_DAILY_TREND: "true"
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           # OPTIMIZED FOR RETENTION & TRENDS
@@ -119,7 +150,7 @@ jobs:
           python src/main.py
 
       - name: Upload video, thumbnail and logs
-        if: always()
+        if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: skillor-run-${{ github.run_id }}
