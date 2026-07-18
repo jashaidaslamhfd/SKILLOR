@@ -7,6 +7,7 @@ from media_validator import probe_video, pad_video_to_minimum
 from datetime import datetime, timezone
 import time
 import traceback
+import hashlib
 
 # Add current directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
@@ -56,6 +57,9 @@ FALLBACK_ABORT_RATIO = float(os.environ.get("FALLBACK_ABORT_RATIO", "0.5"))
 # 70 accepts a clear, specific natural hook while still rejecting vague or
 # manipulative openings. The scorer and generator use the same 6–9 word policy.
 MIN_HOOK_SCORE = int(os.environ.get("MIN_HOOK_SCORE", "70"))
+# Tracked repository state is durable across Actions runs; generated media
+# remains in output/ and is intentionally not committed.
+VIDEO_HISTORY_PATH = os.environ.get("VIDEO_HISTORY_PATH", "data/video_history.json")
 
 
 class SKILLORPipeline:
@@ -75,7 +79,7 @@ class SKILLORPipeline:
 
     def _load_video_history(self) -> list:
         """Load video history from file"""
-        history_file = "output/video_history.json"
+        history_file = VIDEO_HISTORY_PATH
         if os.path.exists(history_file):
             try:
                 with open(history_file, 'r') as f:
@@ -91,13 +95,15 @@ class SKILLORPipeline:
     def _save_video_history(self, video_data: dict):
         """Save video history to file"""
         try:
-            os.makedirs("output", exist_ok=True)
+            os.makedirs(os.path.dirname(VIDEO_HISTORY_PATH) or ".", exist_ok=True)
             self.video_history.append(video_data)
-            # Keep only last 50 videos
-            if len(self.video_history) > 50:
-                self.video_history = self.video_history[-50:]
-            with open("output/video_history.json", 'w') as f:
+            # Keep six months of 3-per-day history for topic and duplicate checks.
+            if len(self.video_history) > 540:
+                self.video_history = self.video_history[-540:]
+            temp_path = VIDEO_HISTORY_PATH + ".tmp"
+            with open(temp_path, 'w') as f:
                 json.dump(self.video_history, f, indent=2)
+            os.replace(temp_path, VIDEO_HISTORY_PATH)
             logger.info(f"Saved video to history: {video_data.get('title', 'Unknown')}")
         except Exception as e:
             logger.error(f"Failed to save video history: {e}")
@@ -481,7 +487,14 @@ class SKILLORPipeline:
                 raise
 
             # Save history
+            content_fingerprint = hashlib.sha256(
+                "|".join(
+                    str(script_data.get(key, "")).strip().lower()
+                    for key in ('topic', 'title', 'voiceover', 'hook')
+                ).encode('utf-8')
+            ).hexdigest()
             self._save_video_history({
+                'content_fingerprint': content_fingerprint,
                 'title': script_data.get('title', 'Untitled'),
                 'topic': script_data.get('topic'),
                 'trend_source': script_data.get('trend_source'),
