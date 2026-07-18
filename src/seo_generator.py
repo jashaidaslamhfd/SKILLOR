@@ -27,7 +27,7 @@ import logging
 import random
 from typing import Dict, List
 
-from niche_strategy import generate_seo_tags, make_seo_title, get_topic_category
+from niche_strategy import generate_seo_tags, get_topic_category
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -449,4 +449,3 @@ if __name__ == "__main__":
     }
     result = generate_seo_package("Your Heart Has Its Own Brain", test_script)
     print(json.dumps(result, indent=2, ensure_ascii=False))
-      
