@@ -57,6 +57,9 @@ FALLBACK_ABORT_RATIO = float(os.environ.get("FALLBACK_ABORT_RATIO", "0.5"))
 # 70 accepts a clear, specific natural hook while still rejecting vague or
 # manipulative openings. The scorer and generator use the same 6–9 word policy.
 MIN_HOOK_SCORE = int(os.environ.get("MIN_HOOK_SCORE", "70"))
+# Natural cloned delivery varies by speaker/reference. Five seconds preserves
+# a concise hook without throwing away an otherwise healthy 30-second Short.
+MAX_HOOK_SECONDS = float(os.environ.get("MAX_HOOK_SECONDS", "5.0"))
 # Tracked repository state is durable across Actions runs; generated media
 # remains in output/ and is intentionally not committed.
 VIDEO_HISTORY_PATH = os.environ.get("VIDEO_HISTORY_PATH", "data/video_history.json")
@@ -384,8 +387,15 @@ class SKILLORPipeline:
                 if os.environ.get("REQUIRE_CLONED_VOICE", "true").lower() == "true":
                     if engines != {"chatterbox_clone"}:
                         raise RuntimeError(f"Cloned voice required, got: {sorted(engines)}")
-                if audio_segments and audio_segments[0].get('duration', 99) > 4.0:
-                    raise RuntimeError("First scene exceeds 4 seconds")
+                if audio_segments and audio_segments[0].get('duration', 99) > MAX_HOOK_SECONDS:
+                    raise RuntimeError(
+                        f"First scene exceeds {MAX_HOOK_SECONDS:.1f} seconds"
+                    )
+                if audio_segments and audio_segments[0].get('duration', 0) > 4.0:
+                    logger.info(
+                        "Hook is %.2fs; accepted within the natural cloned-voice limit of %.1fs.",
+                        audio_segments[0]['duration'], MAX_HOOK_SECONDS,
+                    )
             except Exception as e:
                 logger.error(f"Voice generation failed: {e}")
                 raise
