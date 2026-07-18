@@ -28,6 +28,9 @@ RETRY_DELAY = 5
 # changes again, re-verify this setting - COPPA fines are no joke.
 # ---------------------------------------------------------------------------
 MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
+YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "private").strip().lower()
+if YT_PRIVACY_STATUS not in {"private", "unlisted", "public"}:
+    raise ValueError("YT_PRIVACY_STATUS must be private, unlisted, or public")
 
 
 def _build_youtube_description(script_data: dict, tags: list) -> str:
@@ -142,7 +145,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
             'defaultAudioLanguage': 'en',
         },
         'status': {
-            'privacyStatus': 'public',
+            'privacyStatus': YT_PRIVACY_STATUS,
             'selfDeclaredMadeForKids': MADE_FOR_KIDS,
         }
     }
@@ -343,6 +346,7 @@ def upload_all(video_path, thumb_path, script_data):
 
     logger.info(f"Starting upload process for: {title}")
     logger.info(f"selfDeclaredMadeForKids = {MADE_FOR_KIDS} (verify this is correct for your content!)")
+    logger.info(f"YouTube privacy status = {YT_PRIVACY_STATUS}")
     logger.info(f"SEO tags for this video: {tags}")
 
     youtube_success, yt_video_id = _upload_youtube(video_path, thumb_path, script_data, tags)
