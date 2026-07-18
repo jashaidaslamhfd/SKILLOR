@@ -173,7 +173,10 @@ def get_google_trends_topics(region: Optional[str] = None) -> List[Dict]:
     for item in root.findall("./channel/item"):
         title = _clean_topic(item.findtext("title", default=""))
         if title and _is_relevant(title):
-            topics.append(_topic_record(title, "google_trends", region=region))
+            topics.append(_topic_record(
+                title, "google_trends", region=region,
+                source_url=item.findtext("link", default=""),
+            ))
     logger.info("Google Trends RSS: %s relevant topics for %s.", len(topics), region)
     return _deduplicate(topics)
 
@@ -207,7 +210,9 @@ def get_youtube_trending_topics(region: Optional[str] = None) -> List[Dict]:
         if title and _is_relevant(title):
             topics.append(_topic_record(
                 title, "youtube_trending", region=region,
-                video_id=item.get("id", ""), category_id=snippet.get("categoryId", ""),
+                video_id=item.get("id", ""),
+                source_url=f"https://www.youtube.com/watch?v={item.get('id', '')}",
+                category_id=snippet.get("categoryId", ""),
             ))
     logger.info("YouTube Data API: %s relevant topics for %s.", len(topics), region)
     return _deduplicate(topics)
@@ -237,7 +242,7 @@ def _reddit_access_token() -> Optional[str]:
 
 
 def get_reddit_trending_topics() -> List[Dict]:
-    """Fetch niche-relevant hot posts through Reddit OAuth, not HTML scraping."""
+    """Fetch niche-relevant posts trending today through Reddit OAuth."""
     token = _reddit_access_token()
     if not token:
         return []
@@ -245,8 +250,8 @@ def get_reddit_trending_topics() -> List[Dict]:
     headers = {"Authorization": f"Bearer {token}"}
     for subreddit in REDDIT_SUBREDDITS:
         response = _request(
-            "GET", f"https://oauth.reddit.com/r/{subreddit}/hot", source=f"Reddit r/{subreddit}",
-            headers=headers, params={"limit": 15, "raw_json": 1},
+            "GET", f"https://oauth.reddit.com/r/{subreddit}/top", source=f"Reddit r/{subreddit}",
+            headers=headers, params={"limit": 25, "t": "day", "raw_json": 1},
         )
         if response is None:
             continue
@@ -261,7 +266,9 @@ def get_reddit_trending_topics() -> List[Dict]:
             if title and _is_relevant(title) and not post.get("over_18", False):
                 topics.append(_topic_record(
                     title, f"reddit_r/{subreddit}", subreddit=subreddit,
-                    permalink=post.get("permalink", ""), score=post.get("score", 0),
+                    permalink=post.get("permalink", ""),
+                    source_url=f"https://www.reddit.com{post.get('permalink', '')}",
+                    score=post.get("score", 0),
                 ))
     topics = _deduplicate(topics)
     logger.info("Reddit OAuth: %s relevant topics.", len(topics))
@@ -273,37 +280,49 @@ def get_template_topics() -> List[Dict]:
     return [_topic_record(topic, "curated_fallback") for topic in FALLBACK_TOPICS]
 
 
-def get_trending_topic(exclude: Optional[List[str]] = None) -> str:
-    """Select one fresh, relevant topic with transparent source fallback.
+def get_trending_topic(
+    exclude: Optional[List[str]] = None,
+    *,
+    return_metadata: bool = False,
+) -> str | Dict:
+    """Select a fresh topic from a current external trend source.
 
-    Real trend sources are preferred. A curated topic is selected only when
-    they are unavailable/irrelevant, or occasionally for channel consistency.
-    ``exclude`` uses normalized comparison, so punctuation/case variations do
-    not bypass the recent-topic guard.
+    With ``REQUIRE_DAILY_TREND=true`` (the production workflow default), no
+    curated/local fallback is allowed: a run fails safely rather than claiming
+    an evergreen template is "today's trend". This makes the topic origin
+    auditable through ``source`` and ``source_url`` metadata.
     """
     records: List[Dict] = []
     records.extend(get_google_trends_topics())
     records.extend(get_youtube_trending_topics())
     records.extend(get_reddit_trending_topics())
     real_topics = _deduplicate(records, exclude)
-    fallback_topics = _deduplicate(get_template_topics(), exclude)
+    require_daily_trend = os.environ.get("REQUIRE_DAILY_TREND", "false").lower() == "true"
 
-    # Real niche trends should normally win. Use the local pool occasionally
-    # so a channel is not forced off-topic on a low-quality trend day.
-    if real_topics and (not fallback_topics or random.random() < 0.85):
-        chosen = random.choice(real_topics)
-    elif fallback_topics:
-        chosen = random.choice(fallback_topics)
-    elif real_topics:
-        chosen = random.choice(real_topics)
+    if real_topics:
+        # Prefer high-signal API sources where present, while keeping choice
+        # varied enough that the same first RSS item is not selected every run.
+        source_weight = {"youtube_trending": 3, "google_trends": 2}
+        weights = [source_weight.get(str(item.get("source", "")), 1) for item in real_topics]
+        chosen = random.choices(real_topics, weights=weights, k=1)[0]
+    elif require_daily_trend:
+        raise RuntimeError(
+            "No relevant daily trend was available from Google Trends, YouTube Data API or Reddit OAuth. "
+            "REQUIRE_DAILY_TREND=true prevents a non-trending fallback from being published."
+        )
     else:
-        # All current topics are excluded. Reusing a curated topic is better
-        # than crashing, but leave an explicit warning for the run log.
-        chosen = random.choice(get_template_topics())
-        logger.warning("All trend/fallback topics were excluded; reusing a curated fallback.")
+        fallback_topics = _deduplicate(get_template_topics(), exclude)
+        if fallback_topics:
+            chosen = random.choice(fallback_topics)
+        else:
+            chosen = random.choice(get_template_topics())
+            logger.warning("All curated fallback topics were excluded; reusing one.")
 
-    logger.info("Selected topic from %s: %s", chosen["source"], chosen["topic"])
-    return str(chosen["topic"])
+    logger.info(
+        "Selected topic from %s: %s | source=%s",
+        chosen["source"], chosen["topic"], chosen.get("source_url", "n/a"),
+    )
+    return chosen if return_metadata else str(chosen["topic"])
 
 
 if __name__ == "__main__":
