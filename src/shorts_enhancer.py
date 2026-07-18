@@ -31,8 +31,12 @@ logger = logging.getLogger(__name__)
 
 # Readable range for on-screen word-by-word captions. Below this, text
 # flashes by too fast to read; above this, it drags and viewers swipe away.
+# Captions are shown in short two-word chunks by video_editor, so viewers can
+# comfortably follow a natural cloned voice up to 4.0 words/sec. The previous
+# 3.5 limit rejected otherwise healthy 30-second videos for tiny rounding or
+# one-scene delivery variations (for example 3.52 words/sec).
 MIN_WORDS_PER_SEC = 1.5
-MAX_WORDS_PER_SEC = 3.5
+MAX_WORDS_PER_SEC = 4.0
 
 SHORTS_HASHTAGS = ["#shorts", "#youtubeshorts", "#short"]
 
