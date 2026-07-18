@@ -59,26 +59,31 @@ def score_hook_detailed(hook: str) -> Dict:
         return {'score': 0, 'checks': [{'name': 'present', 'passed': False, 'note': 'Hook is missing.'}]}
 
     checks, score = [], 35
-    length_ok = 4 <= len(words) <= 9
+    length_ok = 6 <= len(words) <= 9
     checks.append({'name': 'spoken_length', 'passed': length_ok,
-                   'note': f'{len(words)} words; target is 4-9.'})
-    if length_ok: score += 25
+                   'note': f'{len(words)} words; target is 6-9.'})
+    if length_ok:
+        score += 25
 
     direct = any(re.search(rf"\b{w}\b", hook.lower()) for w in ('you', 'your', 'body', 'brain'))
     checks.append({'name': 'viewer_or_subject', 'passed': direct,
                    'note': 'Names the viewer or a clear body subject.'})
-    if direct: score += 15
+    if direct:
+        score += 15
 
     specific = bool(re.search(r"\b(clock|sleep|light|memory|heart|brain|blood|nerve|hormone|cell|muscle|skin|gut|energy|breath)\w*\b", hook.lower()))
     checks.append({'name': 'specificity', 'passed': specific,
                    'note': 'Uses a concrete topic word instead of generic hype.'})
-    if specific: score += 20
+    if specific:
+        score += 20
 
     clickbait = any(x in hook.lower() for x in ("doctors don't", "won't believe", "shocking secret", "100% real"))
     checks.append({'name': 'no_fake_hype', 'passed': not clickbait,
                    'note': 'Avoids manipulative or unsupported hype.'})
-    if not clickbait: score += 10
-    else: score -= 30
+    if not clickbait:
+        score += 10
+    else:
+        score -= 30
 
     return {'score': max(0, min(score, 100)), 'checks': checks}
 
