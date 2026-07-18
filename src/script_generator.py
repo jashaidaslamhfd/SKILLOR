@@ -40,7 +40,7 @@ MAX_TOKENS = 1400
 
 # A fast, clear opening that comfortably fits in the first 2–3 seconds.
 HOOK_MIN_WORDS = 6
-HOOK_MAX_WORDS = 9
+HOOK_MAX_WORDS = 8
 MIN_SCENE_WORDS = 9
 MAX_SCENE_WORDS = 14
 
