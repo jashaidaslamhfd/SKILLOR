@@ -588,10 +588,10 @@ BASE_TAGS = [
 # ============================================
 # 8. CONSTANTS
 # ============================================
-TARGET_WORD_RANGE = (80, 115)
+TARGET_WORD_RANGE = (60, 78)
 MAX_TAGS = 15
 MAX_TITLE_LENGTH = 55
-SCENES_PER_SCRIPT = 7  # 35-55 second Shorts target
+SCENES_PER_SCRIPT = 6  # unified 25-35 second Shorts policy
 
 # ============================================
 # 9. MEDICAL RED FLAGS
@@ -609,94 +609,17 @@ _MEDICAL_ADVICE_RED_FLAGS = [
 
 def get_script_prompt_for_niche(
     topic: str,
-    hook_preference: Optional[str] = None
+    hook_preference: Optional[str] = None,
 ) -> str:
+    """Compatibility wrapper for the unified script policy.
+
+    Historically this module built a second, conflicting prompt (80–115 words,
+    different hook limits and a forced dark tone). Keep the public function for
+    callers, but delegate to ``script_generator`` so generation and validation
+    always share exactly one contract.
     """
-    Generates a RETENTION-OPTIMIZED prompt for script generation.
-    Focuses on: Psychological Pacing, Visual Stimulation, and Cliffhangers.
-    """
-    if not hook_preference:
-        hook_preference = random.choice(HOOK_FORMULAS)
-        if "{topic}" in hook_preference:
-            hook_preference = hook_preference.format(topic=topic)
-
-    pain_point = random.choice(PAIN_POINTS)
-    cta = random.choice(CTAS)
-
-    min_w, max_w = TARGET_WORD_RANGE
-    num_scenes = SCENES_PER_SCRIPT
-    per_scene_lo = min_w // num_scenes
-    per_scene_hi = max_w // num_scenes
-
-    transitions = random.sample(TRANSITION_HOOKS, min(5, len(TRANSITION_HOOKS)))
-
-    prompt = f"""
-You are an expert mystery science communicator creating HIGH-RETENTION YouTube Shorts for USA adults 18+.
-
-TOPIC: {topic}
-
-🎯 RETENTION STRATEGY (CRITICAL):
-- Use no more than TWO natural open loops in the whole script; most scenes must clearly explain useful information
-- Use "YOU" language throughout (e.g., "Your brain", "You feel") - make it PERSONAL
-- Each scene MUST be 3-5 seconds of spoken content (short, punchy, intense)
-- Build one clear CURIOSITY > EVIDENCE > PAYOFF arc across the whole video
-
-SCRIPT STRUCTURE:
-1. DARK HOOK: "{hook_preference}"
-2. RELATE the information to the viewer's daily life
-3. SCIENCE behind the phenomenon (simplified, intriguing)
-4. REVELATION that surprises
-5. One natural transition where needed; do not force suspense into every scene
-6. CTA: "{cta}"
-7. DISCLAIMER: Educational/entertainment only, not medical advice
-
-TONE: Dark, mysterious, factual, engaging, personal
-PAIN POINT: {pain_point}
-OPTIONAL TRANSITIONS (use at most two, only where natural): {', '.join(transitions)}
-
-📝 SCENE REQUIREMENTS:
-
-WORD COUNT (HARD REQUIREMENT):
-- Total voiceover MUST be {min_w}-{max_w} words
-- Split into exactly {num_scenes} scenes
-- Each scene caption: {per_scene_lo}-{per_scene_hi} words
-- Each scene = 3-6 seconds of speech
-
-CAPTION QUALITY FOR RETENTION:
-- Start scene 1 with the hook; later scenes should continue naturally
-- Do not end every scene with "but", "yet", ellipses, or a cliffhanger
-- Use short, punchy sentences (5-10 words max per sentence)
-- Prefer concrete facts and clear explanations over artificial tension
-- NO filler words - every word must add value
-- Connect each scene to the viewer's personal experience
-
-🎨 VISUAL DESCRIPTION (CRITICAL FOR RETENTION):
-- "visual": Describe an image that is VISUALLY STIMULATING
-- Use words like: cinematic, high-contrast, macro-lens, motion blur, dark, moody
-- Each visual should be UNIQUE and DYNAMIC (no static images)
-
-SCENE FORMAT:
-For each scene, provide:
-- "visual": 5-8 words describing a CINEMATIC image
-- "caption": The EXACT natural spoken text (10-16 words; clear and personal)
-
-OUTPUT FORMAT:
-Return ONLY valid JSON, no other text:
-
-{{
-  "title": "Short catchy title (under 55 chars)",
-  "hook": "{hook_preference}",
-  "scenes": [
-    {{"visual": "...", "caption": "..."}},
-    ...
-  ],
-  "cta": "{cta}",
-  "description": "1-2 sentence video description"
-}}
-
-REMEMBER: Earn attention with a specific fact, clear payoff, and natural human delivery—not empty hype.
-"""
-    return prompt
+    from script_generator import _default_prompt
+    return _default_prompt(topic)
 
 
 def get_random_transition_hook() -> str:
