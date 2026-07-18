@@ -41,7 +41,7 @@ try:
     from scheduler import USAPeakTimeScheduler
     from anti_spam import AntiSpamSystem
     from seo_generator import generate_seo_package
-    from shorts_enhancer import build_shorts_report, generate_srt, autofix_too_fast_captions, score_hook
+    from shorts_enhancer import build_shorts_report, generate_srt, score_hook
     from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
     from trend_fetcher import get_trending_topic
 except ImportError as e:
@@ -174,12 +174,19 @@ class SKILLORPipeline:
                 if fixed_topic:
                     current_topic = fixed_topic
                 else:
-                    # Get trending topic
-                    current_topic = get_trending_topic(exclude=recent_topics)
-                
+                    # Production requires a real same-day external trend; the
+                    # selected source/URL is retained with the generated video.
+                    trend_record = get_trending_topic(
+                        exclude=recent_topics, return_metadata=True
+                    )
+                    current_topic = trend_record['topic']
+
                 logger.info(f"Attempt {attempt}/{MAX_SCRIPT_ATTEMPTS} for topic: {current_topic}")
 
                 result = self._generate_and_check_once(current_topic)
+                if not fixed_topic:
+                    result['script_data']['trend_source'] = trend_record.get('source')
+                    result['script_data']['trend_url'] = trend_record.get('source_url')
                 script_data = result['script_data']
 
                 # Hook quality check
@@ -206,14 +213,23 @@ class SKILLORPipeline:
                 logger.error(f"Attempt {attempt} failed: {e}")
                 continue
 
-        # If all attempts failed but we have a best attempt
+        # Never publish a "best" script that failed a mandatory gate. A missed
+        # upload is safer for channel retention and trust than a weak/duplicated
+        # Short reaching the public feed.
         if best_attempt:
-            logger.warning(f"Using best attempt with hook score: {best_attempt.get('hook_score', 0)}")
-            return best_attempt['script_data']
+            failures = []
+            if not best_attempt.get('quality_approved'):
+                failures.append('quality')
+            if not best_attempt.get('spam_ok'):
+                failures.append(f"spam={best_attempt.get('spam_level')}")
+            if best_attempt.get('hook_score', 0) < MIN_HOOK_SCORE:
+                failures.append(f"hook={best_attempt.get('hook_score', 0)}/{MIN_HOOK_SCORE}")
+            if not failures:
+                return best_attempt['script_data']
+            last_error = "best candidate rejected: " + ", ".join(failures)
 
-        # Complete failure
         raise RuntimeError(
-            f"All {MAX_SCRIPT_ATTEMPTS} script-generation attempts failed. "
+            f"All {MAX_SCRIPT_ATTEMPTS} script-generation attempts failed mandatory gates. "
             f"Last error: {last_error}"
         )
 
@@ -378,15 +394,14 @@ class SKILLORPipeline:
                 )
 
                 pacing = shorts_report.get('caption_pacing', {})
-                too_fast = [i for i in pacing.get('per_scene', []) if i.get('status') == 'too_fast']
+                # Never silently shorten captions after TTS: doing so creates
+                # subtitles that no longer match the spoken narration. A pacing
+                # failure must regenerate the script/audio as one consistent unit.
+                too_fast = [item for item in pacing.get('per_scene', []) if item.get('status') == 'too_fast']
                 if too_fast:
-                    script_data['scenes'] = autofix_too_fast_captions(
-                        script_data['scenes'], audio_segments
-                    )
-                    shorts_report = build_shorts_report(
-                        script_data,
-                        audio_segments,
-                        script_data.get('tags', [])
+                    raise RuntimeError(
+                        "Caption pacing is too fast; regenerate the script and voice together. "
+                        + "; ".join(pacing.get('issues', [])[:3])
                     )
 
                 script_data['shorts_report'] = shorts_report
@@ -431,7 +446,7 @@ class SKILLORPipeline:
                 thumb_path = generate_thumbnail(image_paths[0], thumb_text)
                 
                 # Pad video if slightly too short
-                target_min = float(os.environ.get("TARGET_MIN_SECONDS", "35"))
+                target_min = float(os.environ.get("TARGET_MIN_SECONDS", "20"))
                 min_seconds = max(0.0, target_min - 5.0)
                 logger.info(f"Checking video duration against minimum {min_seconds:.2f}s...")
                 
@@ -469,6 +484,8 @@ class SKILLORPipeline:
             self._save_video_history({
                 'title': script_data.get('title', 'Untitled'),
                 'topic': script_data.get('topic'),
+                'trend_source': script_data.get('trend_source'),
+                'trend_url': script_data.get('trend_url'),
                 'voiceover': script_data.get('voiceover', '')[:500],
                 'posted_at': datetime.now(timezone.utc).isoformat() if (upload_result.get('youtube_success') or upload_result.get('facebook_success')) else None,
                 'facebook_success': upload_result.get('facebook_success', False),
