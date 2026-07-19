@@ -152,7 +152,8 @@ jobs:
           REQUIRE_CLONED_VOICE: "true"
           MUSIC_VOLUME: "0.07"
           ENABLE_SCREENSHOT_FALLBACK: "false"
-          MIN_HOOK_SCORE: "70"
+          MIN_HOOK_SCORE: "85"
+          QUALITY_APPROVAL_THRESHOLD: "85"
           MAX_HOOK_SECONDS: "5.0"
           FALLBACK_ABORT_RATIO: "0.80"
           VIDEO_TOPIC: ${{ inputs.topic || '' }}
