@@ -12,6 +12,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+def _title_emoji(label: str) -> str:
+    """One consistent curiosity emoji, selected from the phenomenon type."""
+    lowered = label.lower()
+    if any(word in lowered for word in ("eye", "vision", "float")):
+        return "👁️"
+    if any(word in lowered for word in ("heart", "pulse", "blood")):
+        return "🫀"
+    if any(word in lowered for word in ("brain", "memory", "dream", "song", "deja")):
+        return "🧠"
+    if any(word in lowered for word in ("stomach", "hunger", "hiccup", "throat")):
+        return "😳"
+    return "😳"
+
+
 # (short title label, detailed topic wording, thumbnail text)
 PHENOMENA = [
     ("Eye Twitch", "an eyelid twitching randomly", "EYE TWITCH?"),
@@ -52,7 +66,7 @@ PHENOMENA = [
     ("Night Memories", "embarrassing memories returning at night", "WHY REMEMBER?"),
     ("Body Alarm", "waking up before your alarm", "BEFORE ALARM?"),
     ("Heartbeat Sound", "hearing your heartbeat at night", "HEART SOUND?"),
-    ("Fast Hunger", "getting hungry at the same time daily", "WHY HUNGRY?"),
+    ("Hunger Clock", "getting hungry at the same time daily", "HUNGRY AGAIN?"),
     ("Mood Music", "music changing your mood quickly", "MUSIC MOOD?"),
     ("Silent Discomfort", "silence feeling uncomfortable", "AWKWARD SILENCE?"),
     ("Name Notice", "your brain noticing your own name", "HEARD MY NAME?"),
@@ -85,9 +99,9 @@ def build_catalogue() -> list[dict]:
     number = 1
     for short_label, phenomenon, thumbnail_text in PHENOMENA:
         for angle in ANGLES:
-            # Body Glitch #001: Eye Twitch = five title words in YouTube's
-            # practical tokenization: Body / Glitch / 001 / Eye / Twitch.
-            title = f"Body Glitch #{number:03d}: {short_label}"
+            # Keep the public title short and human. The episode number remains in
+            # metadata/history, not in the viewer-facing YouTube title.
+            title = f"{short_label} {_title_emoji(short_label)}"
             records.append({
                 "series_number": number,
                 "series_title": title,
