@@ -11,7 +11,7 @@ sys.path.insert(0, str(SRC_DIR))
 from script_generator import _normalize_scenes, validate_script  # noqa: E402
 from seo_generator import generate_seo_package  # noqa: E402
 from shorts_enhancer import check_caption_pacing, score_hook  # noqa: E402
-from trend_fetcher import _deduplicate, _is_relevant  # noqa: E402
+from trend_fetcher import _deduplicate, _is_relevant, get_body_glitch_topics  # noqa: E402
 
 
 class ScriptPolicyTests(unittest.TestCase):
@@ -23,12 +23,14 @@ class ScriptPolicyTests(unittest.TestCase):
             "cta": "Follow for more science made simple.",
             "description": "Sleep helps your brain strengthen important memories.",
             "scenes": [
-                {"visual": "glowing brain during deep sleep", "caption": "Your brain saves important memories while sleeping."},
-                {"visual": "memory signals moving through neurons", "caption": "But how does your brain decide what to keep overnight?"},
-                {"visual": "student studying in a quiet room", "caption": "Without restful sleep, new information is harder to organize and recall."},
-                {"visual": "brain pathways strengthening overnight", "caption": "During deep sleep, important neural connections become stronger and more stable."},
-                {"visual": "calm sleeper with brain overlay", "caption": "That process helps turn today's learning into tomorrow's useful long-term memory."},
-                {"visual": "morning light over focused person", "caption": "So sleep is when your brain saves what matters most."},
+                {"visual": "glowing brain during deep sleep", "caption": "Your brain saves memories while sleeping."},
+                {"visual": "memory signals moving through neurons", "caption": "But how does your brain choose which moments stay important after a long day?"},
+                {"visual": "student studying in a quiet room", "caption": "Without enough sleep, new information can feel clear now but disappear much sooner tomorrow."},
+                {"visual": "brain pathways strengthening overnight", "caption": "During deep sleep, your brain replays recent experiences and strengthens the connections worth keeping."},
+                {"visual": "calm sleeper with brain overlay", "caption": "It also links related ideas together, making recall easier when you need those details."},
+                {"visual": "memory pathway becoming brighter", "caption": "This process is why rest can help learning feel stable after a full day."},
+                {"visual": "organized notes beside sleeping person", "caption": "The memory is not perfect, but sleep gives your brain time to organize it."},
+                {"visual": "morning light over focused person", "caption": "So sleep quietly saves the moments your waking brain might otherwise lose completely tomorrow."},
             ],
         })
 
@@ -36,9 +38,9 @@ class ScriptPolicyTests(unittest.TestCase):
         valid, issues = validate_script(self.script)
         self.assertTrue(valid, issues)
         words = len(self.script["voiceover"].split())
-        self.assertGreaterEqual(words, 60)
-        self.assertLessEqual(words, 78)
-        self.assertEqual(len(self.script["scenes"]), 6)
+        self.assertGreaterEqual(words, 104)
+        self.assertLessEqual(words, 118)
+        self.assertEqual(len(self.script["scenes"]), 8)
 
     def test_hook_passes_natural_hook_gate(self):
         self.assertGreaterEqual(score_hook(self.script)["score"], 70)
@@ -81,6 +83,12 @@ class TrendSafetyTests(unittest.TestCase):
             {"topic": "brain-science"},
         ])
         self.assertEqual(len(records), 1)
+
+    def test_body_glitch_catalogue_has_500_branded_topics(self):
+        records = get_body_glitch_topics()
+        self.assertEqual(len(records), 500)
+        self.assertEqual(records[0]["series_title"], "Body Glitch #001: Eye Twitch")
+        self.assertTrue(all(record["source"] == "body_glitch_series" for record in records))
 
 
 if __name__ == "__main__":
