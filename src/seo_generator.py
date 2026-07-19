@@ -27,7 +27,7 @@ import logging
 import random
 from typing import Dict, List
 
-from niche_strategy import generate_seo_tags, get_topic_category
+from niche_strategy import generate_seo_tags, get_topic_category, make_seo_title
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ def _normalise_tags(tags: List[str], limit: int = 3) -> List[str]:
     return clean
 
 
-def generate_upload_tags(topic: str, category: str, limit: int = 12) -> List[str]:
+def generate_upload_tags(topic: str, category: str, limit: int = 20) -> List[str]:
     """Return meaningful YouTube tag phrases, never grammar/filler tokens."""
     candidates = _topic_tag_phrases(topic, category)
     candidates.extend(_HIGH_VOLUME_TAGS.get(category, []))
@@ -421,6 +421,10 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
     chosen_title = script_data.get('series_title') or (
         max(title_options, key=_score_title) if title_options else script_data.get('title', 'Untitled')
     )
+    # Append a topic-relevant emoji (e.g. "Your Heart Skips Beats 🫀").
+    # make_seo_title() strips any existing emoji first, so this is safe to
+    # call even on an already-emoji'd series_title.
+    chosen_title = make_seo_title(chosen_title, topic)
     description = generate_description(script_data, tags)
     hashtags = generate_hashtags(topic, category)
     thumbnail_text = generate_thumbnail_text(script_data, chosen_title)
