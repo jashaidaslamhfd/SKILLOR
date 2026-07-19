@@ -588,7 +588,7 @@ BASE_TAGS = [
 # ============================================
 # 8. CONSTANTS
 # ============================================
-TARGET_WORD_RANGE = (104, 118)
+TARGET_WORD_RANGE = (96, 116)
 MAX_TAGS = 15
 MAX_TITLE_LENGTH = 55
 SCENES_PER_SCRIPT = 8  # Body Glitch 40-55 second series policy
