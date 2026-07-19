@@ -204,7 +204,12 @@ def gen_ai_horde(prompt, seed, scene_text=None):
             "https://aihorde.net/api/v2/generate/async",
             json={
                 "prompt": text,
-                "params": {"width": width, "height": height, "steps": 25, "n": 1},
+                "params": {
+                    "width": width, "height": height, "steps": 30, "n": 1,
+                    "sampler_name": "k_euler_a",
+                    "cfg_scale": 7,
+                },
+                "negative_prompt": "blurry, soft focus, low resolution, dull, dark, grainy, distorted, watermark, text, logo",
                 "nsfw": False,
                 "censor_nsfw": True,
             },
@@ -379,3 +384,4 @@ def available_providers():
     """Sirf wo providers return karta hai jinke required env vars set hain
     (no-key providers hamesha available hote hain)."""
     return [p for p in PROVIDER_REGISTRY if all(os.environ.get(k) for k in p["env_keys"])]
+              
