@@ -100,7 +100,7 @@ class AntiSpamSystem:
         
         current_hash = self._get_content_hash(video)
         
-        for prev_video in previous_videos[-10:]:  # Check last 10 videos
+        for prev_video in previous_videos:  # full channel history, not a recent window
             prev_hash = self._get_content_hash(prev_video)
             
             if current_hash == prev_hash:
@@ -134,7 +134,7 @@ class AntiSpamSystem:
         current_title = video.get('title', '').lower().strip()
         current_desc = video.get('voiceover', '')[:100].lower().strip()
         
-        for prev_video in previous_videos[-5:]:
+        for prev_video in previous_videos:  # full channel history
             prev_title = prev_video.get('title', '').lower().strip()
             prev_desc = prev_video.get('voiceover', '')[:100].lower().strip()
             
