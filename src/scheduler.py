@@ -94,7 +94,7 @@ class USAPeakTimeScheduler:
         
         return {
             'publishAt': utc_time.isoformat(),
-            'privacyStatus': 'public',
+            'privacyStatus': 'private',  # review mode; uploader controls final visibility
             'releaseTime': utc_time.isoformat(),
             'timezone': 'America/New_York',
             'localTime': posting_time.strftime('%Y-%m-%d %H:%M:%S'),
