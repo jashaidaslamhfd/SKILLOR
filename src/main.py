@@ -63,6 +63,14 @@ MAX_HOOK_SECONDS = float(os.environ.get("MAX_HOOK_SECONDS", "5.0"))
 # Tracked repository state is durable across Actions runs; generated media
 # remains in output/ and is intentionally not committed.
 VIDEO_HISTORY_PATH = os.environ.get("VIDEO_HISTORY_PATH", "data/video_history.json")
+# Cross-video image/clip hash ledger. Without this, image_generator.py only
+# dedupes scenes WITHIN a single video (used_hashes/used_fallbacks are fresh
+# sets per run) — the exact same fallback image or stock clip could then
+# reappear in video #1 and video #200 with nothing to stop it. This file
+# persists every hash/URL ever used so reuse is blocked channel-wide.
+MEDIA_HASH_HISTORY_PATH = os.environ.get("MEDIA_HASH_HISTORY_PATH", "data/media_hash_history.json")
+# Cap on how many hashes/URLs we remember, so the ledger doesn't grow forever.
+MAX_MEDIA_HASH_HISTORY = int(os.environ.get("MAX_MEDIA_HASH_HISTORY", "20000"))
 
 
 class SKILLORPipeline:
@@ -75,7 +83,9 @@ class SKILLORPipeline:
             self.scheduler = USAPeakTimeScheduler()
             self.anti_spam = AntiSpamSystem()
             self.video_history = self._load_video_history()
+            self.media_hash_history = self._load_media_hash_history()
             logger.info(f"Loaded {len(self.video_history)} videos from history")
+            logger.info(f"Loaded {len(self.media_hash_history)} known media hashes/URLs")
         except Exception as e:
             logger.error(f"Failed to initialize pipeline: {e}")
             raise
@@ -94,6 +104,33 @@ class SKILLORPipeline:
                 logger.warning(f"Could not load history: {e}")
                 return []
         return []
+
+    def _load_media_hash_history(self) -> set:
+        """Load the cross-video media hash/URL ledger (dedupe across the
+        whole channel, not just within one video)."""
+        path = MEDIA_HASH_HISTORY_PATH
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                return set(data) if isinstance(data, list) else set()
+            except Exception as e:
+                logger.warning(f"Could not load media hash history: {e}")
+                return set()
+        return set()
+
+    def _save_media_hash_history(self, hashes: set):
+        """Persist the media hash/URL ledger, trimmed to the most recent
+        MAX_MEDIA_HASH_HISTORY entries so it doesn't grow unbounded."""
+        try:
+            os.makedirs(os.path.dirname(MEDIA_HASH_HISTORY_PATH) or ".", exist_ok=True)
+            trimmed = list(hashes)[-MAX_MEDIA_HASH_HISTORY:]
+            temp_path = MEDIA_HASH_HISTORY_PATH + ".tmp"
+            with open(temp_path, 'w') as f:
+                json.dump(trimmed, f)
+            os.replace(temp_path, MEDIA_HASH_HISTORY_PATH)
+        except Exception as e:
+            logger.error(f"Failed to save media hash history: {e}")
 
     def _save_video_history(self, video_data: dict):
         """Save video history to file"""
@@ -257,8 +294,11 @@ class SKILLORPipeline:
         image_paths = []
         image_sources = []
         media_types = []
-        used_hashes = set()
-        used_fallbacks = set()
+        # Seed with the full channel history so a scene can't reuse a hash or
+        # fallback URL that already appeared in ANY earlier video, not just
+        # earlier scenes in this same video.
+        used_hashes = set(self.media_hash_history)
+        used_fallbacks = {h for h in self.media_hash_history if isinstance(h, str) and h.startswith(("http://", "https://"))}
 
         total_scenes = len(script_data['scenes'])
         logger.info(f"Generating images for {total_scenes} scenes...")
@@ -285,6 +325,13 @@ class SKILLORPipeline:
 
         if len(image_paths) != total_scenes:
             raise RuntimeError(f"Generated {len(image_paths)} images for {total_scenes} scenes")
+
+        # Merge this video's hashes/URLs into the channel-wide ledger and
+        # persist immediately, so even a crash later in the pipeline still
+        # protects future videos from reusing this media.
+        self.media_hash_history |= used_hashes
+        self.media_hash_history |= used_fallbacks
+        self._save_media_hash_history(self.media_hash_history)
 
         return image_paths, image_sources, media_types
 
