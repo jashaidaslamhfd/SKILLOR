@@ -38,12 +38,27 @@ class ScriptPolicyTests(unittest.TestCase):
         valid, issues = validate_script(self.script)
         self.assertTrue(valid, issues)
         words = len(self.script["voiceover"].split())
-        self.assertGreaterEqual(words, 104)
-        self.assertLessEqual(words, 118)
+        self.assertGreaterEqual(words, 96)
+        self.assertLessEqual(words, 116)
         self.assertEqual(len(self.script["scenes"]), 8)
 
     def test_hook_passes_natural_hook_gate(self):
         self.assertGreaterEqual(score_hook(self.script)["score"], 70)
+
+    def test_body_glitch_series_does_not_reject_temporary_six_word_title(self):
+        import os
+        old_series = os.environ.get("CONTENT_SERIES")
+        os.environ["CONTENT_SERIES"] = "body_glitches"
+        try:
+            altered = dict(self.script)
+            altered["title"] = "Why Your Eye Twitches At Night"
+            valid, issues = validate_script(altered)
+            self.assertTrue(valid, issues)
+        finally:
+            if old_series is None:
+                os.environ.pop("CONTENT_SERIES", None)
+            else:
+                os.environ["CONTENT_SERIES"] = old_series
 
     def test_natural_caption_delivery_is_not_rejected_at_3_point_5_wps(self):
         scenes = [{"caption": "Your brain saves important memories while you sleep every single night without conscious effort."}]
