@@ -139,7 +139,7 @@ jobs:
           REQUIRE_DAILY_TREND: "false"
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          FB_UPLOAD_ENABLED: "false"
+          FB_UPLOAD_ENABLED: "true"
           # OPTIMIZED FOR RETENTION & TRENDS
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
@@ -188,4 +188,3 @@ jobs:
             pipeline.log
           if-no-files-found: ignore
           retention-days: 7
-          
