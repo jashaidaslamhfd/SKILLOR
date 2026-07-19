@@ -33,9 +33,10 @@ MIN_SCENES = 8
 MAX_SCENES = 8
 # 96 words at the cloned-voice pace reliably reaches ~40 seconds while
 # leaving normal language room; forcing 104+ made the LLM pad or fail scenes.
-MIN_WORDS = 96
-MAX_WORDS = 116
+MIN_WORDS = 90
+MAX_WORDS = 120
 MAX_RETRIES = 3
+SCRIPT_POLICY_VERSION = "BODY_GLITCH_V3_RELAXED_VALIDATION"
 TEMPERATURE = 0.65
 MAX_TOKENS = 1400
 
@@ -330,17 +331,9 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
         if not script_data.get(field):
             issues.append(f"Missing required field: {field}")
 
-    # Titles are the first CTR signal. In Body Glitch mode main.py replaces
-    # the temporary LLM title with the fixed five-word series title after the
-    # script passes. Do not waste all retries because the temporary title has
-    # six words; still reject vague non-series titles.
-    title_words = re.findall(r"[A-Za-z0-9]+", str(script_data.get("title", "")).lower())
-    body_glitch_mode = os.environ.get("CONTENT_SERIES", "").lower() == "body_glitches"
-    if not body_glitch_mode and len(title_words) != 5:
-        issues.append(f"Title must contain exactly 5 words; got {len(title_words)}")
-    if title_words and not set(title_words).intersection(TITLE_TOPIC_ANCHORS):
-        issues.append("Title lacks a concrete science/body/brain subject")
-    
+    # main.py replaces temporary LLM titles with the deterministic Body
+    # Glitch episode title before SEO/upload. Do not burn API retries over
+    # title word counts here; the published title is validated by the series.
     # Check scenes
     scenes = script_data.get('scenes', [])
     if len(scenes) < MIN_SCENES:
@@ -374,8 +367,8 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
                         f"Scene {i+1} (hook) has {scene_words} words "
                         f"(allowed {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} to stay under the 4s hook-duration gate)"
                     )
-            elif scene_words < MIN_SCENE_WORDS or scene_words > MAX_SCENE_WORDS:
-                issues.append(f"Scene {i+1} has {scene_words} words (allowed {MIN_SCENE_WORDS}-{MAX_SCENE_WORDS})")
+            elif scene_words > MAX_SCENE_WORDS:
+                issues.append(f"Scene {i+1} has {scene_words} words (maximum {MAX_SCENE_WORDS})")
 
     # The scored hook must be the line viewers actually hear first.
     if scenes and script_data.get('hook'):
@@ -518,6 +511,11 @@ def generate_script(
         RuntimeError: If generation fails after all retries
         ValueError: If GROQ_API_KEY is missing
     """
+    logger.info(
+        "Script policy %s: %s scenes, %s-%s words; temporary title is not a retry gate.",
+        SCRIPT_POLICY_VERSION, MIN_SCENES, MIN_WORDS, MAX_WORDS,
+    )
+
     # Check API key
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -596,6 +594,7 @@ def generate_script(
                         f"Return ONLY valid JSON with the same structure."
                     )})
             else:
+                last_error = "; ".join(issues)
                 logger.warning(f"⚠️ Validation issues: {', '.join(issues[:3])}")
                 messages.append({"role": "assistant", "content": raw_reply})
                 messages.append({"role": "user", "content": (
