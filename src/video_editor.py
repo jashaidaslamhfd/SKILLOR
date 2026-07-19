@@ -740,7 +740,18 @@ def generate_thumbnail(image_path: str, title: str, output_path: str = "output/t
     THUMB_W, THUMB_H = 1080, 1920
     canvas = Image.new("RGB", (THUMB_W, THUMB_H), bg_color)
     
-    src = Image.open(image_path).convert("RGB")
+    # First scene may be an actual Pexels/Pixabay MP4 B-roll clip. Extract a
+    # clean early frame for the upload thumbnail instead of trying to decode
+    # an MP4 with Pillow (which would crash after an otherwise good render).
+    if str(image_path).lower().endswith((".mp4", ".mov", ".m4v", ".webm")):
+        preview = VideoFileClip(image_path, audio=False)
+        try:
+            frame_time = min(max(preview.duration * 0.2, 0.05), max(preview.duration - 0.05, 0.05))
+            src = Image.fromarray(preview.get_frame(frame_time)).convert("RGB")
+        finally:
+            preview.close()
+    else:
+        src = Image.open(image_path).convert("RGB")
 
     # ✅ Priority: Face zoom (focus on center 70% of image)
     src_ratio = src.width / src.height
