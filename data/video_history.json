@@ -43,5 +43,20 @@
     "predicted_ctr": 7.8,
     "hook_score": 70,
     "predicted_retention": 0.615
+  },
+  {
+    "content_fingerprint": "db78717f0ac3edd048c63da74b8594df26fa409657b65d548c9eea7329bb78f1",
+    "title": "Cracking Knees \u00f0\u0178\u02dc\u00b3 \ud83e\uddb5",
+    "topic": "your knees cracking when you move",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "Have you ever wondered why knees crack when. It's a common phenomenon, but what's actually happening in your joints? Many people think it's a sign of wear and tear or injury, but that's not always. When you move your joints, you're creating pressure changes that release gas bubbles in the fluid. These bubbles then pop, creating the characteristic cracking sound. This process is completely normal and harmless, unless you experience persistent pain or swelling. So, the next time you hear your knee",
+    "posted_at": "2026-07-19T15:04:49.047803+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "bMkH0kI3V8Y",
+    "seo_score": 78,
+    "predicted_ctr": 7.1,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
