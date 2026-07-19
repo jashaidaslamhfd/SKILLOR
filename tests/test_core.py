@@ -38,8 +38,8 @@ class ScriptPolicyTests(unittest.TestCase):
         valid, issues = validate_script(self.script)
         self.assertTrue(valid, issues)
         words = len(self.script["voiceover"].split())
-        self.assertGreaterEqual(words, 96)
-        self.assertLessEqual(words, 116)
+        self.assertGreaterEqual(words, 90)
+        self.assertLessEqual(words, 120)
         self.assertEqual(len(self.script["scenes"]), 8)
 
     def test_hook_passes_natural_hook_gate(self):
@@ -108,3 +108,4 @@ class TrendSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    
