@@ -8,10 +8,10 @@ on:
         required: false
         type: string
   schedule:
-    # Six UTC triggers cover New York daylight-saving changes. The gate step
-    # below runs the expensive pipeline only at 12:00, 17:00 and 21:00 in
-    # America/New_York, producing exactly three private review videos/day.
-    - cron: "0 1,2,16,17,21,22 * * *"
+    # Two UTC triggers cover daylight-saving changes. The gate runs exactly
+    # once at 17:00 America/New_York: one high-quality test video/day while
+    # the channel rebuilds its audience signal.
+    - cron: "0 21,22 * * *"
 
 permissions:
   # Required to persist durable topic/upload/analytics state in data/.
@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Gate the run to three New York publishing windows
+      - name: Gate the run to one New York quality window
         id: gate
         shell: bash
         run: |
@@ -38,7 +38,7 @@ jobs:
           fi
           ny_hour="$(TZ=America/New_York date +%H)"
           case "$ny_hour" in
-            12|17|21) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
+            17) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -85,6 +85,10 @@ jobs:
         if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
+          # Keep the 500-topic catalogue synchronized with its generator.
+          # This prevents an old committed JSON catalogue from producing old
+          # numbered titles after the title strategy changes.
+          python scripts/generate_body_glitch_topics.py
           python -m compileall -q src scripts tests
           python -m unittest discover -s tests -v
 
@@ -93,16 +97,13 @@ jobs:
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           set -euo pipefail
-          for secret_name in GROQ_API_KEY YOUTUBE_API_KEY; do
-            if [ -z "${!secret_name:-}" ]; then
-              echo "::error::${secret_name} repository secret is missing. Daily trend-only publishing requires it."
-              exit 1
-            fi
-          done
-          echo "Reddit OAuth is optional. Google Trends RSS + YouTube Data API are the required trend sources."
+          if [ -z "${GROQ_API_KEY:-}" ]; then
+            echo "::error::GROQ_API_KEY repository secret is missing."
+            exit 1
+          fi
+          echo "YouTube Data API and Reddit OAuth are optional trend-inspiration sources."
 
       - name: Generate and upload Short
         if: steps.gate.outputs.should_run == 'true'
@@ -132,13 +133,16 @@ jobs:
           YT_MADE_FOR_KIDS: "false"
           # User-selected safety mode: videos upload privately for review.
           YT_PRIVACY_STATUS: "private"
-          REQUIRE_DAILY_TREND: "true"
+          # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
+          CONTENT_SERIES: "body_glitches"
+          TOPIC_STRATEGY: "body_glitch_series"
+          REQUIRE_DAILY_TREND: "false"
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           FB_UPLOAD_ENABLED: "false"
           # OPTIMIZED FOR RETENTION & TRENDS
-          TARGET_MIN_SECONDS: "20"
-          TARGET_MAX_SECONDS: "35"
+          TARGET_MIN_SECONDS: "40"
+          TARGET_MAX_SECONDS: "55"
           # Natural, clear creator narration; slightly slower than the raw
           # model without the artificial dramatic pace.
           CHATTERBOX_TEMPO: "0.96"
