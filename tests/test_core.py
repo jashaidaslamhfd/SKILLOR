@@ -102,7 +102,7 @@ class TrendSafetyTests(unittest.TestCase):
     def test_body_glitch_catalogue_has_500_branded_topics(self):
         records = get_body_glitch_topics()
         self.assertEqual(len(records), 500)
-        self.assertEqual(records[0]["series_title"], "Eye Twitch 👁️")
+        self.assertEqual(records[0]["series_title"], "Eye Twitch ðŸ‘ï¸")
         self.assertTrue(all(record["source"] == "body_glitch_series" for record in records))
 
 
