@@ -13,5 +13,20 @@
     "predicted_ctr": 8.0,
     "hook_score": 70,
     "predicted_retention": 0.615
+  },
+  {
+    "content_fingerprint": "3eeef67d90f2096c29dd40c14e6d874d7ae91a73578ecca69f468eebcc49c677",
+    "title": "Body Glitch #388: Fast Hunger",
+    "topic": "The body signal behind getting hungry at the same time daily",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "It's 11 am, and suddenly we crave food. But why do we feel hungry at the same time every day? Is it because of our busy schedule or something else? Our stomach has a natural circadian rhythm that regulates hunger and digestion. The suprachiasmatic nucleus in our brain controls our internal clock and sends signals to the stomach. When our body expects food at the same time every day, it prepares the stomach. This is why we feel hungry at the same time daily, due to our body's internal. Our body's",
+    "posted_at": "2026-07-19T04:09:09.072317+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "aOSF9iJ4eV0",
+    "seo_score": 92,
+    "predicted_ctr": 8.0,
+    "hook_score": 70,
+    "predicted_retention": 0.615
   }
 ]
