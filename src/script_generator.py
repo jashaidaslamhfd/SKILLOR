@@ -31,8 +31,10 @@ logger = logging.getLogger(__name__)
 # enough room for a complete, accurate explanation without rushed claims.
 MIN_SCENES = 8
 MAX_SCENES = 8
-MIN_WORDS = 104
-MAX_WORDS = 118
+# 96 words at the cloned-voice pace reliably reaches ~40 seconds while
+# leaving normal language room; forcing 104+ made the LLM pad or fail scenes.
+MIN_WORDS = 96
+MAX_WORDS = 116
 MAX_RETRIES = 3
 TEMPERATURE = 0.65
 MAX_TOKENS = 1400
@@ -40,7 +42,7 @@ MAX_TOKENS = 1400
 # A fast, clear opening that comfortably fits in the first 2–3 seconds.
 HOOK_MIN_WORDS = 6
 HOOK_MAX_WORDS = 8
-MIN_SCENE_WORDS = 14
+MIN_SCENE_WORDS = 12
 MAX_SCENE_WORDS = 16
 
 # A title such as "Why Got Fired Matters" is grammatically short but gives
@@ -328,10 +330,13 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
         if not script_data.get(field):
             issues.append(f"Missing required field: {field}")
 
-    # Titles are the first CTR signal. Enforce the promised five-word mobile
-    # format and a concrete science subject, not vague trend/news phrasing.
+    # Titles are the first CTR signal. In Body Glitch mode main.py replaces
+    # the temporary LLM title with the fixed five-word series title after the
+    # script passes. Do not waste all retries because the temporary title has
+    # six words; still reject vague non-series titles.
     title_words = re.findall(r"[A-Za-z0-9]+", str(script_data.get("title", "")).lower())
-    if len(title_words) != 5:
+    body_glitch_mode = os.environ.get("CONTENT_SERIES", "").lower() == "body_glitches"
+    if not body_glitch_mode and len(title_words) != 5:
         issues.append(f"Title must contain exactly 5 words; got {len(title_words)}")
     if title_words and not set(title_words).intersection(TITLE_TOPIC_ANCHORS):
         issues.append("Title lacks a concrete science/body/brain subject")
