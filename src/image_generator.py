@@ -38,8 +38,9 @@ REQUEST_TIMEOUT = 30
 _fallback_lock = threading.Lock()
 
 DARK_STYLE_SUFFIX = (
-    "clean cinematic documentary lighting, realistic human detail, "
-    "natural color, high detail, vertical composition, no text, no watermark"
+    "clean cinematic documentary lighting, realistic human detail, sharp focus, "
+    "crisp high-resolution detail, natural color, professional camera quality, "
+    "vertical composition, no text, no watermark, not blurry, not dull"
 )
 
 FALLBACK_POOL_DIR = "assets/fallback_images"
@@ -300,12 +301,12 @@ def _generate_one(index, scene, used_hashes: set, used_fallbacks: set):
     scene_text = _scene_text(scene)
 
     layers = [
-        # AI Horde sits first in PROVIDER_REGISTRY and is always attempted
-        # before any stock-media fallback. Stock clips then give scenes real
-        # motion instead of the reused-static-image look.
-        ("AI-Horde-first",        lambda: _layer_ai_providers(index, scene_text, ["AI-Horde"])),
-        ("Pexels-video",          lambda: _layer_pexels_video(index, scene_text, used_fallbacks)),
-        ("Pixabay-video",         lambda: _layer_pixabay_video(index, scene_text, used_fallbacks)),
+        # First use licensed stock B-roll (Pexels, then Pixabay) for genuine motion.
+        # If no suitable clip exists, generate a unique AI Horde visual before
+        # any other image source, reducing repeated-stock-image dependence.
+        ("Pexels-video-first",    lambda: _layer_pexels_video(index, scene_text, used_fallbacks)),
+        ("Pixabay-video-second",  lambda: _layer_pixabay_video(index, scene_text, used_fallbacks)),
+        ("AI-Horde-image",        lambda: _layer_ai_providers(index, scene_text, ["AI-Horde"])),
         ("Other-AI-image",        lambda: _layer_ai_providers(index, scene_text, [
             "Pollinations-flux", "Pollinations-turbo", "HuggingFace", "Gemini",
             "DeepAI", "ModelsLab", "Replicate",
