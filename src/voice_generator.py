@@ -185,10 +185,13 @@ def _get_chatterbox():
 
 
 def _apply_tempo(audio: np.ndarray, sr: int, tempo: float) -> np.ndarray:
-    """Pitch-preserving speed change via ffmpeg's atempo filter. Writes to a
-    temp wav, runs ffmpeg, reads the result back. Returns the original
-    audio unchanged if ffmpeg isn't available or the call fails, so a
-    pacing tweak can never be the reason a whole segment fails."""
+    """Apply natural voice finishing plus pitch-preserving tempo adjustment.
+
+    A gentle high/low-pass removes DC/rumble and harsh ultrasonic artifacts;
+    a limiter keeps every independently generated scene at a consistent peak.
+    The filter is deliberately light—no aggressive denoise or reverb that
+    would make the creator clone sound synthetic. Returns original audio if
+    ffmpeg processing fails."""
     if tempo == 1.0:
         return audio
     try:
@@ -202,7 +205,11 @@ def _apply_tempo(audio: np.ndarray, sr: int, tempo: float) -> np.ndarray:
             out_path = os.path.join(tmpdir, "out.wav")
             sf.write(in_path, audio, sr)
             result = subprocess.run(
-                [ffmpeg_exe, "-y", "-i", in_path, "-filter:a", f"atempo={tempo}", out_path],
+                [
+                    ffmpeg_exe, "-y", "-i", in_path, "-filter:a",
+                    f"atempo={tempo},highpass=f=65,lowpass=f=15000,alimiter=limit=0.95",
+                    out_path,
+                ],
                 capture_output=True, timeout=30,
             )
             if result.returncode != 0 or not os.path.exists(out_path):
