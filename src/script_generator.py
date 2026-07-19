@@ -1,756 +1,459 @@
 """
-Script Generator Module for SKILLOR Pipeline
-FULLY FIXED - JSON Cleaning + Native Tone + Retention Optimization
+src/seo_generator.py
+
+PRD "AI SEO Generator" feature, adapted to SKILLOR's dark-facts Shorts niche.
+Pure post-processing on top of an already-generated script_data dict — no
+extra LLM calls, so it's free and instant to run for every video.
+
+Produces:
+  - title_options: 5 SEO-friendly title variants (different hook angles)
+  - description: CTR-optimized YouTube description (reuses the same shape
+    uploader.py already builds, factored out here so it's the single
+    source of truth)
+  - hashtags: deduplicated, ranked hashtag list
+  - pinned_comment: a comment worth auto-pinning post-upload to seed
+    engagement (main.py/uploader.py can pin it via commentThreads.insert)
+  - playlist_suggestion: which existing playlist this video best fits
+  - seo_score: 0-100 with a breakdown, so low-scoring videos can be
+    flagged the same way quality_checker flags weak scripts
+
+Nothing here calls the network or an LLM - it's deterministic string/rule
+based scoring, matching the pattern already used in quality_checker.py and
+anti_spam.py.
 """
 
-import os
-import json
-import time
-import logging
 import re
-from typing import Dict, List, Optional, Tuple
-try:
-    from groq import Groq, BadRequestError
-except ImportError:  # lets offline validation/tests import this module
-    Groq = None
-    BadRequestError = Exception
+import logging
+import random
+from typing import Dict, List
 
-# ============================================
-# LOGGING CONFIGURATION
-# ============================================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from niche_strategy import generate_seo_tags, get_topic_category, make_seo_title
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ============================================
-# CONSTANTS
-# ============================================
-# One unified policy for a 40–55 second Body Glitch Short. Eight scenes give
-# enough room for a complete, accurate explanation without rushed claims.
-MIN_SCENES = 8
-MAX_SCENES = 8
-# 96 words at the cloned-voice pace reliably reaches ~40 seconds while
-# leaving normal language room; forcing 104+ made the LLM pad or fail scenes.
-MIN_WORDS = 90
-MAX_WORDS = 120
-MAX_RETRIES = 3
-SCRIPT_POLICY_VERSION = "BODY_GLITCH_V3_RELAXED_VALIDATION"
-TEMPERATURE = 0.65
-MAX_TOKENS = 1400
+TITLE_MAX_LEN = 60
+TITLE_MAX_WORDS = 5  # concise mobile-first titles, per channel strategy
+DESCRIPTION_MAX_LEN = 5000  # YouTube hard limit
+PINNED_COMMENT_MAX_LEN = 200
 
-# A fast, clear opening that comfortably fits in the first 2–3 seconds.
-HOOK_MIN_WORDS = 6
-HOOK_MAX_WORDS = 8
-MIN_SCENE_WORDS = 12
-MAX_SCENE_WORDS = 16
-
-# A title such as "Why Got Fired Matters" is grammatically short but gives
-# viewers no scientific subject. Require a concrete channel-relevant anchor.
-TITLE_TOPIC_ANCHORS = {
-    "brain", "body", "sleep", "memory", "heart", "eyes", "eye", "gut",
-    "nerve", "hormone", "cell", "blood", "immune", "health", "science",
-    "space", "nasa", "planet", "ocean", "physics", "technology", "robot",
-    "ai", "anatomy", "biology", "psychology", "genetics", "virus",
+# Existing playlists this channel maintains (edit to match your real
+# playlist names/IDs - used only for suggestion text, not an API call).
+PLAYLISTS_BY_CATEGORY = {
+    "Brain": "Dark Brain Facts",
+    "Body": "Dark Body Facts",
+    "Mystery": "Body Mysteries",
+    "Health": "Health & Science Shorts",
 }
 
-# ============================================
-# 1. SYSTEM PROMPT (NATIVE TONE + RETENTION)
-# ============================================
+# Short title frames. ``generate_title_options`` only uses a frame when it
+# remains grammatical after enforcing the channel's five-word maximum.
+_TITLE_TEMPLATES = (
+    "Why {topic} Matters",
+    "How {topic} Works",
+    "{topic} Explained Simply",
+    "The Science Of {topic}",
+)
 
-def _get_system_prompt() -> str:
-    """Instructions shared by every script request.
+_TITLE_STOP_WORDS = {
+    "a", "an", "and", "are", "at", "does", "do", "for", "from", "helps",
+    "how", "in", "is", "it", "make", "of", "on", "the", "this", "to", "what",
+    "when", "why", "with", "your", "you",
+}
 
-    The aim is clarity and earned curiosity, not medical fear, fake urgency or
-    recycled clickbait. A trend is a topic signal, never proof of a claim.
+
+# HIGH-VOLUME TAGS BY CATEGORY
+_HIGH_VOLUME_TAGS = {
+    "Brain": ["neuroscience", "brainfacts", "mindblowing", "psychology", "brainpower", "cognitivescience"],
+    "Body": ["humanbody", "anatomy", "healthfacts", "biology", "physiology", "bodysecrets"],
+    "Mystery": ["mystery", "unsolved", "creepyfacts", "paranormal", "weirdfacts", "conspiracy"],
+    "Health": ["healthtips", "wellness", "medicalfacts", "science", "healthyliving", "nutrition"],
+}
+
+# TRENDING TAGS (YouTube Shorts specific)
+_TRENDING_TAGS = ["shorts", "viralfacts", "didyouknow", "interestingfacts", "education", "sciencefacts"]
+
+
+def _title_words(value: str) -> List[str]:
+    """Return readable title tokens without punctuation-only fragments."""
+    return re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?", value or "")
+
+
+def _five_word_title(value: str, *, fallback: str = "Science Made Simple Today") -> str:
+    """Create a clean title of no more than five words and 60 characters.
+
+    Truncating by word—not character—prevents ugly cut-off mobile titles. A
+    script title is preferred because it carries the video's actual angle.
     """
-    return """You write concise, natural American-English YouTube Shorts about
-science, the human body and the brain for a general adult audience.
-
-NON-NEGOTIABLE QUALITY RULES:
-- Explain one verified, useful idea per video in simple everyday English.
-- Make a specific curiosity promise in the opening, then fully answer it.
-- Never invent studies, statistics, quotes, diagnoses, cures, dangers or advice.
-- Avoid fear bait, "doctors don't want you to know", "secret", fake urgency,
-  unsupported certainty and repetitive AI-sounding phrases.
-- Every scene must add new information. Do not repeat the hook or pad length.
-- Write for speech: short sentences, concrete words, smooth transitions.
-- Use a natural follow CTA only as metadata; do not force it into narration.
-- Return valid JSON only—no Markdown and no commentary.
-"""
+    words = _title_words(value)[:TITLE_MAX_WORDS]
+    if not words:
+        words = _title_words(fallback)[:TITLE_MAX_WORDS]
+    return " ".join(words)[:TITLE_MAX_LEN].strip()
 
 
-# ============================================
-# 2. PROMPT GENERATION
-# ============================================
+def _topic_keywords(topic: str, limit: int = 2) -> str:
+    """Extract a grammatical short subject for title frames.
 
-def _default_prompt(topic: str) -> str:
-    """Build one internally consistent short-form script brief."""
-    body_glitch_mode = os.environ.get("CONTENT_SERIES", "").lower() == "body_glitches"
-    series_rules = """
-BODY GLITCH SERIES RULES:
-- Cover one familiar, low-risk everyday body or brain phenomenon only.
-- Use a calm, curious, trusted-science tone; never call it deadly, dark,
-  scary, a diagnosis, a cure, or a treatment.
-- Explain what is commonly happening, then give a simple safe takeaway.
-- If relevant, say persistent, severe, new or worrying symptoms deserve a
-  qualified clinician's advice. Do not give medical instructions.
-""" if body_glitch_mode else ""
-    return f"""
-Create one original 40–55 second YouTube Short on this topic:
-TOPIC: {topic}
-{series_rules}
-
-Use EXACTLY eight scenes and return the JSON schema below.
-
-STORY ARC:
-1. HOOK — scene 1; 6–8 words. State the surprising everyday body glitch.
-2. SUSPENSE — scene 2; show why the answer matters and open one honest question.
-3. PROBLEM — scene 3; state the relatable confusion or misconception.
-4. EXPLANATION — scenes 4–5; explain the mechanism in simple, connected steps.
-5. NORMAL VS NOTE — scene 6; explain the normal context without diagnosing.
-6. SOLUTION / PAYOFF — scene 7; give the clear science-based answer.
-7. LOOP-BACK — scene 8; connect the payoff to the opening idea so it feels complete.
-
-HARD FORMAT RULES:
-- Total spoken captions: {MIN_WORDS}–{MAX_WORDS} words.
-- Scene 1: {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} words. Scenes 2–8: {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} words each.
-- `hook` must match scene 1 caption exactly.
-- Every scene must have a distinct 5–12 word visual description with no text, logos or UI.
-- Title: exactly five simple, specific words. Do not use generic hype, emojis or fake urgency.
-- `thumbnail_text`: 2–4 clear words that complement—not repeat—the title.
-- `cta`: one brief, natural follow/subscribe prompt. It is metadata, not narration.
-- `description`: one accurate sentence summarising the real payoff.
-
-JSON ONLY:
-{{
-  "title": "...",
-  "thumbnail_text": "...",
-  "hook": "...",
-  "scenes": [
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}},
-    {{"visual": "...", "caption": "..."}}
-  ],
-  "cta": "...",
-  "description": "..."
-}}
-"""
-
-
-# ============================================
-# 3. JSON CLEANING FUNCTION
-# ============================================
-
-def _clean_json_response(raw_reply: str) -> Dict:
+    Common science pairs get a natural phrase instead of raw keyword soup such
+    as “Sleep Brain”.
     """
-    Cleans and extracts JSON from LLM response.
-    Handles markdown code blocks, extra text, and malformed JSON.
+    words = [w.lower() for w in _title_words(topic) if w.lower() not in _TITLE_STOP_WORDS and len(w) > 2]
+    word_set = set(words)
+    if "sleep" in word_set and ({"memory", "memories"} & word_set):
+        return "Sleep And Memory"
+    if "brain" in word_set and "sleep" in word_set:
+        return "Sleep And Your Brain"
+    if "brain" in word_set:
+        return "Your Brain"
+    if "body" in word_set:
+        return "Your Body"
+    return " ".join(words[:limit]).title() or "Science Facts"
+
+
+def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[str]:
+    """Return topic-relevant, mobile-readable titles of at most five words."""
+    base_title = script_data.get("title") or topic
+    keyword_phrase = _topic_keywords(topic)
+    templates = _TITLE_TEMPLATES
+    if " And " in keyword_phrase:
+        # Compound subjects take “work”, not “works”.
+        templates = tuple(
+            "How {topic} Work" if template == "How {topic} Works" else template
+            for template in _TITLE_TEMPLATES
+        )
+    candidates = [
+        base_title,
+        topic,
+        *[template.format(topic=keyword_phrase) for template in templates],
+    ]
+    options: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        title = _five_word_title(candidate)
+        key = title.lower()
+        if title and key not in seen:
+            seen.add(key)
+            options.append(title)
+        if len(options) >= n:
+            break
+    return options
+
+
+def _topic_tag_phrases(topic: str, category: str) -> List[str]:
+    """Build useful searchable tag phrases and discard grammar/filler words."""
+    words = [w.lower() for w in _title_words(topic) if w.lower() not in _TITLE_STOP_WORDS and len(w) > 2]
+    # Topic-specific useful combinations are stronger than generic verbs or
+    # mechanically joined word pairs such as “sleep brain”.
+    word_set = set(words)
+    phrases: List[str] = []
+    if {"sleep", "memory"} <= word_set or {"sleep", "memories"} <= word_set:
+        phrases.extend(["sleep science", "sleep and memory", "memory formation"])
+    if "brain" in word_set:
+        phrases.extend(["brain facts", "brain science", "neuroscience"])
+    if category == "Body":
+        phrases.extend(["human body", "body science"])
+    phrases.extend(words)
+    return phrases
+
+
+def generate_hashtags(topic: str, category: str, n: int = 3) -> List[str]:
+    """Return up to three searchable, topic-specific hashtags."""
+    candidates = _topic_tag_phrases(topic, category)
+    candidates.extend(_HIGH_VOLUME_TAGS.get(category, ["science facts"]))
+    # Prefer descriptive two-word phrases over broad one-word labels.
+    specific = [tag for tag in candidates if " " in str(tag).strip()]
+    clean = _normalise_tags(specific or candidates, limit=n)
+    return [f"#{tag.replace(' ', '')}" for tag in clean]
+
+
+
+def _normalise_tags(tags: List[str], limit: int = 3) -> List[str]:
+    """Return unique clean hashtag words regardless of whether callers pass
+    `science`, `#science`, or a mixture of both."""
+    clean, seen = [], set()
+    for raw in tags or []:
+        tag = re.sub(r"[^A-Za-z0-9_ ]", "", str(raw).lstrip("#"))
+        tag = re.sub(r"\s+", " ", tag).strip()
+        if tag and tag.lower() not in seen:
+            seen.add(tag.lower())
+            clean.append(tag)
+        if len(clean) >= limit:
+            break
+    return clean
+
+
+def generate_upload_tags(topic: str, category: str, limit: int = 12) -> List[str]:
+    """Return meaningful YouTube tag phrases, never grammar/filler tokens."""
+    candidates = _topic_tag_phrases(topic, category)
+    candidates.extend(_HIGH_VOLUME_TAGS.get(category, []))
+    candidates.extend(generate_seo_tags(topic, category))
+    clean: List[str] = []
+    seen = set()
+    for raw in candidates:
+        tag = re.sub(r"\s+", " ", str(raw).strip().lstrip("#"))
+        # A one-word tag that is only a grammar verb has no search value.
+        if not tag or tag.lower() in _TITLE_STOP_WORDS:
+            continue
+        key = tag.lower()
+        if key not in seen:
+            seen.add(key)
+            clean.append(tag)
+        if len(clean) >= limit:
+            break
+    return clean
+
+
+def generate_description(script_data: Dict, tags: List[str]) -> str:
+    """Build one concise description exactly once.
+
+    `main.py` stores the LLM's original summary as `summary`. We never feed a
+    previously formatted YouTube description back into this function; that
+    was the cause of duplicated paragraphs, dividers, CTAs and hashtags.
     """
-    if not raw_reply:
-        raise ValueError("Empty response from LLM")
-    
-    # Remove markdown code blocks
-    raw_reply = re.sub(r'```json\s*', '', raw_reply)
-    raw_reply = re.sub(r'```\s*', '', raw_reply)
-    
-    # Try to find JSON object
-    json_match = re.search(r'\{.*\}', raw_reply, re.DOTALL)
-    if json_match:
-        json_str = json_match.group(0)
-    else:
-        json_str = raw_reply
-    
-    # Clean common JSON issues
-    json_str = json_str.strip()
-    
-    # Fix trailing commas
-    json_str = re.sub(r',\s*}', '}', json_str)
-    json_str = re.sub(r',\s*]', ']', json_str)
-    
-    # NOTE: We intentionally do NOT blanket-convert single quotes to double
-    # quotes here. Groq's response_format={"type": "json_object"} already
-    # guarantees valid double-quoted JSON, and the system prompt asks for
-    # natural contractions ("don't", "you're"), which contain apostrophes.
-    # Converting those apostrophes to '"' corrupts the JSON mid-string
-    # (this was the root cause of the "Expecting ',' delimiter" errors).
-    
-    # Remove control characters
-    json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)
-    
-    # Fix unescaped newlines in strings
-    json_str = re.sub(r'(?<!\\)\n', ' ', json_str)
-    
-    # Try to parse
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError as e:
-        logger.warning(f"JSON parsing failed: {e}")
-        logger.debug(f"Cleaned JSON: {json_str[:500]}...")
-        
-        # Fallback: Try to extract with regex
-        fallback = {}
-        
-        # Extract title
-        title_match = re.search(r'"title"\s*:\s*"([^"]+)"', json_str)
-        if title_match:
-            fallback['title'] = title_match.group(1)
-        
-        # Extract hook
-        hook_match = re.search(r'"hook"\s*:\s*"([^"]+)"', json_str)
-        if hook_match:
-            fallback['hook'] = hook_match.group(1)
-        
-        # Extract scenes
-        scenes_match = re.search(r'"scenes"\s*:\s*\[(.*?)\]', json_str, re.DOTALL)
-        if scenes_match:
-            scenes_str = scenes_match.group(1)
-            scenes = []
-            # Find all scene objects
-            scene_blocks = re.finditer(r'\{[^{}]*\}', scenes_str, re.DOTALL)
-            for block in scene_blocks:
-                scene_str = block.group(0)
-                visual_match = re.search(r'"visual"\s*:\s*"([^"]+)"', scene_str)
-                caption_match = re.search(r'"caption"\s*:\s*"([^"]+)"', scene_str)
-                if visual_match and caption_match:
-                    scenes.append({
-                        'visual': visual_match.group(1),
-                        'caption': caption_match.group(1)
-                    })
-            if scenes:
-                fallback['scenes'] = scenes
-        
-        # Extract CTA
-        cta_match = re.search(r'"cta"\s*:\s*"([^"]+)"', json_str)
-        if cta_match:
-            fallback['cta'] = cta_match.group(1)
-        
-        # Extract description
-        desc_match = re.search(r'"description"\s*:\s*"([^"]+)"', json_str)
-        if desc_match:
-            fallback['description'] = desc_match.group(1)
-        
-        if fallback:
-            logger.info("✅ Extracted data using regex fallback")
-            return fallback
-        
-        raise ValueError(f"Could not parse JSON from response: {raw_reply[:200]}")
+    hook = re.sub(r"\s+", " ", script_data.get("hook", "")).strip()
+    summary = re.sub(r"\s+", " ", script_data.get("summary", "")).strip()
+    if not summary:
+        candidate = script_data.get("description", "")
+        # Old runs may contain an already-formatted description. Do not nest it.
+        if "━━━━━━━━" not in candidate and "#" not in candidate and len(candidate) <= 500:
+            summary = re.sub(r"\s+", " ", candidate).strip()
+    if not summary:
+        summary = "A clear, concise explanation of how this process works in your body."
 
-
-# ============================================
-# 4. SCRIPT VALIDATION & NORMALIZATION
-# ============================================
-
-def _trim_to_word_limit(caption: str, max_words: int) -> str:
-    """Trim a caption down to at most max_words, preferring to stop at the
-    last complete sentence within the limit; falls back to a hard cut with
-    a trailing period. Used to auto-fix scenes the LLM wrote too long,
-    instead of burning a full retry (and more Groq tokens) over something
-    a simple trim already fixes."""
-    words = caption.split()
-    if len(words) <= max_words:
-        return caption
-    truncated = " ".join(words[:max_words])
-    # Prefer cutting at the last sentence-ending punctuation within range.
-    last_stop = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
-    if last_stop >= len(truncated) * 0.5:  # only use it if it's not too early
-        return truncated[:last_stop + 1]
-    truncated = truncated.rstrip(",;:")
-    if not truncated.endswith((".", "!", "?")):
-        truncated += "."
-    return truncated
-
-
-def _normalize_scenes(script_data: Dict) -> Dict:
-    """
-    Normalizes scene data from various formats.
-    Ensures all required fields are present.
-    """
-    normalized = []
-    
-    for s in script_data.get('scenes', []):
-        # Try different field names
-        visual = s.get('visual') or s.get('description') or s.get('image') or ''
-        caption = s.get('caption') or s.get('text') or s.get('speech') or ''
-        
-        # Clean and validate
-        visual = visual.strip()
-        caption = caption.strip()
-        
-        if visual and caption:
-            normalized.append({
-                "visual": visual,
-                "caption": caption
-            })
-        elif caption and not visual:
-            # If only caption exists, generate a generic visual
-            normalized.append({
-                "visual": f"Dark cinematic shot of {caption[:30]}...",
-                "caption": caption
-            })
-
-    # Auto-fix: trim any scene that's over its word limit instead of
-    # spending a full LLM retry on something a simple trim already solves.
-    # Scene 1 (the hook) has a tighter cap - see _validate_script for why.
-    for i, scene in enumerate(normalized):
-        limit = HOOK_MAX_WORDS if i == 0 else MAX_SCENE_WORDS
-        scene['caption'] = _trim_to_word_limit(scene['caption'], limit)
-
-    script_data['scenes'] = normalized
-    script_data['voiceover'] = ' '.join(s['caption'] for s in normalized)
-
-    # Auto-fix: the scored hook must be the exact line viewers hear first.
-    # Rather than relying on the LLM to retype the hook identically to
-    # scene 1's caption (a common, easy mistake for smaller models), just
-    # force them to match - scene 1's caption is the source of truth since
-    # that's what's actually spoken.
-    if normalized:
-        script_data['hook'] = normalized[0]['caption']
-
-    return script_data
-
-
-def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
-    """
-    Validates script for quality and completeness.
-    
-    Returns:
-        (is_valid, issues_list)
-    """
-    issues = []
-    
-    # Check required fields
-    required_fields = ['title', 'hook', 'scenes', 'cta']
-    for field in required_fields:
-        if not script_data.get(field):
-            issues.append(f"Missing required field: {field}")
-
-    # main.py replaces temporary LLM titles with the deterministic Body
-    # Glitch episode title before SEO/upload. Do not burn API retries over
-    # title word counts here; the published title is validated by the series.
-    # Check scenes
-    scenes = script_data.get('scenes', [])
-    if len(scenes) < MIN_SCENES:
-        issues.append(f"Too few scenes: {len(scenes)} (minimum {MIN_SCENES})")
-    elif len(scenes) > MAX_SCENES:
-        issues.append(f"Too many scenes: {len(scenes)} (maximum {MAX_SCENES})")
-    
-    # Check word count
-    voiceover = script_data.get('voiceover', '')
-    word_count = len(voiceover.split())
-    if word_count < MIN_WORDS:
-        issues.append(f"Too few words: {word_count} (minimum {MIN_WORDS})")
-    elif word_count > MAX_WORDS:
-        issues.append(f"Too many words: {word_count} (maximum {MAX_WORDS})")
-    
-    # Check each scene
-    # (HOOK_MIN_WORDS/HOOK_MAX_WORDS/MAX_SCENE_WORDS are the same constants
-    # _normalize_scenes already auto-trims to, so a script that's been
-    # normalized should always pass this - this check is now mostly a
-    # safety net for anything normalization didn't catch.)
-    for i, scene in enumerate(scenes):
-        if not scene.get('visual'):
-            issues.append(f"Scene {i+1} missing visual description")
-        if not scene.get('caption'):
-            issues.append(f"Scene {i+1} missing caption")
-        else:
-            scene_words = len(scene['caption'].split())
-            if i == 0:
-                if scene_words < HOOK_MIN_WORDS or scene_words > HOOK_MAX_WORDS:
-                    issues.append(
-                        f"Scene {i+1} (hook) has {scene_words} words "
-                        f"(allowed {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} to stay under the 4s hook-duration gate)"
-                    )
-            elif scene_words > MAX_SCENE_WORDS:
-                issues.append(f"Scene {i+1} has {scene_words} words (maximum {MAX_SCENE_WORDS})")
-
-    # The scored hook must be the line viewers actually hear first.
-    if scenes and script_data.get('hook'):
-        def norm(value):
-            return re.sub(r"[^a-z0-9 ]", "", value.lower()).strip()
-        hook = norm(script_data['hook'])
-        first = norm(scenes[0].get('caption', ''))
-        if hook != first:
-            issues.append("Hook must exactly match the first scene caption")
-    
-    return len(issues) == 0, issues
-
-
-# ---------------------------------------------------------------------------
-# PUBLIC API — stable importable interface.
-# ---------------------------------------------------------------------------
-
-def validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
-    """Validate a generated script for structural completeness.
-
-    Public wrapper around the internal ``_validate_script``.
-    Use this from external code (quality_checker, tests, etc.)
-    instead of importing the underscore-prefixed version.
-
-    Parameters
-    ----------
-    script_data : dict
-        Script dictionary with 'title', 'hook', 'scenes', 'cta', 'voiceover'.
-
-    Returns
-    -------
-    tuple[bool, list[str]]
-        (is_valid, issues_list)
-    """
-    return _validate_script(script_data)
-
-
-# ============================================
-# 5. RETENTION ANALYSIS
-# ============================================
-
-def analyze_retention_potential(script_data: Dict) -> Dict:
-    """
-    Analyzes script for retention potential.
-    Returns score (0-100) and suggestions.
-    """
-    scenes = script_data.get('scenes', [])
-    score = 0
-    suggestions = []
-    
-    # Check scene count
-    if MIN_SCENES <= len(scenes) <= MAX_SCENES:
-        score += 20
-    else:
-        suggestions.append(f"Optimal scene count: {MIN_SCENES}-{MAX_SCENES}, currently {len(scenes)}")
-    
-    # Check hook
-    hook = script_data.get('hook', '')
+    # Avoid repeating the same sentence as both hook and summary.
+    parts = []
     if hook:
-        hook_words = len(hook.split())
-        if HOOK_MIN_WORDS <= hook_words <= HOOK_MAX_WORDS:
-            score += 15
-        else:
-            suggestions.append(f"Hook should be {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} words for a fast, clear opening")
-        
-        # Check for pattern interrupt
-        if len(hook.split()) <= 9 and any(ch in hook for ch in ['?', '.', '!']):
-            score += 10
+        parts.append(hook[:140].rstrip(" .") + ".")
+    if summary and summary.lower() not in hook.lower():
+        parts.append(summary[:320].rstrip())
+
+    # Keyword-rich context line. 2026 YouTube guidance rewards a longer,
+    # keyword-natural description (search snippet + categorisation) over a
+    # bare hook+hashtags block. Built from the video's own tags so it stays
+    # relevant and never keyword-stuffed.
+    context_tags = _normalise_tags(tags, 4)
+    if context_tags:
+        readable = ", ".join(t.replace("_", " ") for t in context_tags)
+        parts.append(
+            f"Learn the science behind {readable}. "
+            "Follow for clear science and brain facts explained simply."
+        )
+
+    # #Shorts FIRST so YouTube categorises this correctly as a Short, then
+    # up to 3 topic hashtags (YouTube only surfaces the first 3 above the
+    # title, and ignores everything past 15). #Shorts is deduped against the
+    # topic tags so it never appears twice.
+    ht_words = ["Shorts"] + [t for t in _normalise_tags(tags, 3) if t.lower() != "shorts"]
+    hashtags = " ".join(f"#{tag}" for tag in ht_words[:4])
+    if hashtags:
+        parts.append(hashtags)
+    return "\n\n".join(parts)[:DESCRIPTION_MAX_LEN]
+
+
+def generate_thumbnail_text(script_data: Dict, title: str) -> str:
+    """Use the script's short thumbnail angle, with a safe 2–4 word fallback."""
+    raw = script_data.get("thumbnail_text") or title
+    words = _title_words(raw)[:4]
+    if len(words) < 2:
+        words = _title_words(title)[:4]
+    return " ".join(words).upper()
+
+
+def generate_pinned_comment(script_data: Dict) -> str:
+    """A short comment worth pinning right after upload to seed the first
+    reply/engagement signal. Keep it a genuine question or prompt - not an
+    engagement-bait command like 'like if you agree', which YouTube's spam
+    systems increasingly downrank."""
+    topic = script_data.get('topic', script_data.get('title', 'this'))
     
-    # Check "YOU" language
-    voiceover = script_data.get('voiceover', '')
-    you_count = voiceover.lower().count('you')
-    if you_count >= 2:
+    # Multiple comment templates for variety
+    comment_templates = [
+        f"Did you know this about {topic.lower()}? Curious what surprised you most 👇",
+        f"What's your reaction to this {topic.lower()} fact? Let me know 👇",
+        f"Which part of this {topic.lower()} explanation blew your mind the most? 🤯",
+        f"Did you already know this about {topic.lower()}? Or was it a shock? 👇",
+        "What should I explain next? Drop your suggestions below! 🔬",
+    ]
+    
+    comment = random.choice(comment_templates)
+    return comment[:PINNED_COMMENT_MAX_LEN]
+
+
+def suggest_playlist(category: str) -> str:
+    return PLAYLISTS_BY_CATEGORY.get(category, "Dark Body Facts")
+
+
+def _score_title(title: str) -> int:
+    """0-100. Rewards length in the sweet spot, a power word, and presence
+    of a number - all correlate with higher Shorts CTR without tipping into
+    all-caps/clickbait territory that risks a policy strike."""
+    if not title:
+        return 0
+    
+    score = 30  # Base score
+    
+    # Length sweet spot (30-60 chars is YouTube's favorite)
+    length = len(title)
+    if 30 <= length <= 55:
+        score += 30
+    elif 20 <= length < 30:
+        score += 20
+    elif length < 20:
+        score += 10
+    else:
+        score += 5
+    
+    # Reward useful specificity, not manipulative clickbait.
+    useful_words = ["why", "how", "what", "science", "body", "brain", "sleep", "daily", "your"]
+    if any(re.search(r"\b" + re.escape(w) + r"\b", title.lower()) for w in useful_words):
+        score += 20
+    clickbait = ["shocking", "won't believe", "doctors won't", "forbidden", "this is real", "blow your mind", "secret rhythms", "hidden truth"]
+    if any(w in title.lower() for w in clickbait):
+        score -= 30
+
+    # Mobile titles are strongest when concise. Reward clarity instead of
+    # random numbers/emojis/question marks, which are not universal CTR wins.
+    if len(_title_words(title)) <= TITLE_MAX_WORDS:
         score += 15
     else:
-        suggestions.append("Use the viewer naturally once or twice where it helps clarity")
+        score -= 20
     
-    # Check cliffhangers
-    cliffhanger_count = 0
-    for scene in scenes:
-        caption = scene.get('caption', '')
-        if any(word in caption.lower() for word in ['...', 'but', 'however', 'yet', 'still', 'though']):
-            cliffhanger_count += 1
-    
-    if 1 <= cliffhanger_count <= 3:
-        score += 20
-    else:
-        suggestions.append(f"Only {cliffhanger_count}/{len(scenes)} scenes have cliffhangers - use only 1-3 natural open loops")
-    
-    # Check word count
-    word_count = len(voiceover.split())
-    if MIN_WORDS <= word_count <= MAX_WORDS:
-        score += 20
-    else:
-        suggestions.append(f"Word count: {word_count} (target: {MIN_WORDS}-{MAX_WORDS})")
-    
-    # Check for loopable outro
-    cta = script_data.get('cta', '')
-    if any(word in cta.lower() for word in ['follow', 'share', 'subscribe', 'comment']):
+    # Personal pronouns (YOU/Your)
+    if re.search(r'\b(your|you)\b', title, re.IGNORECASE):
         score += 10
     
+    # Exclamation marks (limited)
+    exclamation_count = title.count('!')
+    if exclamation_count == 1:
+        score += 5
+    elif exclamation_count > 2:
+        score -= 5
+    
+    # Penalties
+    if title.isupper():
+        score -= 20
+    if len(set(title)) < 10:  # Too repetitive
+        score -= 10
+    
+    return max(0, min(score, 100))
+
+
+def _score_description(description: str, hook: str) -> int:
+    """0-100. Rewards putting the hook in the visible first ~125 chars
+    (before YouTube's 'Show more' cutoff) and including hashtags."""
+    if not description:
+        return 0
+    score = 20
+    if hook and hook[:60].lower() in description[:150].lower():
+        score += 30
+    if '#' in description:
+        score += 15
+    # 2026: #Shorts explicitly helps YouTube categorise short-form content.
+    if '#shorts' in description.lower():
+        score += 10
+    length = len(description)
+    if 150 <= length <= 1000:
+        score += 25
+    elif length > 0:
+        score += 10
+    return max(0, min(score, 100))
+
+
+def _score_tags(tags: List[str]) -> int:
+    """0-100. Rewards having enough tags for reach without over-stuffing
+    (YouTube ignores tags past a certain total character budget, and
+    excessive tagging is itself a spam-flag risk anti_spam.py watches for)."""
+    if not tags:
+        return 0
+    count = len(tags)
+    if 8 <= count <= 15:
+        score = 90
+    elif count < 8:
+        score = 50 + count * 5
+    else:
+        score = max(40, 90 - (count - 15) * 5)
+
+    unique_ratio = len(set(t.lower() for t in tags)) / count
+    score = int(score * unique_ratio)
+    return max(0, min(score, 100))
+
+
+def calculate_seo_score(title: str, description: str, tags: List[str], script_data: Dict) -> Dict:
+    """Overall 0-100 SEO score plus a per-component breakdown, mirroring
+    the shape quality_checker.check_script_quality() returns so both can be
+    logged/displayed the same way in main.py."""
+    hook = script_data.get('hook', '')
+    components = {
+        'title_score': _score_title(title),
+        'description_score': _score_description(description, hook),
+        'tags_score': _score_tags(tags),
+    }
+    overall = round(sum(components.values()) / len(components))
+    components['overall_seo_score'] = overall
+
+    if overall >= 85:
+        rating = "🟢 EXCELLENT"
+    elif overall >= 70:
+        rating = "🟡 GOOD"
+    elif overall >= 50:
+        rating = "🟠 NEEDS WORK"
+    else:
+        rating = "🔴 POOR"
+
+    return {'scores': components, 'rating': rating}
+
+
+def generate_seo_package(topic: str, script_data: Dict) -> Dict:
+    """Single entry point main.py can call once per video. Returns
+    everything the PRD's 'AI SEO Generator' section asks for, scoped to
+    what actually applies to a YouTube Short (chapters are skipped - not
+    supported on sub-60s videos)."""
+    category = get_topic_category(topic)
+    tags = generate_upload_tags(topic, category)
+    title_options = generate_title_options(topic, script_data)
+    # Score every candidate and pick the best-scoring one instead of
+    # always taking title_options[0] - the score was previously computed
+    # only for logging and never actually influenced which title got
+    # used, so a weak title could ship even when a stronger option was
+    # sitting right there in the list.
+    # A named series must keep its branded episode title instead of letting a
+    # generic template erase the sequence number.
+    chosen_title = script_data.get('series_title') or (
+        max(title_options, key=_score_title) if title_options else script_data.get('title', 'Untitled')
+    )
+    # Append a topic-relevant emoji (e.g. "Your Heart Skips Beats 🫀").
+    # make_seo_title() strips any existing emoji first, so this is safe to
+    # call even on an already-emoji'd series_title.
+    chosen_title = make_seo_title(chosen_title, topic)
+    description = generate_description(script_data, tags)
+    hashtags = generate_hashtags(topic, category)
+    thumbnail_text = generate_thumbnail_text(script_data, chosen_title)
+    pinned_comment = generate_pinned_comment(script_data)
+    playlist = suggest_playlist(category)
+    seo_score = calculate_seo_score(chosen_title, description, tags, script_data)
+
+    logger.info(f"SEO package built for '{topic}' - score: {seo_score['scores']['overall_seo_score']}/100 ({seo_score['rating']})")
+
     return {
-        'retention_score': min(100, score),
-        'suggestions': suggestions,
-        'scenes': len(scenes),
-        'word_count': word_count,
-        'you_count': you_count,
-        'cliffhanger_ratio': cliffhanger_count / len(scenes) if scenes else 0,
-        'is_viral_ready': score >= 80
+        'title_options': title_options,
+        'chosen_title': chosen_title,
+        'description': description,
+        'tags': tags,
+        'hashtags': hashtags,
+        'thumbnail_text': thumbnail_text,
+        'pinned_comment': pinned_comment,
+        'playlist_suggestion': playlist,
+        'seo_score': seo_score,
     }
 
 
-# ============================================
-# 6. MAIN GENERATE FUNCTION
-# ============================================
-
-def generate_script(
-    topic: str, 
-    custom_prompt: Optional[str] = None, 
-    max_retries: int = MAX_RETRIES
-) -> Dict:
-    """
-    Generates a RETENTION-OPTIMIZED script using Groq LLM.
-    
-    Features:
-    - JSON cleaning with regex fallback
-    - Native English tone enforcement
-    - Automatic validation and retry
-    - Retention analysis
-    
-    Args:
-        topic: Topic for the script
-        custom_prompt: Optional custom prompt
-        max_retries: Maximum retry attempts
-    
-    Returns:
-        Script data dictionary
-    
-    Raises:
-        RuntimeError: If generation fails after all retries
-        ValueError: If GROQ_API_KEY is missing
-    """
-    logger.info(
-        "Script policy %s: %s scenes, %s-%s words; temporary title is not a retry gate.",
-        SCRIPT_POLICY_VERSION, MIN_SCENES, MIN_WORDS, MAX_WORDS,
-    )
-
-    # Check API key
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is missing. Please set it in environment variables.")
-    
-    # Initialize client only for an actual generation call. Structural checks
-    # and offline tests do not require the optional runtime dependency.
-    if Groq is None:
-        raise RuntimeError("groq package is not installed; run pip install -r requirements.txt")
-    client = Groq(api_key=api_key)
-    
-    # Prepare prompt
-    prompt = custom_prompt or _default_prompt(topic)
-    messages = [
-        {"role": "system", "content": _get_system_prompt()},
-        {"role": "user", "content": prompt}
-    ]
-    
-    last_error = None
-    best_script = None
-    best_score = 0
-    
-    for attempt in range(1, max_retries + 1):
-        try:
-            logger.info(f"🔄 Generating script (Attempt {attempt}/{max_retries})")
-            
-            # Call Groq API
-            completion = client.chat.completions.create(
-                messages=messages,
-                model="llama-3.1-8b-instant",
-                response_format={"type": "json_object"},
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS
-            )
-            
-            raw_reply = completion.choices[0].message.content
-            
-            # Clean JSON
-            script_data = _clean_json_response(raw_reply)
-            
-            # Normalize scenes
-            script_data = _normalize_scenes(script_data)
-            
-            # Add metadata
-            script_data['topic'] = topic
-            script_data['generated_at'] = time.time()
-            script_data['attempt'] = attempt
-            
-            # Validate
-            is_valid, issues = _validate_script(script_data)
-            
-            if is_valid:
-                # Analyze retention
-                retention = analyze_retention_potential(script_data)
-                script_data['retention_analysis'] = retention
-                
-                score = retention['retention_score']
-                
-                # Track best script
-                if score > best_score:
-                    best_script = script_data
-                    best_score = score
-                
-                if score >= 80:
-                    logger.info(f"✅ Excellent script! Retention score: {score}/100")
-                    logger.info(f"📊 {len(script_data['scenes'])} scenes, {len(script_data['voiceover'].split())} words")
-                    return script_data
-                else:
-                    logger.warning(f"⚠️ Good but could be better (Score: {score}/100)")
-                    # Add corrective feedback
-                    messages.append({"role": "assistant", "content": raw_reply})
-                    messages.append({"role": "user", "content": (
-                        f"The script is good but retention could be improved. "
-                        f"Current score: {score}/100. Issues: {', '.join(retention['suggestions'][:3])}. "
-                        f"Rewrite the script with these improvements while keeping the topic '{topic}'. "
-                        f"Return ONLY valid JSON with the same structure."
-                    )})
-            else:
-                last_error = "; ".join(issues)
-                logger.warning(f"⚠️ Validation issues: {', '.join(issues[:3])}")
-                messages.append({"role": "assistant", "content": raw_reply})
-                messages.append({"role": "user", "content": (
-                    f"The script has validation issues: {', '.join(issues[:3])}. "
-                    f"Rewrite it to fix these issues. Keep the same topic '{topic}'. "
-                    f"Return ONLY valid JSON with the same structure."
-                )})
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON parsing failed: {e}")
-            messages.append({"role": "user", "content": (
-                "The previous response was not valid JSON. "
-                "Please return ONLY valid JSON with this exact structure: "
-                '{"title": "...", "hook": "...", "scenes": [{"visual": "...", "caption": "..."}], "cta": "..."}'
-            )})
-            
-        except BadRequestError as e:
-            logger.error(f"❌ Groq API error: {e}")
-            last_error = e
-            if attempt < max_retries:
-                wait_time = 2 ** attempt
-                logger.info(f"⏳ Waiting {wait_time}s before retry...")
-                time.sleep(wait_time)
-            else:
-                break
-            
-        except Exception as e:
-            logger.error(f"❌ Unexpected error: {e}")
-            last_error = e
-            if attempt < max_retries:
-                wait_time = 2 ** attempt
-                logger.info(f"⏳ Waiting {wait_time}s before retry...")
-                time.sleep(wait_time)
-    
-    # If we have a best script, return it
-    if best_script:
-        logger.warning(f"⚠️ Using best available script (Score: {best_score}/100)")
-        return best_script
-    
-    # Complete failure
-    raise RuntimeError(
-        f"❌ Script generation failed after {max_retries} attempts. "
-        f"Last error: {last_error}"
-    )
-
-
-# ============================================
-# 7. BATCH GENERATION
-# ============================================
-
-def generate_multiple_scripts(
-    topics: List[str],
-    max_retries: int = MAX_RETRIES,
-    delay: float = 2.0
-) -> List[Dict]:
-    """
-    Generates scripts for multiple topics.
-    
-    Args:
-        topics: List of topics
-        max_retries: Retries per script
-        delay: Delay between generations
-    
-    Returns:
-        List of script data dictionaries
-    """
-    scripts = []
-    failed = []
-    
-    for i, topic in enumerate(topics):
-        logger.info(f"📝 Generating script {i+1}/{len(topics)}: {topic}")
-        
-        try:
-            script = generate_script(topic, max_retries=max_retries)
-            scripts.append(script)
-            logger.info(f"✅ Script {i+1} generated successfully")
-        except Exception as e:
-            logger.error(f"❌ Script {i+1} failed: {e}")
-            failed.append({'topic': topic, 'error': str(e)})
-        
-        if i < len(topics) - 1:
-            time.sleep(delay)
-    
-    logger.info(f"📊 Generated {len(scripts)}/{len(topics)} scripts successfully")
-    if failed:
-        logger.warning(f"⚠️ Failed scripts: {len(failed)}")
-    
-    return scripts, failed
-
-
-# ============================================
-# 8. SCRIPT EXPORT
-# ============================================
-
-def export_script(script_data: Dict, output_path: str = "output/script.json") -> str:
-    """
-    Exports script data to JSON file.
-    """
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(script_data, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"📄 Script exported to: {output_path}")
-    return output_path
-
-
-# ============================================
-# 9. MAIN EXECUTION
-# ============================================
-
 if __name__ == "__main__":
-    print("="*70)
-    print("SCRIPT GENERATOR - FULLY FIXED (JSON Cleaning + Native Tone)")
-    print("="*70)
-    print()
-    
-    # Test single generation
-    test_topic = "Why Your Brain Lies to You"
-    print(f"🧪 Testing with topic: {test_topic}")
-    print("-" * 70)
-    
-    try:
-        script = generate_script(test_topic)
-        
-        print("✅ Script generated successfully!")
-        print()
-        print(f"📌 TITLE: {script.get('title')}")
-        print(f"🎯 HOOK: {script.get('hook')}")
-        print(f"📊 SCENES: {len(script.get('scenes', []))}")
-        print(f"📝 WORDS: {len(script.get('voiceover', '').split())}")
-        print(f"📢 CTA: {script.get('cta')}")
-        
-        if 'retention_analysis' in script:
-            analysis = script['retention_analysis']
-            print()
-            print("📈 RETENTION ANALYSIS:")
-            print(f"   Score: {analysis.get('retention_score')}/100")
-            print(f"   Viral Ready: {analysis.get('is_viral_ready')}")
-            if analysis.get('suggestions'):
-                print("   Suggestions:")
-                for suggestion in analysis['suggestions'][:3]:
-                    print(f"     - {suggestion}")
-        
-        print()
-        print("📄 FIRST SCENE PREVIEW:")
-        scenes = script.get('scenes', [])
-        if scenes:
-            print(f"   Visual: {scenes[0].get('visual')}")
-            print(f"   Caption: {scenes[0].get('caption')}")
-        
-        print()
-        print("-" * 70)
-        print("✅ Script generator is ready for production!")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+    import json
+    test_script = {
+        'title': 'Your Heart Has Its Own Brain',
+        'hook': "Doctors don't want you to know this about your heart...",
+        'cta': 'Follow for more dark body secrets',
+        'description': 'Your heart contains its own independent nervous system.',
+    }
+    result = generate_seo_package("Your Heart Has Its Own Brain", test_script)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
