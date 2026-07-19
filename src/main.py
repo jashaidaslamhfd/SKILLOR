@@ -200,9 +200,10 @@ class SKILLORPipeline:
                     generated['series_number'] = trend_record.get('series_number')
                     generated['series_title'] = trend_record.get('series_title')
                     generated['thumbnail_text'] = trend_record.get('thumbnail_text', '')
-                    # Series title is intentionally fixed, e.g. "Body Glitch
-                    # #001: Eye Twitch", so every upload reinforces one clear
-                    # niche and viewers recognise the sequence.
+                    # Viewer-facing title stays short (e.g. "Eye Twitch 👁️"). The
+                    # permanent episode number remains in metadata/history,
+                    # while the repeated micro-niche is reinforced by topic,
+                    # visuals and upload cadence.
                     if trend_record.get('series_title'):
                         generated['title'] = trend_record['series_title']
                 script_data = result['script_data']
