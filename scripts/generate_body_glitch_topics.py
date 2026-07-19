@@ -91,7 +91,8 @@ def build_catalogue() -> list[dict]:
             records.append({
                 "series_number": number,
                 "series_title": title,
-                "topic": angle.format(phenomenon=phenomenon),
+                "topic": phenomenon,
+                "angle": angle.format(phenomenon=phenomenon),
                 "thumbnail_text": thumbnail_text,
                 "pillar": "weird_body_glitches",
             })
