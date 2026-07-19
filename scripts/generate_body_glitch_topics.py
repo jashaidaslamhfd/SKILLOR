@@ -16,14 +16,14 @@ def _title_emoji(label: str) -> str:
     """One consistent curiosity emoji, selected from the phenomenon type."""
     lowered = label.lower()
     if any(word in lowered for word in ("eye", "vision", "float")):
-        return "👁️"
+        return "ðŸ‘ï¸"
     if any(word in lowered for word in ("heart", "pulse", "blood")):
-        return "🫀"
+        return "ðŸ«€"
     if any(word in lowered for word in ("brain", "memory", "dream", "song", "deja")):
-        return "🧠"
+        return "ðŸ§ "
     if any(word in lowered for word in ("stomach", "hunger", "hiccup", "throat")):
-        return "😳"
-    return "😳"
+        return "ðŸ˜³"
+    return "ðŸ˜³"
 
 
 # (short title label, detailed topic wording, thumbnail text)
