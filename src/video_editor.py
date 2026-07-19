@@ -21,7 +21,7 @@ if not hasattr(Image, "ANTIALIAS"):
     Image.ANTIALIAS = Image.LANCZOS
 
 from moviepy.editor import (
-    ImageClip, ColorClip, CompositeVideoClip,
+    ImageClip, VideoFileClip, ColorClip, CompositeVideoClip,
     AudioFileClip, concatenate_videoclips, concatenate_audioclips,
     CompositeAudioClip,
 )
@@ -38,8 +38,8 @@ CANVAS_W, CANVAS_H = 1080, 1920
 AUDIO_EDGE_FADE = 0.05
 ZOOM_AMOUNT = 0.18
 PAN_PX = 50
-TARGET_MIN_SEC = float(os.environ.get("TARGET_MIN_SECONDS", "20"))
-TARGET_MAX_SEC = float(os.environ.get("TARGET_MAX_SECONDS", "35"))
+TARGET_MIN_SEC = float(os.environ.get("TARGET_MIN_SECONDS", "40"))
+TARGET_MAX_SEC = float(os.environ.get("TARGET_MAX_SECONDS", "55"))
 
 # RETENTION OPTIMIZATIONS
 CAPTION_Y_FRACTION = 0.70
@@ -476,7 +476,30 @@ def _get_music_track(duration: float, output_dir: str) -> str:
 # 4. MAIN BUILD FUNCTION (PRIORITY IMPROVEMENTS)
 # ============================================
 
-def build_video(image_paths, audio_segments, scenes, output_path="output/final_video.mp4"):
+def _cover_video_clip(path: str, duration: float) -> VideoFileClip:
+    """Fit a downloaded Pexels/Pixabay B-roll clip to the vertical canvas.
+
+    The stock clip's own audio is discarded—voiceover and licensed music are
+    mixed later. Short source clips loop cleanly to cover one narration scene.
+    """
+    source = VideoFileClip(path, audio=False)
+    if source.duration <= 0:
+        source.close()
+        raise RuntimeError(f"Stock video has no duration: {path}")
+    loops = max(1, int(np.ceil(duration / source.duration)))
+    clip = concatenate_videoclips([source] * loops, method="compose").subclip(0, duration)
+    if clip.w / clip.h < CANVAS_W / CANVAS_H:
+        clip = clip.resize(width=CANVAS_W)
+    else:
+        clip = clip.resize(height=CANVAS_H)
+    x1 = max((clip.w - CANVAS_W) / 2, 0)
+    y1 = max((clip.h - CANVAS_H) / 2, 0)
+    return clip.fx(
+        vfx.crop, x1=x1, y1=y1, width=CANVAS_W, height=CANVAS_H
+    ).set_duration(duration)
+
+
+def build_video(image_paths, audio_segments, scenes, output_path="output/final_video.mp4", media_types=None):
     """
     RETENTION OPTIMIZED:
     - Ken Burns effect (alternating zoom in/out)
@@ -491,9 +514,11 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
     - ✅ Priority: Automatic overlays
     - ✅ Priority: Music ducking
     """
-    assert len(image_paths) == len(audio_segments) == len(scenes), (
-        "image_paths, audio_segments aur scenes ki length barabar honi chahiye"
-    )
+    if not len(image_paths) == len(audio_segments) == len(scenes):
+        raise ValueError("image_paths, audio_segments and scenes must have the same length")
+    media_types = media_types or ["image"] * len(image_paths)
+    if len(media_types) != len(image_paths):
+        raise ValueError("media_types must match image_paths length")
 
     # Fixed brand palette makes every Short immediately recognizable.
     color_theme = {'primary': (255, 255, 255), 'secondary': (255, 205, 40), 'bg': (18, 20, 28)}
@@ -503,7 +528,7 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
     audio_clips = []
     t_cursor = 0.0
 
-    for i, (img_path, seg) in enumerate(zip(image_paths, audio_segments)):
+    for i, (img_path, seg, media_type) in enumerate(zip(image_paths, audio_segments, media_types)):
         duration = max(seg['duration'], 0.6)
 
         # ✅ Priority: Check if caption has important words
@@ -526,14 +551,22 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         # RETENTION: Alternate zoom direction every scene
         direction = "in" if i % 2 == 0 else "out"
 
-        # Two motion beats per narration scene. This gives roughly 12-16
-        # visual changes per Short without requesting twice as many AI images.
-        first_duration = duration / 2.0
-        second_duration = duration - first_duration
-        first_beat = _ken_burns_clip(img_path, first_duration, direction, zoom_extra)
-        second_direction = "out" if direction == "in" else "in"
-        second_beat = _ken_burns_clip(img_path, second_duration, second_direction, zoom_extra + 0.04)
-        scene_visual = concatenate_videoclips([first_beat, second_beat], method="compose").set_duration(duration)
+        if media_type == "video":
+            # Real licensed B-roll: preserve natural movement rather than
+            # applying the static-image Ken Burns treatment.
+            scene_visual = _cover_video_clip(img_path, duration)
+        else:
+            # AI/static image: two motion beats make the scene feel alive.
+            first_duration = duration / 2.0
+            second_duration = duration - first_duration
+            first_beat = _ken_burns_clip(img_path, first_duration, direction, zoom_extra)
+            second_direction = "out" if direction == "in" else "in"
+            second_beat = _ken_burns_clip(
+                img_path, second_duration, second_direction, zoom_extra + 0.04
+            )
+            scene_visual = concatenate_videoclips(
+                [first_beat, second_beat], method="compose"
+            ).set_duration(duration)
 
         # ✅ Priority: Word-by-word captions with highlighting
         word_clips = _word_by_word_clips(caption_text, duration, color_theme)

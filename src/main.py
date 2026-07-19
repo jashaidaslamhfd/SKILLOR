@@ -111,7 +111,7 @@ class SKILLORPipeline:
         except Exception as e:
             logger.error(f"Failed to save video history: {e}")
 
-    def _get_recent_topics(self, n: int = 20) -> list:
+    def _get_recent_topics(self, n: int = 90) -> list:
         """Get recent topics to avoid repetition"""
         return [v.get('topic') for v in self.video_history[-n:] if v.get('topic')]
 
@@ -194,8 +194,17 @@ class SKILLORPipeline:
 
                 result = self._generate_and_check_once(current_topic)
                 if not fixed_topic:
-                    result['script_data']['trend_source'] = trend_record.get('source')
-                    result['script_data']['trend_url'] = trend_record.get('source_url')
+                    generated = result['script_data']
+                    generated['trend_source'] = trend_record.get('source')
+                    generated['trend_url'] = trend_record.get('source_url')
+                    generated['series_number'] = trend_record.get('series_number')
+                    generated['series_title'] = trend_record.get('series_title')
+                    generated['thumbnail_text'] = trend_record.get('thumbnail_text', '')
+                    # Series title is intentionally fixed, e.g. "Body Glitch
+                    # #001: Eye Twitch", so every upload reinforces one clear
+                    # niche and viewers recognise the sequence.
+                    if trend_record.get('series_title'):
+                        generated['title'] = trend_record['series_title']
                 script_data = result['script_data']
 
                 # Hook quality check
@@ -246,6 +255,7 @@ class SKILLORPipeline:
         """Generate images with retry logic"""
         image_paths = []
         image_sources = []
+        media_types = []
         used_hashes = set()
         used_fallbacks = set()
 
@@ -261,6 +271,7 @@ class SKILLORPipeline:
                     if res and res.get('path') and os.path.exists(res['path']):
                         image_paths.append(res['path'])
                         image_sources.append(res.get('source', 'unknown'))
+                        media_types.append(res.get('media_type', 'image'))
                         success = True
                         break
                 except Exception as e:
@@ -274,7 +285,7 @@ class SKILLORPipeline:
         if len(image_paths) != total_scenes:
             raise RuntimeError(f"Generated {len(image_paths)} images for {total_scenes} scenes")
 
-        return image_paths, image_sources
+        return image_paths, image_sources, media_types
 
     def run_pipeline(self, topic: str = None) -> dict:
         """Main pipeline execution"""
@@ -342,8 +353,8 @@ class SKILLORPipeline:
 
             # Phase 2: Image Generation
             logger.info("\n🎨 PHASE 2: IMAGE GENERATION")
-            image_paths, image_sources = self._generate_images_with_retry(script_data)
-            logger.info(f"✅ Generated {len(image_paths)} images")
+            image_paths, image_sources, media_types = self._generate_images_with_retry(script_data)
+            logger.info(f"✅ Generated {len(image_paths)} scene visuals: {dict(Counter(media_types))}")
 
             # Quality Gate: Check fallback ratio
             source_counts = Counter(image_sources)
@@ -367,7 +378,7 @@ class SKILLORPipeline:
                 )
                 logger.info(f"✅ Generated {len(audio_segments)} audio segments")
                 narration_seconds = sum(float(seg.get("duration", 0)) for seg in audio_segments)
-                target_max_seconds = float(os.environ.get("TARGET_MAX_SECONDS", "35"))
+                target_max_seconds = float(os.environ.get("TARGET_MAX_SECONDS", "55"))
                 # video_editor may make a small (<=12%) transparent speed
                 # correction. Anything beyond that must be regenerated instead
                 # of producing rushed, low-retention narration.
@@ -457,12 +468,17 @@ class SKILLORPipeline:
             # Phase 4: Build Video (with visual effects)
             logger.info("\n🎬 PHASE 4: BUILD VIDEO (WITH EFFECTS)")
             try:
-                final_video = build_video(image_paths, audio_segments, script_data['scenes'])
+                final_video = build_video(
+                    image_paths, audio_segments, script_data['scenes'], media_types=media_types
+                )
                 thumb_text = script_data.get('thumbnail_text') or script_data['title']
-                thumb_path = generate_thumbnail(image_paths[0], thumb_text)
+                thumb_path = generate_thumbnail(
+                    image_paths[0], thumb_text,
+                    category=script_data.get('category', 'Body')
+                )
                 
                 # Pad video if slightly too short
-                target_min = float(os.environ.get("TARGET_MIN_SECONDS", "20"))
+                target_min = float(os.environ.get("TARGET_MIN_SECONDS", "40"))
                 min_seconds = max(0.0, target_min - 5.0)
                 logger.info(f"Checking video duration against minimum {min_seconds:.2f}s...")
                 

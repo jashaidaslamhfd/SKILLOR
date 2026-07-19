@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import base64
 import logging
+import json
 import os
 import random
 import re
 import time
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 
 import requests
@@ -33,12 +35,16 @@ YOUTUBE_REGION = os.environ.get("YOUTUBE_REGION_CODE", TARGET_REGION).upper()
 # The channel is science/body/brain-oriented. Restricting external headlines
 # prevents unrelated politics, celebrity stories and sports results from being
 # turned into off-brand Shorts merely because they are trending.
+# Deliberately narrow science anchors. Broad words such as "animal", "human",
+# "history" and "nature" admitted entertainment headlines like "Why Got Fired
+# Matters" that did not give this channel a real explainable science topic.
 RELEVANCE_TERMS = (
     "brain", "body", "health", "medical", "medicine", "doctor", "science",
-    "space", "nasa", "technology", "tech", "ai", "robot", "climate",
-    "nature", "animal", "ocean", "planet", "earth", "physics", "history",
-    "archaeology", "psychology", "sleep", "heart", "human", "research",
-    "study", "discovery", "scientist", "disease", "virus", "nutrition",
+    "space", "nasa", "technology", "tech", "artificial intelligence", "robot",
+    "climate", "ocean", "planet", "earth", "physics", "archaeology",
+    "psychology", "sleep", "heart", "memory", "nerve", "hormone", "cell",
+    "genetics", "genome", "research", "study", "discovery", "scientist",
+    "disease", "virus", "nutrition", "immune", "anatomy", "biology",
 )
 
 # These are UI/navigation strings sometimes accidentally extracted by fragile
@@ -55,25 +61,46 @@ INVALID_TOPIC_PATTERNS = (
     r"^reddit$",
 )
 
-# Safe, evergreen fallbacks. These are prompts/topics, not claims. The LLM
-# should not turn them into medical advice or unsupported sensational claims.
-FALLBACK_TOPICS = [
-    "Why sleep is essential for memory formation",
-    "How the human brain filters everyday information",
-    "What scientists know about the gut-brain connection",
-    "How astronauts adapt to living in microgravity",
-    "Why octopuses are so intelligent",
-    "How vaccines train the immune system",
-    "What causes the Northern Lights",
-    "How artificial intelligence recognizes patterns",
-    "Why deep ocean ecosystems are difficult to study",
-    "How stress affects attention and decision making",
-    "What archaeology can reveal about ancient cities",
-    "How the heart adapts during regular exercise",
+# MrNextep's channel data shows the strongest relative performance on familiar,
+# low-risk brain/body experiences (yawning, memory, eye twitching, dreams,
+# goosebumps)—not broad news headlines or generic "dark" claims. These are
+# proven-pillar prompts, never labelled as daily trends.
+PROVEN_TOPIC_POOL = [
+    "Why songs get stuck in your head",
+    "Why you forget names right after meeting someone",
+    "Why yawning spreads from person to person",
+    "Why your eye twitches randomly",
+    "Why goosebumps appear when you are cold",
+    "Why dreams disappear after you wake up",
+    "Why deja vu feels strangely familiar",
+    "Why your heart races when you feel nervous",
+    "Why your body freezes when you feel scared",
+    "Why your stomach growls when you are hungry",
+    "Why you wake up before your alarm",
+    "Why your hands wrinkle in water",
+    "Why embarrassing memories return at night",
+    "Why you forget why you entered a room",
+    "Why silence can feel uncomfortable",
+    "Why your brain notices your own name",
+    "Why time feels faster as you get older",
+    "Why stress makes it hard to remember things",
+    "Why you feel dizzy after standing up",
+    "Why your brain replays conversations later",
+    "Why you hear your heartbeat at night",
+    "Why bright light makes you sneeze",
+    "Why your brain needs deep sleep",
+    "Why your eyes see more green shades",
+    "Why music changes your mood so quickly",
+    "Why you blush when you feel embarrassed",
+    "Why you shiver when you feel cold",
+    "Why your brain remembers songs so easily",
+    "Why your body feels heavy when tired",
+    "Why you feel hungry at the same time daily",
 ]
 
 REDDIT_SUBREDDITS = ("science", "technology", "space", "todayilearned")
 USER_AGENT = "SKILLOR/1.1 (automated topic research; contact: channel-owner)"
+BODY_GLITCH_CATALOGUE_PATH = Path("data/body_glitch_topics.json")
 
 
 def _normalise_topic(value: str) -> str:
@@ -275,9 +302,34 @@ def get_reddit_trending_topics() -> List[Dict]:
     return topics
 
 
-def get_template_topics() -> List[Dict]:
-    """Return a varied local fallback pool without pretending it is trending."""
-    return [_topic_record(topic, "curated_fallback") for topic in FALLBACK_TOPICS]
+def get_body_glitch_topics() -> List[Dict]:
+    """Load the fixed 500-topic Body Glitch catalogue with series metadata."""
+    try:
+        with BODY_GLITCH_CATALOGUE_PATH.open(encoding="utf-8") as file_handle:
+            records = json.load(file_handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Body Glitch catalogue unavailable: {exc}") from exc
+
+    result = []
+    for item in records:
+        topic = _clean_topic(item.get("topic", ""))
+        if not topic:
+            continue
+        record = _topic_record(topic, "body_glitch_series", pillar="weird_body_glitches")
+        record.update({
+            "series_number": item.get("series_number"),
+            "series_title": item.get("series_title"),
+            "thumbnail_text": item.get("thumbnail_text"),
+        })
+        result.append(record)
+    if len(result) != 500:
+        raise RuntimeError(f"Body Glitch catalogue must contain 500 valid topics; found {len(result)}")
+    return result
+
+
+def get_proven_topics() -> List[Dict]:
+    """Return channel-fit evergreen topics based on proven content pillars."""
+    return [_topic_record(topic, "proven_channel_pillar") for topic in PROVEN_TOPIC_POOL]
 
 
 def get_trending_topic(
@@ -285,38 +337,55 @@ def get_trending_topic(
     *,
     return_metadata: bool = False,
 ) -> str | Dict:
-    """Select a fresh topic from a current external trend source.
+    """Select a fresh topic using channel fit first and trends second.
 
-    With ``REQUIRE_DAILY_TREND=true`` (the production workflow default), no
-    curated/local fallback is allowed: a run fails safely rather than claiming
-    an evergreen template is "today's trend". This makes the topic origin
-    auditable through ``source`` and ``source_url`` metadata.
+    ``TOPIC_STRATEGY=proven_evergreen`` is the production default because the
+    channel's own performance favors familiar human experiences. Live trends
+    are used only as an occasional, niche-filtered inspiration signal; they
+    never force unrelated news or workplace drama into a science channel.
+    Set ``REQUIRE_DAILY_TREND=true`` only for a deliberate live-trend campaign.
     """
+    strategy = os.environ.get("TOPIC_STRATEGY", "body_glitch_series").strip().lower()
+    require_daily_trend = os.environ.get("REQUIRE_DAILY_TREND", "false").lower() == "true"
+
+    # The Body Glitch launch is deliberately isolated from noisy general
+    # trend feeds. This gives YouTube 500 tightly consistent audience signals.
+    if strategy == "body_glitch_series":
+        series_topics = _deduplicate(get_body_glitch_topics(), exclude)
+        if series_topics:
+            chosen = random.choice(series_topics)
+        else:
+            chosen = random.choice(get_body_glitch_topics())
+            logger.warning("All Body Glitch topics were excluded; restarting the 500-topic series.")
+        logger.info("Selected Body Glitch #%s: %s", chosen.get("series_number"), chosen["topic"])
+        return chosen if return_metadata else str(chosen["topic"])
+
     records: List[Dict] = []
     records.extend(get_google_trends_topics())
     records.extend(get_youtube_trending_topics())
     records.extend(get_reddit_trending_topics())
     real_topics = _deduplicate(records, exclude)
-    require_daily_trend = os.environ.get("REQUIRE_DAILY_TREND", "false").lower() == "true"
+    proven_topics = _deduplicate(get_proven_topics(), exclude)
 
-    if real_topics:
-        # Prefer high-signal API sources where present, while keeping choice
-        # varied enough that the same first RSS item is not selected every run.
+    if require_daily_trend:
+        if not real_topics:
+            raise RuntimeError(
+                "No relevant daily trend was available. Strict live-trend mode will not publish an off-niche fallback."
+            )
         source_weight = {"youtube_trending": 3, "google_trends": 2}
         weights = [source_weight.get(str(item.get("source", "")), 1) for item in real_topics]
         chosen = random.choices(real_topics, weights=weights, k=1)[0]
-    elif require_daily_trend:
-        raise RuntimeError(
-            "No relevant daily trend was available from Google Trends, YouTube Data API or Reddit OAuth. "
-            "REQUIRE_DAILY_TREND=true prevents a non-trending fallback from being published."
-        )
+    elif strategy == "live_trend" and real_topics:
+        chosen = random.choice(real_topics)
+    elif proven_topics:
+        # During the rebuilding period, repeatedly deliver the relatable
+        # experiences that already earned this channel's strongest signals.
+        chosen = random.choice(proven_topics)
+    elif real_topics:
+        chosen = random.choice(real_topics)
     else:
-        fallback_topics = _deduplicate(get_template_topics(), exclude)
-        if fallback_topics:
-            chosen = random.choice(fallback_topics)
-        else:
-            chosen = random.choice(get_template_topics())
-            logger.warning("All curated fallback topics were excluded; reusing one.")
+        chosen = random.choice(get_proven_topics())
+        logger.warning("All fresh topics were excluded; reusing a proven channel pillar.")
 
     logger.info(
         "Selected topic from %s: %s | source=%s",

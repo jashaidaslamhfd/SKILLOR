@@ -588,10 +588,10 @@ BASE_TAGS = [
 # ============================================
 # 8. CONSTANTS
 # ============================================
-TARGET_WORD_RANGE = (60, 78)
+TARGET_WORD_RANGE = (104, 118)
 MAX_TAGS = 15
 MAX_TITLE_LENGTH = 55
-SCENES_PER_SCRIPT = 6  # unified 25-35 second Shorts policy
+SCENES_PER_SCRIPT = 8  # Body Glitch 40-55 second series policy
 
 # ============================================
 # 9. MEDICAL RED FLAGS

@@ -27,13 +27,12 @@ logger = logging.getLogger(__name__)
 # ============================================
 # CONSTANTS
 # ============================================
-# One unified policy for a 25–35 second, natural-English Short. These values
-# must be mirrored by the prompt, validator and quality scorer—do not create
-# separate hidden rules in other modules.
-MIN_SCENES = 6
-MAX_SCENES = 6
-MIN_WORDS = 60
-MAX_WORDS = 78
+# One unified policy for a 40–55 second Body Glitch Short. Eight scenes give
+# enough room for a complete, accurate explanation without rushed claims.
+MIN_SCENES = 8
+MAX_SCENES = 8
+MIN_WORDS = 104
+MAX_WORDS = 118
 MAX_RETRIES = 3
 TEMPERATURE = 0.65
 MAX_TOKENS = 1400
@@ -41,8 +40,17 @@ MAX_TOKENS = 1400
 # A fast, clear opening that comfortably fits in the first 2–3 seconds.
 HOOK_MIN_WORDS = 6
 HOOK_MAX_WORDS = 8
-MIN_SCENE_WORDS = 9
-MAX_SCENE_WORDS = 14
+MIN_SCENE_WORDS = 14
+MAX_SCENE_WORDS = 16
+
+# A title such as "Why Got Fired Matters" is grammatically short but gives
+# viewers no scientific subject. Require a concrete channel-relevant anchor.
+TITLE_TOPIC_ANCHORS = {
+    "brain", "body", "sleep", "memory", "heart", "eyes", "eye", "gut",
+    "nerve", "hormone", "cell", "blood", "immune", "health", "science",
+    "space", "nasa", "planet", "ocean", "physics", "technology", "robot",
+    "ai", "anatomy", "biology", "psychology", "genetics", "virus",
+}
 
 # ============================================
 # 1. SYSTEM PROMPT (NATIVE TONE + RETENTION)
@@ -76,22 +84,35 @@ NON-NEGOTIABLE QUALITY RULES:
 
 def _default_prompt(topic: str) -> str:
     """Build one internally consistent short-form script brief."""
+    body_glitch_mode = os.environ.get("CONTENT_SERIES", "").lower() == "body_glitches"
+    series_rules = """
+BODY GLITCH SERIES RULES:
+- Cover one familiar, low-risk everyday body or brain phenomenon only.
+- Use a calm, curious, trusted-science tone; never call it deadly, dark,
+  scary, a diagnosis, a cure, or a treatment.
+- Explain what is commonly happening, then give a simple safe takeaway.
+- If relevant, say persistent, severe, new or worrying symptoms deserve a
+  qualified clinician's advice. Do not give medical instructions.
+""" if body_glitch_mode else ""
     return f"""
-Create one original 25–35 second YouTube Short on this topic:
+Create one original 40–55 second YouTube Short on this topic:
 TOPIC: {topic}
+{series_rules}
 
-Use EXACTLY six scenes and return the JSON schema below.
+Use EXACTLY eight scenes and return the JSON schema below.
 
 STORY ARC:
-1. HOOK — scene 1; 6–9 words. State a concrete, intriguing fact or question.
-2. SUSPENSE — scene 2; explain why the idea matters and open one honest question.
-3. PROBLEM — scenes 3–4; describe the relatable confusion or misconception.
-4. SOLUTION / PAYOFF — scene 5; give the clear science-based answer.
-5. LOOP-BACK — scene 6; connect the payoff to the opening idea so it feels complete.
+1. HOOK — scene 1; 6–8 words. State the surprising everyday body glitch.
+2. SUSPENSE — scene 2; show why the answer matters and open one honest question.
+3. PROBLEM — scene 3; state the relatable confusion or misconception.
+4. EXPLANATION — scenes 4–5; explain the mechanism in simple, connected steps.
+5. NORMAL VS NOTE — scene 6; explain the normal context without diagnosing.
+6. SOLUTION / PAYOFF — scene 7; give the clear science-based answer.
+7. LOOP-BACK — scene 8; connect the payoff to the opening idea so it feels complete.
 
 HARD FORMAT RULES:
 - Total spoken captions: {MIN_WORDS}–{MAX_WORDS} words.
-- Scene 1: {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} words. Scenes 2–6: {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} words each.
+- Scene 1: {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} words. Scenes 2–8: {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} words each.
 - `hook` must match scene 1 caption exactly.
 - Every scene must have a distinct 5–12 word visual description with no text, logos or UI.
 - Title: exactly five simple, specific words. Do not use generic hype, emojis or fake urgency.
@@ -105,6 +126,8 @@ JSON ONLY:
   "thumbnail_text": "...",
   "hook": "...",
   "scenes": [
+    {{"visual": "...", "caption": "..."}},
+    {{"visual": "...", "caption": "..."}},
     {{"visual": "...", "caption": "..."}},
     {{"visual": "...", "caption": "..."}},
     {{"visual": "...", "caption": "..."}},
@@ -304,6 +327,14 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
     for field in required_fields:
         if not script_data.get(field):
             issues.append(f"Missing required field: {field}")
+
+    # Titles are the first CTR signal. Enforce the promised five-word mobile
+    # format and a concrete science subject, not vague trend/news phrasing.
+    title_words = re.findall(r"[A-Za-z0-9]+", str(script_data.get("title", "")).lower())
+    if len(title_words) != 5:
+        issues.append(f"Title must contain exactly 5 words; got {len(title_words)}")
+    if title_words and not set(title_words).intersection(TITLE_TOPIC_ANCHORS):
+        issues.append("Title lacks a concrete science/body/brain subject")
     
     # Check scenes
     scenes = script_data.get('scenes', [])

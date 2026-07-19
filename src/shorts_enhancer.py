@@ -203,8 +203,8 @@ def autofix_too_fast_captions(scenes: List[Dict], audio_segments: List[Dict]) ->
 
 # Shorts retention drops off fastest in the first ~3s (the hook) and again
 # past the ~45-50s mark where swipe-away rates climb sharply.
-_IDEAL_MIN_SECONDS = 25.0
-_IDEAL_MAX_SECONDS = 45.0
+_IDEAL_MIN_SECONDS = 40.0
+_IDEAL_MAX_SECONDS = 55.0
 
 
 def predict_retention(script_data: Dict, audio_segments: List[Dict]) -> Dict:

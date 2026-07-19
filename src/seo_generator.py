@@ -416,7 +416,11 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
     # only for logging and never actually influenced which title got
     # used, so a weak title could ship even when a stronger option was
     # sitting right there in the list.
-    chosen_title = max(title_options, key=_score_title) if title_options else script_data.get('title', 'Untitled')
+    # A named series must keep its branded episode title instead of letting a
+    # generic template erase the sequence number.
+    chosen_title = script_data.get('series_title') or (
+        max(title_options, key=_score_title) if title_options else script_data.get('title', 'Untitled')
+    )
     description = generate_description(script_data, tags)
     hashtags = generate_hashtags(topic, category)
     thumbnail_text = generate_thumbnail_text(script_data, chosen_title)
