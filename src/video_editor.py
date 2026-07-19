@@ -685,7 +685,12 @@ def build_video(image_paths, audio_segments, scenes, output_path="output/final_v
         fps=30,
         codec="libx264",
         audio_codec="aac",
-        bitrate="6000k",
+        # YouTube's own guidance recommends ~8 Mbps for 1080p/30fps SDR
+        # uploads; 6 Mbps was leaving quality on the table before YouTube's
+        # own re-compression even runs. 10 Mbps gives it more to work with.
+        bitrate="10000k",
+        audio_bitrate="192k",
+        preset="slow",
         ffmpeg_params=["-pix_fmt", "yuv420p", "-movflags", "+faststart", "-aspect", "9:16"]
     )
     logger.info(f"Video created: {output_path} ({final_video.duration:.1f}s)")
