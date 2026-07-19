@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 # CONSTANTS
 # ============================================
 CANVAS_W, CANVAS_H = 1080, 1920
-AUDIO_EDGE_FADE = 0.05
+# 10 ms prevents clicks without creating audible gaps between separately
+# generated cloned-voice scenes.
+AUDIO_EDGE_FADE = 0.01
 ZOOM_AMOUNT = 0.18
 PAN_PX = 50
 TARGET_MIN_SEC = float(os.environ.get("TARGET_MIN_SECONDS", "40"))
