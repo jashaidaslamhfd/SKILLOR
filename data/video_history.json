@@ -88,5 +88,20 @@
     "predicted_ctr": 7.4,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "46da1d04bb19c28f477faad42abd9a275297b2be48e1e979edf1dfc9a3452f14",
+    "title": "Heartbeat Sound \u00f0\u0178\u00ab\u20ac \ud83d\udc42",
+    "topic": "hearing your heartbeat at night",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "Why does my heartbeat sound so loud at. It's because your ears pick up internal sounds more easily in the quiet, dark environment Your ear's ability to hear soft internal sounds is heightened in the quiet darkness, which amplifies. Your heartbeat is usually masked by background noise during the day, but at night, it becomes. This is because the background noise that usually drowns out your heartbeat is reduced at night This is a normal, natural response to the quiet environment, not a cause for ",
+    "posted_at": "2026-07-20T08:49:46.273323+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "2uHI9kXSRLQ",
+    "seo_score": 78,
+    "predicted_ctr": 7.1,
+    "hook_score": 90,
+    "predicted_retention": 0.755
   }
 ]
