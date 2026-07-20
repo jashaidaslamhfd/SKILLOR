@@ -24,6 +24,52 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# ============================================
+# MOJIBAKE REPAIR
+# ============================================
+# Occasionally text arriving from the LLM response contains UTF-8 bytes
+# that got decoded with the wrong codec somewhere upstream (cp1252/latin-1
+# instead of UTF-8) - the classic symptom is an emoji like 🫀 turning into
+# the 4-character garble "ðŸ«€". This corrupted text no longer looks like an
+# emoji to any unicode-range regex (niche_strategy._EMOJI_PATTERN etc.), so
+# it survives emoji-stripping and can end up duplicated alongside a second,
+# correctly-encoded emoji added later. Repairing it here, right where LLM
+# text first enters the pipeline, fixes it once for every downstream field
+# (title, hook, captions, cta, description) instead of patching each
+# consumer separately.
+def _repair_mojibake_run(run: str) -> str:
+    """Attempt to reverse a UTF-8-decoded-as-cp1252 mistake on one run of
+    cp1252-encodable characters. Only accepted if the bytes actually decode
+    as valid UTF-8 - plain ASCII and real accented text (café, naïve, ...)
+    either round-trip unchanged or fail to decode and are left untouched."""
+    try:
+        return run.encode('cp1252').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return run
+
+
+def repair_mojibake(text: str) -> str:
+    """Repairs mojibake in `text` without disturbing characters that are
+    already correct (including real emoji, which aren't cp1252-encodable
+    and are simply passed through untouched)."""
+    if not text:
+        return text
+    out = []
+    run = []
+    for ch in text:
+        try:
+            ch.encode('cp1252')
+            run.append(ch)
+        except UnicodeEncodeError:
+            if run:
+                out.append(_repair_mojibake_run(''.join(run)))
+                run = []
+            out.append(ch)
+    if run:
+        out.append(_repair_mojibake_run(''.join(run)))
+    return ''.join(out)
+
 # ============================================
 # CONSTANTS
 # ============================================
@@ -552,6 +598,7 @@ def generate_script(
             )
             
             raw_reply = completion.choices[0].message.content
+            raw_reply = repair_mojibake(raw_reply)
             
             # Clean JSON
             script_data = _clean_json_response(raw_reply)
