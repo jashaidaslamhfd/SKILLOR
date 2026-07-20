@@ -5,79 +5,86 @@ Run from repository root:
 
 The catalogue intentionally covers familiar, low-risk everyday phenomena.
 It is not medical advice and excludes diagnoses, treatment claims and danger
-bait. Every record includes a short five-word series title and thumbnail text.
+bait. Every record includes a short series title, clean emojis, and thumbnail text.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+
 def _title_emoji(label: str) -> str:
     """One consistent curiosity emoji, selected from the phenomenon type."""
     lowered = label.lower()
-    if any(word in lowered for word in ("eye", "vision", "float")):
-        return "ðŸ‘ï¸"
-    if any(word in lowered for word in ("heart", "pulse", "blood")):
-        return "ðŸ«€"
-    if any(word in lowered for word in ("brain", "memory", "dream", "song", "deja")):
-        return "ðŸ§ "
-    if any(word in lowered for word in ("stomach", "hunger", "hiccup", "throat")):
-        return "ðŸ˜³"
-    return "ðŸ˜³"
+    if any(word in lowered for word in ("eye", "vision", "float", "blink", "pupil", "tear")):
+        return "👁️"
+    if any(word in lowered for word in ("heart", "pulse", "blood", "vein", "chest", "flush")):
+        return "🫀"
+    if any(word in lowered for word in ("brain", "memory", "dream", "song", "deja", "think", "mind", "dizzy")):
+        return "🧠"
+    if any(word in lowered for word in ("stomach", "hunger", "hiccup", "throat", "swallow", "gut", "burp")):
+        return "😮"
+    if any(word in lowered for word in ("ear", "sound", "ring", "hear", "tinnitus")):
+        return "👂"
+    if any(word in lowered for word in ("sleep", "yawn", "tired", "rest", "night", "nap")):
+        return "😴"
+    if any(word in lowered for word in ("hand", "finger", "skin", "shiver", "chill", "wrinkle", "tingle")):
+        return "✋"
+    return "💡"
 
 
-# (short title label, detailed topic wording, thumbnail text)
+# Expanded list of 50 distinct body glitch phenomena
 PHENOMENA = [
     ("Eye Twitch", "an eyelid twitching randomly", "EYE TWITCH?"),
     ("Stomach Growls", "your stomach growling when you are not hungry", "STOMACH NOISE?"),
-    ("Goosebumps", "goosebumps appearing suddenly", "WHY CHILLS?"),
-    ("Ringing Ears", "your ears ringing in silence", "EARS RING?"),
-    ("Sudden Hiccups", "hiccups starting suddenly", "WHY HICCUPS?"),
-    ("Runny Nose", "your nose running when you cry", "RUNNY NOSE?"),
-    ("Wrinkled Hands", "your hands wrinkling in water", "WRINKLED HANDS?"),
-    ("Nervous Shivers", "your body shivering when you feel nervous", "WHY SHIVER?"),
-    ("Sudden Blushing", "your face blushing when embarrassed", "WHY BLUSH?"),
-    ("Spreading Yawns", "yawning spreading from person to person", "WHY YAWN?"),
-    ("Laughing Tears", "your eyes watering when you laugh", "LAUGHING TEARS?"),
-    ("Brain Freeze", "brain freeze after cold food", "BRAIN FREEZE?"),
-    ("Pins Needles", "pins and needles after sitting oddly", "PINS NEEDLES?"),
-    ("Sleeping Foot", "your foot falling asleep", "FOOT ASLEEP?"),
-    ("Muscle Twitch", "a muscle twitching on its own", "MUSCLE TWITCH?"),
-    ("Sleep Jerk", "your body jerking as you fall asleep", "SLEEP JERK?"),
-    ("Shaky Voice", "your voice shaking when nervous", "SHAKY VOICE?"),
-    ("Cold Hands", "your hands feeling cold under stress", "COLD HANDS?"),
-    ("Hot Ears", "your ears suddenly feeling hot", "HOT EARS?"),
-    ("Sweaty Palms", "your palms sweating when nervous", "SWEATY PALMS?"),
-    ("Stomach Butterflies", "butterflies in your stomach before something important", "BUTTERFLIES?"),
-    ("Throat Lump", "a lump in your throat when emotional", "THROAT LUMP?"),
-    ("Dry Mouth", "your mouth going dry when nervous", "DRY MOUTH?"),
-    ("Clicking Jaw", "your jaw clicking when you chew", "JAW CLICK?"),
-    ("Cracking Knees", "your knees cracking when you move", "KNEES CRACK?"),
-    ("Stomach Drop", "your stomach dropping during a scare", "STOMACH DROP?"),
-    ("Racing Heart", "your heart racing when nervous", "HEART RACING?"),
-    ("Standing Dizzy", "feeling dizzy after standing up", "STAND DIZZY?"),
-    ("Light Sneezes", "sneezing in bright light", "LIGHT SNEEZE?"),
-    ("Eye Floaters", "seeing eye floaters in bright light", "EYE FLOATERS?"),
-    ("Phantom Buzz", "feeling a phone buzz that did not happen", "PHONE BUZZ?"),
-    ("Stuck Songs", "a song getting stuck in your head", "SONG STUCK?"),
-    ("Deja Vu", "deja vu feeling strangely familiar", "DEJA VU?"),
-    ("Room Forgetting", "forgetting why you entered a room", "WHY HERE?"),
-    ("Name Forgetting", "forgetting a name right after hearing it", "NAME GONE?"),
-    ("Night Memories", "embarrassing memories returning at night", "WHY REMEMBER?"),
-    ("Body Alarm", "waking up before your alarm", "BEFORE ALARM?"),
-    ("Heartbeat Sound", "hearing your heartbeat at night", "HEART SOUND?"),
-    ("Hunger Clock", "getting hungry at the same time daily", "HUNGRY AGAIN?"),
-    ("Mood Music", "music changing your mood quickly", "MUSIC MOOD?"),
-    ("Silent Discomfort", "silence feeling uncomfortable", "AWKWARD SILENCE?"),
-    ("Name Notice", "your brain noticing your own name", "HEARD MY NAME?"),
-    ("Time Speed", "time feeling faster as you get older", "TIME FASTER?"),
-    ("Deep Sleep", "your brain needing deep sleep", "DEEP SLEEP?"),
-    ("Green Vision", "seeing more shades of green", "WHY GREEN?"),
-    ("Stress Memory", "stress making it hard to remember", "STRESS MEMORY?"),
-    ("Cold Shiver", "shivering when you feel cold", "COLD SHIVER?"),
-    ("Tired Body", "your body feeling heavy when tired", "BODY HEAVY?"),
-    ("Body Freeze", "your body freezing when scared", "BODY FREEZE?"),
-    ("Dream Vanish", "dreams disappearing after you wake up", "DREAM GONE?"),
+    ("Goosebumps", "goosebumps appearing suddenly when chilled or moved", "WHY CHILLS?"),
+    ("Ringing Ears", "your ears ringing in absolute silence", "EARS RING?"),
+    ("Sudden Hiccups", "hiccups starting unexpectedly", "WHY HICCUPS?"),
+    ("Runny Nose", "your nose running when you cry or eat hot food", "RUNNY NOSE?"),
+    ("Wrinkled Hands", "your fingers and hands wrinkling in warm water", "WRINKLED HANDS?"),
+    ("Nervous Shivers", "your body shivering during high nervous pressure", "WHY SHIVER?"),
+    ("Sudden Blushing", "your face flushing hot when embarrassed", "WHY BLUSH?"),
+    ("Spreading Yawns", "yawning spreading instantly from person to person", "WHY YAWN?"),
+    ("Laughing Tears", "your eyes watering when you laugh uncontrollably", "LAUGHING TEARS?"),
+    ("Brain Freeze", "brain freeze after swallowing cold ice cream", "BRAIN FREEZE?"),
+    ("Pins Needles", "pins and needles in your foot after sitting awkwardly", "PINS NEEDLES?"),
+    ("Sleeping Foot", "your foot falling asleep and feeling numb", "FOOT ASLEEP?"),
+    ("Muscle Twitch", "a muscle twitching on its own under your skin", "MUSCLE TWITCH?"),
+    ("Sleep Jerk", "your body sudden jerking as you fall asleep", "SLEEP JERK?"),
+    ("Shaky Voice", "your voice shaking when speaking in front of crowds", "SHAKY VOICE?"),
+    ("Cold Hands", "your hands feeling cold during stressful moments", "COLD HANDS?"),
+    ("Hot Ears", "your ears suddenly burning hot for no clear reason", "HOT EARS?"),
+    ("Throat Lump", "a feeling of a lump in your throat when sad", "THROAT LUMP?"),
+    ("Phantom Vibrate", "feeling your phone vibrate in your pocket when it didn't", "PHANTOM RING?"),
+    ("Eye Floaters", "tiny squiggly shapes floating across your vision", "EYE FLOATERS?"),
+    ("Doorway Effect", "forgetting why you entered a room the second you cross the door", "FORGOT WHY?"),
+    ("Song Earworm", "having a 5-second song loop stuck in your brain", "SONG STUCK?"),
+    ("Photic Sneeze", "sneezing immediately when stepping into bright sunlight", "SUN SNEEZE?"),
+    ("Deja Vu", "feeling like you've lived an exact new moment before", "DEJA VU?"),
+    ("Hypnic Jerk", "feeling like you are falling right before falling asleep", "FALLING DREAM?"),
+    ("Restless Legs", "an irresistible urge to move your legs at bedtime", "RESTLESS LEGS?"),
+    ("Auditory Glitch", "hearing someone call your name when no one did", "HEARD NAME?"),
+    ("Sleep Paralysis", "waking up unable to move your body for a few seconds", "CAN'T MOVE?"),
+    ("Time Compression", "feeling like hours passed in minutes or vice versa", "TIME FLYING?"),
+    ("Chills Music", "getting physical chills down your spine listening to music", "MUSIC CHILLS?"),
+    ("Cold Sweat", "breaking into a cold sweat when nervous or ill", "COLD SWEAT?"),
+    ("Dizzy Standing", "feeling lightheaded right after standing up fast", "DIZZY STANDING?"),
+    ("Double Vision", "momentary blurry double vision when sleepy", "DOUBLE VISION?"),
+    ("Heart Flutter", "feeling your heart skip a beat or extra flutter", "HEART FLUTTER?"),
+    ("Yawn Stretch", "stretching your arms automatically while yawning", "YAWN STRETCH?"),
+    ("Sneeze Halt", "a sneeze vanishing right as you are about to blow", "LOST SNEEZE?"),
+    ("Tongue Burn", "losing taste sensation after hot coffee", "TONGUE BURN?"),
+    ("Heavy Lids", "eyelids feeling ridiculously heavy during mid-day slumps", "HEAVY EYES?"),
+    ("Dry Mouth", "your mouth instantly going dry before public speaking", "DRY MOUTH?"),
+    ("Gag Reflex", "brushing back teeth triggering a sudden gag", "GAG REFLEX?"),
+    ("Muscle Cramp", "a sudden charley horse cramp in your calf at night", "CHARLEY HORSE?"),
+    ("Cold Tip Nose", "your nose tip feeling freezing cold indoor", "COLD NOSE?"),
+    ("Pop Ears", "your ears popping when changing altitude", "POPPING EARS?"),
+    ("Sweaty Palms", "palms sweating excessively during high tension", "SWEATY PALMS?"),
+    ("Joint Pop", "knuckles or knees popping loudly when bending", "JOINTS POPPING?"),
+    ("Bright Spot Vision", "seeing glowing spots after looking near bright light", "VISION SPOTS?"),
+    ("Morning Voice", "your voice sounding noticeably deeper right after waking up", "MORNING VOICE?"),
+    ("False Awakening", "dreaming that you woke up and started getting ready", "FALSE WAKE?"),
 ]
 
 ANGLES = [
@@ -90,7 +97,7 @@ ANGLES = [
     "Why your brain notices {phenomenon}",
     "The body signal behind {phenomenon}",
     "What changes inside you during {phenomenon}",
-    "Why {phenomenon} can feel sudden",
+    "Why {phenomenon} happens suddenly",
 ]
 
 
@@ -99,8 +106,6 @@ def build_catalogue() -> list[dict]:
     number = 1
     for short_label, phenomenon, thumbnail_text in PHENOMENA:
         for angle in ANGLES:
-            # Keep the public title short and human. The episode number remains in
-            # metadata/history, not in the viewer-facing YouTube title.
             title = f"{short_label} {_title_emoji(short_label)}"
             records.append({
                 "series_number": number,
@@ -118,7 +123,7 @@ def build_catalogue() -> list[dict]:
 def main() -> None:
     target = Path(__file__).resolve().parents[1] / "data" / "body_glitch_topics.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(build_catalogue(), indent=2), encoding="utf-8")
+    target.write_text(json.dumps(build_catalogue(), indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Wrote 500 Body Glitch topics to {target}")
 
 
