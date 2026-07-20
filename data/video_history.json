@@ -103,5 +103,20 @@
     "predicted_ctr": 7.1,
     "hook_score": 90,
     "predicted_retention": 0.755
+  },
+  {
+    "content_fingerprint": "78383380572bd36bf85a78acd20f9fd1bc291fcca532066547936ffda26541f4",
+    "title": "Morning Voice \ud83e\udec0",
+    "topic": "your voice sounding noticeably deeper right after waking up",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "Have you ever woken up sounding deeper and. It's a weird phenomenon, but understanding the reason can be fascinating We often think it's just our imagination, but what if it's actually a natural process? When we sleep, our vocal cords relax and swell with fluid, which changes their tension This causes our voice to drop in pitch and sound deeper due to the increased mass This change is completely normal and temporary, so you don't need to worry As we wake up and start moving, our vocal cords retu",
+    "posted_at": "2026-07-20T18:40:59.734272+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "_2JHzwLIE50",
+    "seo_score": 73,
+    "predicted_ctr": 6.8,
+    "hook_score": 85,
+    "predicted_retention": 0.732
   }
 ]
