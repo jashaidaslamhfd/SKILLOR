@@ -80,7 +80,7 @@ DARK_TOPICS = [
     "What Happens to Your Brain When You're Bored",
 
     # ── Heart / Blood / Circulatory (40+) ──
-    "Your Body Has 100,000 km of Veins",
+    "Your Body Has 60,000 Miles of Veins",
     "Why Your Heart Skips a Beat",
     "Your Blood Has a Secret Weapon",
     "Your Heart Beats 100,000 Times a Day Without Asking",
@@ -89,7 +89,7 @@ DARK_TOPICS = [
     "The Reason Cold Hands Mean a Warm Heart",
     "Your Blood Changes Color Inside Your Body",
     "The Secret Behind Your Heartbeat",
-    "Why Your Blood Is Actually Blue Inside",
+    "The Reason Your Veins Look Blue Under Your Skin",
     "Your Heart Has Its Own Electrical System",
     "The Reason Your Pulse Changes When You Lie",
     "Your Blood Vessels Could Circle the Earth",
@@ -368,7 +368,7 @@ DARK_TOPICS = [
     "Why Your Body Can Heal a Cut Without You Thinking",
     "The Reason You Have More Bacteria in Your Body Than Human Cells",
     "Why Your Body Can Adapt to High Altitude Over Time",
-    "The Reason Your Body Temperature Is 37 Degrees Celsius",
+    "The Reason Your Body Temperature Is 98.6 Degrees Fahrenheit",
 
     # ── Senses / Perception (30+) ──
     "Why You Can't Lick Your Own Elbow",

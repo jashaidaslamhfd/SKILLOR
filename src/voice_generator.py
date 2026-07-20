@@ -375,6 +375,42 @@ def _synthesize_kokoro(text: str, voice: str, speed: float):
     return full_audio, KOKORO_SAMPLE_RATE
 
 
+def _synthesize_cloud_tts(text: str):
+    """Step 3 emergency cloud TTS fallback (edge-tts / gTTS) using natural US English."""
+    try:
+        import asyncio
+        import edge_tts
+        import tempfile
+        voice = "en-US-ChristopherNeural"
+        communicate = edge_tts.Communicate(text, voice)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp_path = tmp.name
+        asyncio.run(communicate.save(tmp_path))
+        audio, sr = sf.read(tmp_path, dtype="float32")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+        return audio, sr
+    except Exception as e:
+        logger.warning(f"edge-tts unavailable/failed ({e}); trying gTTS...")
+        try:
+            from gtts import gTTS
+            import tempfile
+            tts = gTTS(text=text, lang='en', tld='com')
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                tmp_path = tmp.name
+            tts.save(tmp_path)
+            audio, sr = sf.read(tmp_path, dtype="float32")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if audio.ndim > 1:
+                audio = audio.mean(axis=1)
+            return audio, sr
+        except Exception as err2:
+            raise RuntimeError(f"Cloud TTS fallbacks unavailable: {err2}")
+
+
 def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
     """Synthesize a single segment with retry logic.
 
@@ -382,17 +418,8 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
       1. Chatterbox + cloned voice reference — try up to CHATTERBOX_MAX_RETRIES
          times (default 3) with CHATTERBOX_RETRY_DELAY seconds between attempts.
       2. If ALL Chatterbox attempts fail → Kokoro (no retries, one shot).
-      3. If Kokoro also fails → RuntimeError (NO silent silence insertion).
-
-    Returns (audio, sample_rate, engine_used) so callers/logs can tell
-    which engine actually produced a given segment.
-
-    Raises
-    ------
-    RuntimeError
-        If every Chatterbox attempt AND Kokoro both fail. The caller
-        (generate_voice_segments) must handle this — it means the entire
-        pipeline should abort, not silently insert silence.
+      3. If Kokoro also fails → Emergency Cloud TTS (edge-tts / gTTS).
+      4. If all fail → RuntimeError.
     """
     if not text or not text.strip():
         raise ValueError("Text cannot be empty")
@@ -410,7 +437,6 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
         except Exception as e:
             chatterbox_errors.append(str(e))
             logger.warning(f"Chatterbox attempt {attempt}/{CHATTERBOX_MAX_RETRIES} FAILED: {e}")
-            # Wait before next retry (skip wait on last attempt)
             if attempt < CHATTERBOX_MAX_RETRIES:
                 logger.info(f"Waiting {CHATTERBOX_RETRY_DELAY}s before retry...")
                 time.sleep(CHATTERBOX_RETRY_DELAY)
@@ -427,13 +453,19 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
         logger.info("Kokoro fallback SUCCESS")
         return audio, sr, "kokoro"
     except Exception as kokoro_err:
-        # ---- STEP 3: Both engines failed — NO SILENCE, raise hard error ----
+        logger.warning(f"Kokoro fallback failed: {kokoro_err}. Trying emergency cloud TTS...")
+
+    # ---- STEP 3: Emergency Cloud TTS fallback ----
+    try:
+        audio, sr = _synthesize_cloud_tts(narration_text)
+        logger.info("Cloud TTS fallback SUCCESS")
+        return audio, sr, "cloud_tts"
+    except Exception as cloud_err:
         error_msg = (
-            f"VOICE GENERATION FAILED — both engines exhausted for this segment. "
-            f"Chatterbox errors ({CHATTERBOX_MAX_RETRIES} attempts): "
-            f"[{' | '.join(chatterbox_errors)}]. "
+            f"VOICE GENERATION FAILED — all engines exhausted. "
+            f"Chatterbox errors: [{' | '.join(chatterbox_errors)}]. "
             f"Kokoro error: [{kokoro_err}]. "
-            f"Pipeline CANNOT continue without voiceover."
+            f"Cloud TTS error: [{cloud_err}]."
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)

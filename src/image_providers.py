@@ -55,8 +55,11 @@ class RateLimitError(RuntimeError):
 # ---------------------------------------------------------------------------
 # 1) POLLINATIONS - flux model (free, no key)
 # ---------------------------------------------------------------------------
+import urllib.parse
+
 def _pollinations_request(prompt, seed, model):
-    url = f"{POLLINATIONS_URL}/{prompt}?width=1080&height=1920&seed={seed}&model={model}&nologo=true"
+    encoded_prompt = urllib.parse.quote(str(prompt or ""))
+    url = f"{POLLINATIONS_URL}/{encoded_prompt}?width=1080&height=1920&seed={seed}&model={model}&nologo=true"
     last_status = None
     for attempt in range(3):
         response = requests.get(url, timeout=POLLINATIONS_TIMEOUT)

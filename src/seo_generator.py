@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 TITLE_MAX_LEN = 60
-TITLE_MAX_WORDS = 5  # concise mobile-first titles, per channel strategy
+TITLE_MAX_WORDS = 8  # Concise mobile-first titles with full search intent terms
 DESCRIPTION_MAX_LEN = 5000  # YouTube hard limit
 PINNED_COMMENT_MAX_LEN = 200
 

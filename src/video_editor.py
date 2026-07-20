@@ -44,18 +44,38 @@ TARGET_MIN_SEC = float(os.environ.get("TARGET_MIN_SECONDS", "40"))
 TARGET_MAX_SEC = float(os.environ.get("TARGET_MAX_SECONDS", "55"))
 
 # RETENTION OPTIMIZATIONS
-CAPTION_Y_FRACTION = 0.70
+CAPTION_Y_FRACTION = 0.52
 WORD_MIN_DURATION = 0.12
 MUSIC_VOLUME = float(os.environ.get("MUSIC_VOLUME", "0.07"))
 MUSIC_SAMPLE_RATE = 24000
 MUSIC_DIR = "assets/music"
 
 # CAPTION STYLING
-CAPTION_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+CAPTION_FONT_PATH = os.environ.get("CAPTION_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 CAPTION_FONT_SIZE = 72
 CAPTION_STROKE_W = 4
 CAPTION_MAX_WORDS_PER_LINE = 2
 CAPTION_MIN_FONT_SIZE = 40
+
+def _get_caption_font(font_size: int):
+    """Safely resolve bold sans-serif font across Linux, macOS, and Windows."""
+    candidates = [
+        CAPTION_FONT_PATH,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, font_size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
 
 # ✅ NEW: Priority improvements (safe additions)
 IMPORTANT_WORDS = ['dangerous', 'secret', 'never', 'shocking', 'impossible', 
@@ -101,11 +121,12 @@ def _cover_fit(img_path: str, out_path: str, size=(CANVAS_W, CANVAS_H)):
 
 def _ken_burns_clip(img_path: str, duration: float, direction: str, zoom_extra: float = 0.0) -> CompositeVideoClip:
     """
-    Centered zoom (in or out) + subtle horizontal pan.
-    Direction alternates per scene for retention.
+    Centered zoom (in or out) + horizontal pan.
+    Uses 1.25x overscan base image size to prevent black border leakage on edges.
     """
+    overscan_w, overscan_h = int(CANVAS_W * 1.25), int(CANVAS_H * 1.25)
     prepped = img_path.replace(".png", "_fit.png").replace(".jpg", "_fit.jpg")
-    _cover_fit(img_path, prepped)
+    _cover_fit(img_path, prepped, size=(overscan_w, overscan_h))
 
     zoom_amount = ZOOM_AMOUNT + zoom_extra
     zoom_start, zoom_end = (1.0, 1.0 + zoom_amount) if direction == "in" else (1.0 + zoom_amount, 1.0)
@@ -120,7 +141,7 @@ def _ken_burns_clip(img_path: str, duration: float, direction: str, zoom_extra: 
     def pos_fn(t):
         frac = min(t / duration, 1.0) if duration > 0 else 0
         s = scale_fn(t)
-        w, h = CANVAS_W * s, CANVAS_H * s
+        w, h = overscan_w * s, overscan_h * s
         dx = pan_dir * PAN_PX * (frac - 0.5) * 2
         x = (CANVAS_W - w) / 2 + dx
         y = (CANVAS_H - h) / 2
@@ -168,7 +189,7 @@ def _caption_clip(text: str, duration: float, is_important: bool = False, color_
     - Short punchy lines (2-3 words)
     - High contrast (white text with black stroke)
     - ✅ Priority: Important words highlighted (yellow/red)
-    - Centered on screen
+    - Centered on screen in vertical safe zone (Y=0.52)
     """
     if color_theme is None:
         color_theme = {'primary': (255, 255, 255), 'secondary': (255, 200, 50)}
@@ -181,11 +202,7 @@ def _caption_clip(text: str, duration: float, is_important: bool = False, color_
     dummy_draw = ImageDraw.Draw(dummy)
 
     while True:
-        try:
-            font = ImageFont.truetype(CAPTION_FONT_PATH, font_size)
-        except Exception:
-            font = ImageFont.load_default()
-            break
+        font = _get_caption_font(font_size)
 
         lines = _wrap_text(dummy_draw, text, font, max_width)
         line_height = int(font_size * 1.3)
@@ -227,20 +244,17 @@ def _caption_clip(text: str, duration: float, is_important: bool = False, color_
         if line_has_important and is_important:
             # Draw each word separately with colors
             current_x = x
-            for word in words_in_line:
+            for idx, word in enumerate(words_in_line):
                 word_clean = re.sub(r'[^a-zA-Z]', '', word.lower())
+                display_word = word + (" " if idx < len(words_in_line) - 1 else "")
                 if word_clean in IMPORTANT_WORDS:
-                    # Highlighted word (yellow/red)
                     color = color_theme.get('secondary', (255, 200, 50))
-                    draw.text((current_x, y), word, font=font, fill=color,
+                    draw.text((current_x, y), display_word, font=font, fill=color,
                               stroke_width=CAPTION_STROKE_W, stroke_fill="black")
                 else:
-                    # Normal word (white)
-                    draw.text((current_x, y), word, font=font, fill=(255, 255, 255),
+                    draw.text((current_x, y), display_word, font=font, fill=(255, 255, 255),
                               stroke_width=CAPTION_STROKE_W, stroke_fill="black")
-                # Update x position for next word
-                word_bbox = draw.textbbox((0, 0), word + " ", font=font, stroke_width=CAPTION_STROKE_W)
-                current_x += (word_bbox[2] - word_bbox[0])
+                current_x += draw.textlength(display_word, font=font)
         else:
             # Normal rendering (all white)
             draw.text((x, y), line, font=font, fill="white",
@@ -805,11 +819,7 @@ def generate_thumbnail(image_path: str, title: str, output_path: str = "output/t
     canvas = Image.alpha_composite(canvas, overlay).convert("RGB")
 
     draw = ImageDraw.Draw(canvas)
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    try:
-        font = ImageFont.truetype(font_path, 90)
-    except Exception:
-        font = ImageFont.load_default()
+    font = _get_caption_font(90)
 
     # Keep only 3-4 meaningful words. Taking the first five words produced
     # vague phrases such as "SECRET RHYTHMS OF YOUR BODY" on mobile.
