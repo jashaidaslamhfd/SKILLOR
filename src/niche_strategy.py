@@ -15,6 +15,12 @@ import random
 import re
 from typing import List, Dict, Optional
 
+try:
+    from script_generator import repair_mojibake
+except ImportError:  # keeps this module importable standalone/in tests
+    def repair_mojibake(text: str) -> str:
+        return text
+
 logger = logging.getLogger(__name__)
 
 # ============================================
@@ -826,6 +832,7 @@ def _pick_topic_emoji(topic: str) -> str:
 
 def _make_seo_title(title: str, topic: str) -> str:
     """Enhances title for SEO while keeping under 55 chars."""
+    title = repair_mojibake(title)
     clean_title = _EMOJI_PATTERN.sub('', title, count=1).strip()
 
     power_words = ["secret", "nobody", "never", "actually", "dark", "scary",
