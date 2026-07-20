@@ -36,7 +36,7 @@ try:
     from uploader import upload_all
     from niche_strategy import (
         get_topic_category, generate_seo_tags, validate_script_for_medical_accuracy,
-        auto_add_disclaimer,
+        auto_add_disclaimer, get_random_cta,
     )
     from quality_checker import QualityChecker
     from scheduler import USAPeakTimeScheduler
@@ -415,6 +415,33 @@ class SKILLORPipeline:
 
             if fallback_ratio > FALLBACK_ABORT_RATIO:
                 raise RuntimeError(f"Quality gate failed: {fallback_ratio:.1%} fallbacks")
+
+            # Phase 2b: Outro / CTA scene
+            # `cta` was previously stored only as metadata and used in the
+            # YouTube description (uploader.py) - it was never spoken or
+            # shown on screen, so viewers never actually saw/heard a
+            # "like / follow / share" prompt at the end of the video.
+            # Turning it into one more real scene means it goes through the
+            # normal voice + caption + build_video pipeline like every other
+            # scene, so it is both spoken and displayed at the end.
+            cta_text = (script_data.get('cta') or '').strip()
+            if not cta_text or not any(
+                w in cta_text.lower() for w in ('follow', 'share', 'subscribe', 'comment', 'like')
+            ):
+                cta_text = get_random_cta()
+                script_data['cta'] = cta_text
+                logger.info("No usable CTA in script; using fallback: %s", cta_text)
+
+            if cta_text and script_data.get('scenes') and image_paths:
+                outro_scene = {
+                    'visual': script_data['scenes'][-1].get('visual', ''),
+                    'caption': cta_text,
+                }
+                script_data['scenes'].append(outro_scene)
+                image_paths.append(image_paths[-1])
+                image_sources.append(image_sources[-1] if image_sources else 'reused-outro')
+                media_types.append(media_types[-1] if media_types else 'image')
+                logger.info("✅ Added outro CTA scene: \"%s\"", cta_text)
 
             # Phase 3: Voice Generation
             logger.info("\n🔊 PHASE 3: VOICE GENERATION")
