@@ -73,5 +73,20 @@
     "predicted_ctr": 7.1,
     "hook_score": 85,
     "predicted_retention": 0.732
+  },
+  {
+    "content_fingerprint": "3ba4b8193de4babbd416aa24b9a5c4cac4765549d2cea38ab7332e2c3f68f548",
+    "title": "Body Freeze \u00f0\u0178\u02dc\u00b3 \ud83e\udec0",
+    "topic": "your body freezing when scared",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "Ever felt like your body just freezes when. It's like your body is stuck in place, and you can't move. But why does this happen? Is it just my imagination? Our nervous system has a special response to threats, known as the 'fight or flight' response. When we perceive danger, our amygdala sends a signal to our prefrontal cortex, which then triggers. This response causes our muscles to tense up, including our limbs and core. So, when your body freezes, it's just your nervous system's way of protec",
+    "posted_at": "2026-07-20T00:39:05.209036+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "IjwfP0tcZH8",
+    "seo_score": 82,
+    "predicted_ctr": 7.4,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
