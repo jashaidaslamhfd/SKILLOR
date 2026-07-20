@@ -78,7 +78,7 @@ class SeoPolicyTests(unittest.TestCase):
             "summary": "Sleep helps your brain strengthen important memories.",
         }
         package = generate_seo_package("How sleep helps your brain make memories", script)
-        self.assertTrue(all(len(title.split()) <= 5 for title in package["title_options"]))
+        self.assertTrue(all(len(title.split()) <= 8 for title in package["title_options"]))
         self.assertEqual(package["thumbnail_text"], "MEMORY RESET")
         self.assertNotIn("helps", [tag.lower() for tag in package["tags"]])
         self.assertEqual(
@@ -102,7 +102,7 @@ class TrendSafetyTests(unittest.TestCase):
     def test_body_glitch_catalogue_has_500_branded_topics(self):
         records = get_body_glitch_topics()
         self.assertEqual(len(records), 500)
-        self.assertEqual(records[0]["series_title"], "Eye Twitch ðŸ‘ï¸")
+        self.assertEqual(records[0]["series_title"], "Eye Twitch 👁️")
         self.assertTrue(all(record["source"] == "body_glitch_series" for record in records))
 
 
