@@ -715,9 +715,13 @@ def generate_thumbnail(image_path: str, title: str, output_path: str = "output/t
     """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    # Strip emoji for font compatibility
+    # Strip emoji for font compatibility (kept in sync with niche_strategy.py's
+    # _EMOJI_PATTERN - stars/arrows/media-control glyphs outside 2600-27BF
+    # were previously left behind, printing as a missing-glyph box on the
+    # thumbnail).
     title = re.sub(
-        r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF]+\s*",
+        r"[\U0001F300-\U0001FAFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF"
+        r"\u25A0-\u25FF\U0001F1E6-\U0001F1FF\uFE0F]+\s*",
         "",
         title,
     ).strip()
