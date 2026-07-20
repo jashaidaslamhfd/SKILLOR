@@ -99,7 +99,7 @@ def pad_video_to_minimum(path: str, min_seconds: float) -> str:
     command = [
         "ffmpeg", "-y", "-i", path,
         "-vf", filter_complex,
-        "-af", "apad=whole_len=int({}*44100)".format(int(min_seconds * 44100)),
+        "-af", "apad=whole_len={}".format(int(min_seconds * 44100)),
         "-c:v", "libx264", "-c:a", "aac",
         "-shortest",
         output_path
@@ -152,4 +152,3 @@ def probe_video(path: str) -> Dict:
     if duration < min_seconds:
         raise MediaValidationError(f"Video too short {duration:.2f}s; minimum {min_seconds:.2f}s")
     return {"width": width, "height": height, "duration": duration}
-    
