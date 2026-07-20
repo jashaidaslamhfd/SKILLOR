@@ -425,10 +425,23 @@ class SKILLORPipeline:
             # normal voice + caption + build_video pipeline like every other
             # scene, so it is both spoken and displayed at the end.
             cta_text = (script_data.get('cta') or '').strip()
-            if not cta_text or not any(
-                w in cta_text.lower() for w in ('follow', 'share', 'subscribe', 'comment', 'like')
-            ):
-                cta_text = get_random_cta()
+            _cta_action_words = ('follow', 'share', 'subscribe', 'comment', 'like')
+
+            def _has_action_word(text: str) -> bool:
+                return any(w in text.lower() for w in _cta_action_words)
+
+            if not cta_text or not _has_action_word(cta_text):
+                # get_random_cta() draws from a pool that isn't 100%
+                # action-worded (e.g. "See you in the next one." has no
+                # follow/share/subscribe wording) - retry a few times so the
+                # fallback we actually use always has one.
+                for _ in range(10):
+                    candidate = get_random_cta()
+                    if _has_action_word(candidate):
+                        cta_text = candidate
+                        break
+                else:
+                    cta_text = "Follow for more facts like this."
                 script_data['cta'] = cta_text
                 logger.info("No usable CTA in script; using fallback: %s", cta_text)
 
