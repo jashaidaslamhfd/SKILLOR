@@ -800,8 +800,16 @@ _TOPIC_EMOJI_MAP = [
     (['brain', 'mind', 'memory', 'thought'], '🧠'),
 ]
 
+# Was only [1F300-1FAFF, 2600-27BF, flags]. That misses common symbol-style
+# "emoji" outside those blocks - stars (2B50), arrows (2190-21FF, 2B00-2BFF),
+# geometric/media-control glyphs (25A0-25FF), and the variation-selector
+# (FE0F) that often trails a symbol. When the LLM occasionally ignores the
+# "no emojis" title rule and uses one of these, this pattern failed to strip
+# it before a new topic emoji was appended -> title ended up with two
+# emoji/symbols instead of one.
 _EMOJI_PATTERN = re.compile(
-    r"[\U0001F300-\U0001FAFF\u2600-\u27BF\U0001F1E6-\U0001F1FF]+\s*"
+    r"[\U0001F300-\U0001FAFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF"
+    r"\u25A0-\u25FF\U0001F1E6-\U0001F1FF\uFE0F]+\s*"
 )
 
 
