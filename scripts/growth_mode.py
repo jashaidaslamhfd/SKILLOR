@@ -12,7 +12,6 @@ import argparse
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from script_generator import generate_script, _default_prompt
 
 # ============================================
 # PROVEN VIRAL FORMULAS (from 1000+ viral Shorts)
@@ -111,7 +110,6 @@ def generate_viral_variants(topic: str, count: int = 5) -> list:
         hook = hooks[i].format(topic=clean, organ=organ)
         cta = ctas[i].format(topic=clean)
         
-        # Build script data structure
         script_data = {
             "title": title[:55],
             "thumbnail_text": title.split(':')[-1].strip()[:20] if ':' in title else title[:20],
