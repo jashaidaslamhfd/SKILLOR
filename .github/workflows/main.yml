@@ -8,12 +8,9 @@ on:
         required: false
         type: string
   schedule:
-    # Three USA peak-time triggers (EDT = UTC-4):
-    # 12:00 PM EDT = 16:00 UTC  (lunch peak)
-    # 3:00 PM EDT  = 19:00 UTC  (afternoon peak)
-    # 7:00 PM EDT  = 23:00 UTC  (prime-time peak)
-    # Gate below allows all three hours.
-    - cron: "0 16,19,23 * * *"
+    # ONE video per day at 3 PM EDT = 19:00 UTC (best afternoon peak)
+    # Quality > Quantity: 1 killer video beats 3 average ones
+    - cron: "0 19 * * *"
 
 permissions:
   # Required to persist durable topic/upload/analytics state in data/.
@@ -40,7 +37,7 @@ jobs:
           fi
           ny_hour="$(TZ=America/New_York date +%H)"
           case "$ny_hour" in
-            12|15|19) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
+            15) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -137,8 +134,8 @@ jobs:
           YT_PRIVACY_STATUS: "public"
           # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
           CONTENT_SERIES: "body_glitches"
-          TOPIC_STRATEGY: "body_glitch_series"
-          REQUIRE_DAILY_TREND: "false"
+          TOPIC_STRATEGY: "trending"
+          REQUIRE_DAILY_TREND: "true"
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           FB_UPLOAD_ENABLED: "true"
