@@ -13,7 +13,6 @@ on:
     - cron: "0 19 * * *"
 
 permissions:
-  # Required to persist durable topic/upload/analytics state in data/.
   contents: write
 
 concurrency:
@@ -84,9 +83,6 @@ jobs:
         if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
-          # Keep the 500-topic catalogue synchronized with its generator.
-          # This prevents an old committed JSON catalogue from producing old
-          # numbered titles after the title strategy changes.
           python scripts/generate_body_glitch_topics.py
           python -m compileall -q src scripts tests
           python -m unittest discover -s tests -v
@@ -109,8 +105,6 @@ jobs:
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          # Optional official trend APIs. Google Trends RSS still works when
-          # these are empty; never fall back to brittle HTML scraping.
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -130,20 +124,15 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
-          # CHANGED: Videos now upload as PUBLIC (was "private")
           YT_PRIVACY_STATUS: "public"
-          # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
           CONTENT_SERIES: "body_glitches"
           TOPIC_STRATEGY: "trending"
-          REQUIRE_DAILY_TREND: "true"
+          REQUIRE_DAILY_TREND: "false"   # <-- CHANGED: Allow fallback to static topics
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           FB_UPLOAD_ENABLED: "true"
-          # OPTIMIZED FOR RETENTION & TRENDS
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
-          # Natural, clear creator narration; slightly slower than the raw
-          # model without the artificial dramatic pace.
           CHATTERBOX_TEMPO: "0.96"
           CHATTERBOX_EXAGGERATION: "0.35"
           CHATTERBOX_CFG_WEIGHT: "0.70"
