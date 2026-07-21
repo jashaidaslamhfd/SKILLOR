@@ -8,10 +8,12 @@ on:
         required: false
         type: string
   schedule:
-    # Two UTC triggers cover daylight-saving changes. The gate runs exactly
-    # once at 17:00 America/New_York: one high-quality test video/day while
-    # the channel rebuilds its audience signal.
-    - cron: "0 21,22 * * *"
+    # Three USA peak-time triggers (EDT = UTC-4):
+    # 12:00 PM EDT = 16:00 UTC  (lunch peak)
+    # 3:00 PM EDT  = 19:00 UTC  (afternoon peak)
+    # 7:00 PM EDT  = 23:00 UTC  (prime-time peak)
+    # Gate below allows all three hours.
+    - cron: "0 16,19,23 * * *"
 
 permissions:
   # Required to persist durable topic/upload/analytics state in data/.
@@ -27,7 +29,7 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Gate the run to one New York quality window
+      - name: Gate the run to USA peak hours
         id: gate
         shell: bash
         run: |
@@ -38,7 +40,7 @@ jobs:
           fi
           ny_hour="$(TZ=America/New_York date +%H)"
           case "$ny_hour" in
-            17) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
+            12|15|19) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -76,7 +78,7 @@ jobs:
             espeak-ng
           POLICY_FILE="$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n 1 || true)"
           if [ -n "$POLICY_FILE" ]; then
-            sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
+            sudo sed -i 's/rights="none" pattern="@\\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
           fi
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
@@ -131,8 +133,8 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
-          # User-selected safety mode: videos upload privately for review.
-          YT_PRIVACY_STATUS: "private"
+          # CHANGED: Videos now upload as PUBLIC (was "private")
+          YT_PRIVACY_STATUS: "public"
           # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
           CONTENT_SERIES: "body_glitches"
           TOPIC_STRATEGY: "body_glitch_series"
