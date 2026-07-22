@@ -207,7 +207,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
         'status': {
             'privacyStatus': YT_PRIVACY_STATUS,
             'selfDeclaredMadeForKids': MADE_FOR_KIDS,
-            'containsSyntheticContent': True,  # Mandatory YouTube AI content disclosure for USA audience
+            'containsSyntheticMedia': True,  # YouTube AI/altered-content disclosure
         }
     }
 
@@ -443,8 +443,11 @@ def upload_all(video_path, thumb_path, script_data):
         logger.info(f"  URL: https://youtu.be/{yt_video_id}")
     logger.info(f"Facebook Upload: {'SUCCESS' if facebook_success else 'FAILED/SKIPPED'}")
 
-    if not (youtube_success or facebook_success):
-        raise RuntimeError("Both YouTube and Facebook uploads failed")
+    # YouTube is the primary channel. A Facebook-only success must never mark
+    # the run complete, otherwise the scheduler records a successful upload
+    # while the required YouTube Short is missing.
+    if not youtube_success:
+        raise RuntimeError("YouTube upload failed; Facebook success cannot replace the primary upload")
 
     return {
         "youtube_success": youtube_success,
