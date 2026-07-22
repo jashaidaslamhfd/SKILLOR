@@ -148,5 +148,20 @@
     "predicted_ctr": 9.2,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "f4ae45e735fb4fdf96b16d8d3b731464641bf20b54be40aa4debc320c0f8264f",
+    "title": "Why You Hear Your Heartbeat at Night \ud83e\udec0",
+    "topic": "Why you hear your heartbeat at night",
+    "trend_source": "proven_channel_pillar",
+    "trend_url": null,
+    "voiceover": "I hear my heartbeat at night, it's really. Does this mean I'm sick, or is there something wrong with my ears? I thought it was just my imagination, but what's really going on inside my body? The ear has three parts: the outer ear, eardrum, and inner ear, each playing a crucial. When your heart beats, it creates vibrations that travel through your bloodstream and hit the eardrum. In the dark, your brain is more sensitive to these vibrations, making your heartbeat sound louder. This is why you mig",
+    "posted_at": "2026-07-22T18:35:43.234010+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "H7HDSb0yX5A",
+    "seo_score": 90,
+    "predicted_ctr": 9.4,
+    "hook_score": 90,
+    "predicted_retention": 0.755
   }
 ]
