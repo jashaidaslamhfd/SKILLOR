@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 RETRY_DELAY = 5
+FB_API_VERSION = os.environ.get("FB_API_VERSION", "v23.0").strip()
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 # ---------------------------------------------------------------------------
 # IMPORTANT: YouTube video uploads require OAuth 2.0 USER credentials, not a
@@ -370,12 +372,27 @@ def _upload_facebook_reels(video_path, script_data, tags):
 
     # Max 3 hashtags — Facebook's own algorithm penalises Reels with >5 hashtags
     description = _build_facebook_description(script_data, tags)
+    fingerprint = _content_fingerprint(script_data)
+    upload_state = _load_upload_state()
+    fb_state = upload_state.get(fingerprint, {}).get("facebook", {})
+    if fb_state.get("status") == "completed" and fb_state.get("video_id"):
+        logger.info("Facebook duplicate blocked; existing Reel: %s", fb_state["video_id"])
+        return True
+    if fb_state.get("status") == "started":
+        raise RuntimeError(
+            "Earlier Facebook Reel has unknown completion state. Review the Page before retrying."
+        )
+    upload_state.setdefault(fingerprint, {})["facebook"] = {
+        "status": "started",
+        "started_at": time.time(),
+    }
+    _save_upload_state(upload_state)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             # ---- Phase 1: start ----
             start_resp = requests.post(
-                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                f"https://graph.facebook.com/{FB_API_VERSION}/{fb_page}/video_reels",
                 data={"upload_phase": "start", "access_token": fb_token},
                 timeout=30,
             )
@@ -405,7 +422,7 @@ def _upload_facebook_reels(video_path, script_data, tags):
 
             # ---- Phase 3: finish/publish ----
             finish_resp = requests.post(
-                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                f"https://graph.facebook.com/{FB_API_VERSION}/{fb_page}/video_reels",
                 data={
                     "upload_phase": "finish",
                     "video_id": video_id,
@@ -418,6 +435,12 @@ def _upload_facebook_reels(video_path, script_data, tags):
             finish_data = finish_resp.json()
             if finish_resp.status_code == 200 and finish_data.get("success", True) and "error" not in finish_data:
                 logger.info(f"Facebook Reels published successfully: video_id={video_id}")
+                upload_state[fingerprint]["facebook"] = {
+                    "status": "completed",
+                    "video_id": str(video_id),
+                    "completed_at": time.time(),
+                }
+                _save_upload_state(upload_state)
                 return True
             else:
                 raise RuntimeError(f"Reels finish phase failed: {finish_data}")
@@ -451,6 +474,18 @@ def upload_all(video_path, thumb_path, script_data):
     logger.info(f"selfDeclaredMadeForKids = {MADE_FOR_KIDS} (verify this is correct for your content!)")
     logger.info(f"YouTube privacy status = {YT_PRIVACY_STATUS}")
     logger.info(f"SEO tags for this video: {tags}")
+
+    if DRY_RUN:
+        youtube_description = _build_youtube_description(script_data, tags)
+        facebook_description = _build_facebook_description(script_data, tags)
+        logger.info("DRY_RUN: YouTube description length=%d", len(youtube_description))
+        logger.info("DRY_RUN: Facebook caption length=%d", len(facebook_description))
+        return {
+            "youtube_success": True,
+            "youtube_video_id": None,
+            "facebook_success": True,
+            "dry_run": True,
+        }
 
     youtube_success, yt_video_id = _upload_youtube(video_path, thumb_path, script_data, tags)
     facebook_success = _upload_facebook_reels(video_path, script_data, tags)
