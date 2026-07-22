@@ -93,10 +93,12 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+          FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: |
           set -euo pipefail
           missing=()
-          for name in GROQ_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET REFRESH_TOKEN; do
+          for name in GROQ_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET REFRESH_TOKEN FACEBOOK_ACCESS_TOKEN FB_PAGE_ID; do
             if [ -z "${!name:-}" ]; then missing+=("$name"); fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -134,7 +136,8 @@ jobs:
           TOPIC_STRATEGY: "body_glitch_series"
           REQUIRE_DAILY_TREND: "false"   # <-- CHANGED: Allow fallback to static topics
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_API_VERSION: "v23.0"
           FB_UPLOAD_ENABLED: "true" # Intentional: public cross-posting is required
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
