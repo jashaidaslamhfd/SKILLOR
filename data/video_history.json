@@ -163,5 +163,20 @@
     "predicted_ctr": 9.4,
     "hook_score": 90,
     "predicted_retention": 0.755
+  },
+  {
+    "content_fingerprint": "8642df72ef46b2dccc3c3e0e896c10ac8b9d2defd934a939952d85a5294a6a98",
+    "title": "Throat Lump \ud83e\udec0",
+    "topic": "a feeling of a lump in your throat when sad",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "Ever felt a lump in your throat when. Have you ever wondered why this happens when we're down? Is it just a weird physical sensation, or is something more going on? When we're upset, our body's 'fight or flight' response is triggered. This causes our larynx to tense up and our vocal cords to vibrate rapidly. The lump we feel is usually just a normal vocal cord vibration. So, it's not a sign of a serious health issue. Now you know the reason behind the lump in your throat when you're feeling sad.",
+    "posted_at": "2026-07-22T23:41:40.581197+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "QZF0IHtnbIg",
+    "seo_score": 73,
+    "predicted_ctr": 6.8,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
