@@ -8,15 +8,19 @@ on:
         required: false
         type: string
   schedule:
-    # ONE video per day at 3 PM EDT = 19:00 UTC (best afternoon peak)
-    # Quality > Quantity: 1 killer video beats 3 average ones
-    - cron: "0 19 * * *"
+    # Three public uploads/day for the USA audience. Fixed UTC slots avoid
+    # GitHub Actions' lack of DST-aware cron timezones.
+    - cron: "30 16 * * *"
+    - cron: "0 20 * * *"
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write
 
 concurrency:
-  group: skillor-video-generation
+  # Main generation and analytics both commit data/ state. One shared lock
+  # prevents one workflow from overwriting the other's history update.
+  group: skillor-channel-state
   cancel-in-progress: false
 
 jobs:
@@ -25,20 +29,14 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Gate the run to USA peak hours
+      - name: Allow scheduled or manual run
         id: gate
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          ny_hour="$(TZ=America/New_York date +%H)"
-          case "$ny_hour" in
-            15) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
-            *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
-          esac
+          # Fixed UTC slots above are already distributed across the USA day.
+          # A fixed local-hour gate would skip runs when New York changes DST.
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         if: steps.gate.outputs.should_run == 'true'
@@ -92,13 +90,20 @@ jobs:
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${GROQ_API_KEY:-}" ]; then
-            echo "::error::GROQ_API_KEY repository secret is missing."
+          missing=()
+          for name in GROQ_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET REFRESH_TOKEN; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Required secrets missing: ${missing[*]}"
             exit 1
           fi
-          echo "YouTube Data API and Reddit OAuth are optional trend-inspiration sources."
+          echo "Required generation and YouTube upload secrets are present."
 
       - name: Generate and upload Short
         if: steps.gate.outputs.should_run == 'true'
@@ -126,11 +131,11 @@ jobs:
           YT_MADE_FOR_KIDS: "false"
           YT_PRIVACY_STATUS: "public"
           CONTENT_SERIES: "body_glitches"
-          TOPIC_STRATEGY: "trending"
+          TOPIC_STRATEGY: "body_glitch_series"
           REQUIRE_DAILY_TREND: "false"   # <-- CHANGED: Allow fallback to static topics
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          FB_UPLOAD_ENABLED: "true"
+          FB_UPLOAD_ENABLED: "true" # Intentional: public cross-posting is required
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
           CHATTERBOX_TEMPO: "0.96"
