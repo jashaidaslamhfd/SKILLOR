@@ -94,14 +94,17 @@ def pad_video_to_minimum(path: str, min_seconds: float) -> str:
     
     # Use ffmpeg to pad with freeze frame
     # tpad filter: duplicate last frame to extend video
-    filter_complex = f"tpad=stop={int(padding_needed * 1000)}:stop_mode=clone"
+    # tpad.stop is a frame count, not milliseconds. The renderer outputs 30fps.
+    pad_frames = max(1, min(int(round(padding_needed * 30)), 30 * 20))
+    filter_complex = f"tpad=stop={pad_frames}:stop_mode=clone"
     
     command = [
-        "ffmpeg", "-y", "-i", path,
+        shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", path,
         "-vf", filter_complex,
-        "-af", "apad=whole_len={}".format(int(min_seconds * 44100)),
+        "-af", "apad",
+        "-t", f"{min_seconds + 0.5:.3f}",
         "-c:v", "libx264", "-c:a", "aac",
-        "-shortest",
+        "-pix_fmt", "yuv420p",
         output_path
     ]
     
