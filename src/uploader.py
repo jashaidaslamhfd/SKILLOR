@@ -43,34 +43,51 @@ def _build_youtube_description(script_data: dict, tags: list) -> str:
 
 
 def _build_facebook_description(script_data: dict, tags: list) -> str:
-    """Facebook Reels description:
-    - Facebook's own guidelines warn that MORE THAN 5 hashtags can
-      suppress reach — so we use MAX 3 (sweet spot for Reels).
-    - Hook in first line (shows before 'See more' truncation).
-    - Clean CTA drives the follow/share action."""
-    hook = script_data.get('hook', '')
-    cta = script_data.get('cta', 'Follow for more dark body secrets.')
-    description = script_data.get('description', '')
+    """Build a Facebook-native Reel caption, never a copied YouTube block.
 
-    # Facebook 2026: the algorithm categorises Reels mainly via NLP on the
-    # caption text (hook + description above), with hashtags as a secondary
-    # signal. So we (a) keep the strict 3-hashtag limit (>5 suppresses reach)
-    # and (b) pick the most topic-SPECIFIC tags first, dropping generic
-    # filler like "facts"/"science"/"shorts" that add no categorisation value
-    # on Facebook. Falls back to the first tags only if nothing specific is
-    # left, so a Reel is never posted with zero hashtags.
-    _generic = {"facts", "science", "shorts", "viral", "fyp", "reels",
-                "education", "trending", "video", "youtube"}
-    specific = [t for t in tags if str(t).lstrip("#").lower() not in _generic]
-    chosen = (specific or tags)[:3]
-    fb_hashtags = ' '.join(f"#{str(t).lstrip('#')}" for t in chosen)
+    Facebook gets a short natural-language caption for NLP/topic matching;
+    YouTube gets its own search-oriented description. We deliberately use
+    `summary` first and strip old hashtags/formatting so a legacy YouTube
+    description cannot be pasted inside the Facebook caption a second time.
+    """
+    import re
 
-    return (
-        f"{hook}\n\n"
-        f"{description}\n\n"
-        f"{cta}\n\n"
-        f"{fb_hashtags}"
-    )[:2200]
+    def clean(value: object, limit: int) -> str:
+        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        # Remove hashtags and old divider/CTA fragments from descriptions
+        # created by earlier versions of the pipeline.
+        text = re.sub(r"#[A-Za-z0-9_]+", "", text)
+        text = re.sub(r"[━═─]{3,}", " ", text)
+        return re.sub(r"\s+", " ", text).strip(" .")[:limit]
+
+    hook = clean(script_data.get("hook"), 180)
+    summary = clean(script_data.get("summary") or script_data.get("description"), 420)
+    cta = clean(script_data.get("cta") or "Follow for more body science.", 100)
+
+    # Facebook caption: one hook, one explanation, one natural CTA. Do not
+    # repeat hook/summary when the model generated overlapping sentences.
+    parts = []
+    if hook:
+        parts.append(hook)
+    if summary and summary.lower() not in hook.lower() and hook.lower() not in summary.lower():
+        parts.append(summary)
+    if cta and cta.lower() not in " ".join(parts).lower():
+        parts.append(cta)
+
+    generic = {"facts", "science", "shorts", "viral", "fyp", "reels",
+               "education", "trending", "video", "youtube"}
+    specific = []
+    seen = set()
+    for raw in tags:
+        tag = str(raw).lstrip("#").strip()
+        key = tag.lower()
+        if tag and key not in generic and key not in seen:
+            seen.add(key)
+            specific.append(tag.replace(" ", ""))
+    hashtags = " ".join(f"#{tag}" for tag in specific[:3])
+    if hashtags:
+        parts.append(hashtags)
+    return "\n\n".join(parts)[:2200]
 
 
 VIDEO_HISTORY_PATH = os.environ.get("VIDEO_HISTORY_PATH", "data/video_history.json")
