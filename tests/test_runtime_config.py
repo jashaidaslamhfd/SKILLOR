@@ -150,5 +150,79 @@ class PublicApiTests(unittest.TestCase):
             src.DEFINITELY_NOT_A_REAL_EXPORT_123
 
 
+def _arc_fixture():
+    """Valid 8-scene script that follows Hook→Suspense→…→Loop-back."""
+    return {
+        "title": "Why Sleep Helps Your Brain",
+        "hook": "Your brain saves memories while sleeping.",
+        "cta": "Follow for more science made simple.",
+        "scenes": [
+            {"visual": "glowing brain during deep sleep", "caption": "Your brain saves memories while sleeping."},
+            {"visual": "memory signals moving through neurons", "caption": "But how does your brain choose which moments stay important after a long day?"},
+            {"visual": "student studying in a quiet room", "caption": "Without enough sleep, new information can feel clear now but disappear much sooner tomorrow."},
+            {"visual": "brain pathways strengthening overnight", "caption": "During deep sleep, your brain replays recent experiences and strengthens the connections worth keeping."},
+            {"visual": "calm sleeper with brain overlay", "caption": "It also links related ideas together, making recall easier when you need those details."},
+            {"visual": "memory pathway becoming brighter", "caption": "This process is why rest can help learning feel stable after a full day."},
+            {"visual": "organized notes beside sleeping person", "caption": "The memory is not perfect, but sleep gives your brain time to organize it."},
+            {"visual": "morning light over focused person", "caption": "So sleep quietly saves the memories your waking brain might otherwise lose completely tomorrow."},
+        ],
+    }
+
+
+class StoryArcTests(unittest.TestCase):
+    """2026 feed reality: first-3s suspense question + closing loop-back are
+    the two cheapest retention levers. Scripts missing them must fail
+    validation (and be retried), not ship."""
+
+    def setUp(self):
+        self.sg = pytestless_import("script_generator")
+
+    def _validated(self, data):
+        return self.sg.validate_script(self.sg._normalize_scenes(data))
+
+    def test_complete_arc_passes(self):
+        valid, issues = self._validated(_arc_fixture())
+        self.assertTrue(valid, issues)
+
+    def test_scene_two_without_open_question_is_rejected(self):
+        data = _arc_fixture()
+        data["scenes"][1]["caption"] = "Your brain simply keeps doing this every single day."
+        valid, issues = self._validated(data)
+        self.assertFalse(valid)
+        self.assertTrue(any("SUSPENSE" in issue for issue in issues), issues)
+
+    def test_final_scene_without_loopback_is_rejected(self):
+        data = _arc_fixture()
+        data["scenes"][-1]["caption"] = "Cities glow brighter during quiet winter festivals worldwide."
+        valid, issues = self._validated(data)
+        self.assertFalse(valid)
+        self.assertTrue(any("LOOP-BACK" in issue for issue in issues), issues)
+
+    def test_content_concepts_fold_plurals_and_drop_stopwords(self):
+        concepts = self.sg._content_concepts("Your brain saves the memories")
+        self.assertIn("brain", concepts)
+        self.assertIn("memorie", concepts)
+        self.assertNotIn("your", concepts)
+
+
+class FacebookSafetyTests(unittest.TestCase):
+    """Meta demotes engagement-bait captions — a YouTube-style
+    'like/share/subscribe' CTA must never reach the Facebook caption."""
+
+    def test_bait_cta_is_replaced(self):
+        uploader = pytestless_import("uploader")
+        caption = uploader._build_facebook_description(
+            {"hook": "Your knee cracks loudly.",
+             "summary": "Why joints pop, explained simply.",
+             "cta": "Like, share and subscribe!"},
+            ["kneecracking", "bodyscience"],
+        )
+        lowered = caption.lower()
+        self.assertNotIn("subscribe", lowered)
+        self.assertNotIn("share", lowered)
+        self.assertNotIn("like,", lowered)
+        self.assertIn("follow", lowered)
+
+
 if __name__ == "__main__":
     unittest.main()

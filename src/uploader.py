@@ -97,7 +97,15 @@ def _build_facebook_description(script_data: dict, tags: list) -> str:
 
     hook = clean(script_data.get("hook"), 180)
     summary = clean(script_data.get("summary") or script_data.get("description"), 420)
-    cta = clean(script_data.get("cta") or "Follow for more body science.", 100)
+
+    # Meta's engagement-bait ranking demotes Reels whose caption begs for
+    # likes/shares/comments. If the (YouTube-oriented) spoken CTA slipped in
+    # here, swap it for the FB-safe default instead of posting bait.
+    _bait_words = ("like", "share", "comment", "subscribe", "tag")
+    cta_raw = str(script_data.get("cta") or "").strip()
+    if any(bait in cta_raw.lower() for bait in _bait_words):
+        cta_raw = "Follow for more body science."
+    cta = clean(cta_raw or "Follow for more body science.", 100)
 
     # Facebook caption: one hook, one explanation, one natural CTA. Do not
     # repeat hook/summary when the model generated overlapping sentences.
@@ -467,18 +475,58 @@ def _upload_facebook_reels(video_path, script_data, tags):
                 raise RuntimeError(f"Reels upload phase failed: {upload_resp.status_code} {upload_data}")
 
             # ---- Phase 3: finish/publish ----
+            video_state = "PUBLISHED"
+            # Platform-native staggering: firing identical content at YouTube
+            # and Facebook at the same minute is both a spam-pattern and a
+            # waste — each platform's "new content boost" then competes with
+            # the other's. FB_STAGGER_MINUTES schedules the Reel that many
+            # minutes after the YouTube publishAt slot (or after now).
+            stagger_minutes = int(os.environ.get("FB_STAGGER_MINUTES", "0") or "0")
+            finish_payload = {
+                "upload_phase": "finish",
+                "video_id": video_id,
+                "description": description,
+                "access_token": fb_token,
+            }
+            if stagger_minutes >= 10:
+                base_ts = time.time()
+                if YT_SCHEDULE_PUBLISH:
+                    # Same deterministic slot the YT stage just used (this runs
+                    # minutes after it, inside the same generation window), so
+                    # the Reel trails the Short consistently.
+                    base_ts = datetime.strptime(
+                        _compute_publish_at(), "%Y-%m-%dT%H:%M:%SZ"
+                    ).replace(tzinfo=pytz.UTC).timestamp()
+                scheduled_ts = int(base_ts + stagger_minutes * 60)
+                if scheduled_ts > time.time() + 600:
+                    finish_payload["scheduled_publish_time"] = scheduled_ts
+                    finish_payload["video_state"] = "SCHEDULED"
+                    logger.info(
+                        "Facebook Reel scheduled %d min after YouTube slot (native stagger).",
+                        stagger_minutes,
+                    )
+                else:
+                    finish_payload["video_state"] = video_state
+            else:
+                finish_payload["video_state"] = video_state
             finish_resp = requests.post(
                 f"https://graph.facebook.com/{FB_API_VERSION}/{fb_page}/video_reels",
-                data={
-                    "upload_phase": "finish",
-                    "video_id": video_id,
-                    "description": description,
-                    "video_state": "PUBLISHED",
-                    "access_token": fb_token,
-                },
+                data=finish_payload,
                 timeout=60,
             )
             finish_data = finish_resp.json()
+            if "error" in finish_data and "scheduled" in str(finish_data.get("error", "")).lower():
+                # Older/unverified apps may reject reel scheduling — degrade
+                # gracefully to immediate publish instead of losing the post.
+                logger.warning("FB scheduling rejected (%s); publishing immediately.", finish_data["error"])
+                finish_payload.pop("scheduled_publish_time", None)
+                finish_payload["video_state"] = "PUBLISHED"
+                finish_resp = requests.post(
+                    f"https://graph.facebook.com/{FB_API_VERSION}/{fb_page}/video_reels",
+                    data=finish_payload,
+                    timeout=60,
+                )
+                finish_data = finish_resp.json()
             if finish_resp.status_code == 200 and finish_data.get("success", True) and "error" not in finish_data:
                 logger.info(f"Facebook Reels published successfully: video_id={video_id}")
                 upload_state[fingerprint]["facebook"] = {

@@ -448,8 +448,56 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
         first = norm(scenes[0].get('caption', ''))
         if hook != first:
             issues.append("Hook must exactly match the first scene caption")
-    
+
+    # ------------------------------------------------------------------
+    # STORY ARC ENFORCEMENT (2026 Shorts feed reality check)
+    # The prompt already demands Hook → Suspense → … → Payoff → Loop-back,
+    # but nothing enforced it — weak arcs shipped whenever the LLM got
+    # lazy. YouTube Shorts ranks on first-3s swipe survival + completion +
+    # replays: an open question in scene 2 and a closing loop that points
+    # back to the hook are the two cheapest retention levers we have.
+    # A script missing them is retried (quality gate), never shipped.
+    # ------------------------------------------------------------------
+    if len(scenes) >= 3:
+        suspense = scenes[1].get('caption', '')
+        if '?' not in suspense:
+            issues.append(
+                "Scene 2 (SUSPENSE) must open one honest question ('?') — "
+                "the open loop is what stops the swipe in the first 3s."
+            )
+        hook_concepts = _content_concepts(scenes[0].get('caption', ''))
+        tail_concepts = _content_concepts(scenes[-1].get('caption', ''))
+        if hook_concepts and not (hook_concepts & tail_concepts):
+            issues.append(
+                "Final scene (LOOP-BACK) must echo the opening idea — share at "
+                "least one concept word with the hook so the Short loops "
+                "cleanly and feels complete (replay = ranking signal)."
+            )
+
     return len(issues) == 0, issues
+
+
+_ARC_STOPWORDS = {
+    "this", "that", "with", "from", "your", "yours", "when", "what", "why",
+    "how", "have", "has", "been", "there", "their", "they", "them", "about",
+    "just", "like", "over", "under", "more", "most", "some", "into", "also",
+    "very", "than", "then", "these", "those", "because", "while", "after",
+    "before", "people", "really", "actually", "don't", "doesn't", "every",
+    "many", "much", "feel", "feels", "thing", "things", "body",
+}
+
+
+def _content_concepts(text: str) -> set:
+    """Stem-ish concept words for arc-overlap checks: lowercase, punctuation
+    stripped, stopwords and short words removed, naive 's'-dedupe so
+    'memories'/'memory', 'sleeps'/'sleep' collide."""
+    concepts = set()
+    for raw in re.sub(r"[^a-z0-9 ]", " ", text.lower()).split():
+        if len(raw) <= 3 or raw in _ARC_STOPWORDS:
+            continue
+        stem = raw.rstrip("s")  # crude plural fold
+        concepts.add(stem if len(stem) > 3 else raw)
+    return concepts
 
 
 # ---------------------------------------------------------------------------

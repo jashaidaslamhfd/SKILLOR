@@ -437,18 +437,28 @@ class SKILLORPipeline:
             # scene, so it is both spoken and displayed at the end.
             cta_text = (script_data.get('cta') or '').strip()
             _cta_action_words = ('follow', 'share', 'subscribe', 'comment', 'like')
+            # Facebook's engagement-bait policy demotes Reels whose CTA begs
+            # for likes/shares/comments. When FB upload is enabled the SAME
+            # audio goes to both platforms, so the spoken CTA must be the
+            # FB-safe variant (follow-based). YouTube-only runs may use the
+            # full action-word pool.
+            _fb_bait_words = ('like', 'share', 'comment', 'tag', 'subscribe')
+            _fb_uploads = os.environ.get("FB_UPLOAD_ENABLED", "false").lower() == "true"
 
             def _has_action_word(text: str) -> bool:
                 return any(w in text.lower() for w in _cta_action_words)
 
-            if not cta_text or not _has_action_word(cta_text):
-                # get_random_cta() draws from a pool that isn't 100%
-                # action-worded (e.g. "See you in the next one." has no
-                # follow/share/subscribe wording) - retry a few times so the
-                # fallback we actually use always has one.
+            def _is_fb_safe_cta(text: str) -> bool:
+                lowered = text.lower()
+                return 'follow' in lowered and not any(b in lowered for b in _fb_bait_words)
+
+            def _cta_ok(text: str) -> bool:
+                return _is_fb_safe_cta(text) if _fb_uploads else _has_action_word(text)
+
+            if not cta_text or not _cta_ok(cta_text):
                 for _ in range(10):
                     candidate = get_random_cta()
-                    if _has_action_word(candidate):
+                    if _cta_ok(candidate):
                         cta_text = candidate
                         break
                 else:
