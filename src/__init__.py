@@ -1,78 +1,92 @@
 """
-SKILLOR — Pakistan's AI-Powered IT Hub
-=======================================
+SKILLOR — Automated YouTube Shorts pipeline (US audience)
+==========================================================
 
-Automated YouTube Shorts / Facebook Reels pipeline that generates
-dark-mystery body-science videos end-to-end:
-  Script → Images → Voice → Video → SEO → Upload
+Generates body-science Shorts end-to-end and auto-publishes at US peak times:
+  Script → Images → Voice → Video → SEO → Upload (scheduled via publishAt)
 
 Public API
 ----------
 Main pipeline entry point::
 
-    from src.main import SKILLORPipeline
+    from src import SKILLORPipeline
     pipeline = SKILLORPipeline()
     pipeline.run_pipeline(topic="Why Your Brain Lies to You")
 
-Individual modules (for testing / advanced use)::
+Granular access still works::
 
     from src.script_generator import generate_script
     from src.image_providers import available_providers
-    from src.voice_generator import generate_voice_segments
-    from src.video_editor import build_video
-    from src.uploader import upload_all
-    from src.niche_strategy import get_random_topic
-    from src.quality_checker import QualityChecker
-    from src.scheduler import USAPeakTimeScheduler
-    from src.anti_spam import AntiSpamSystem
-    from src.seo_generator import generate_seo_package
-    from src.seo_analytics import predict_ctr, score_thumbnail
-    from src.shorts_enhancer import build_shorts_report, generate_srt
-    from src.media_validator import validate_scene_image, probe_video
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "jashaidaslamhfd"
 
 # ---------------------------------------------------------------------------
-# Lazy public API — importing `src` alone does NOT pull in heavy deps
-# (torch, moviepy, groq, etc.). Consumers can still do `from src.X import Y`
-# directly for granular access; these convenience re-exports are optional.
+# Lazy public API. Previously __all__ was declared with NO imports and NO
+# __getattr__, so `from src import SKILLORPipeline` (and everything else in
+# __all__) raised AttributeError — the advertised API was 100% broken.
+# This mapping keeps imports lazy (no heavy torch/moviepy cost on plain
+# `import src`) while making every documented name actually resolvable.
 # ---------------------------------------------------------------------------
 
-__all__ = [
+_LAZY_EXPORTS = {
     # Pipeline
-    "SKILLORPipeline",
+    "SKILLORPipeline": "src.main",
     # Script
-    "generate_script",
+    "generate_script": "src.script_generator",
     # Image
-    "available_providers",
-    "RateLimitError",
+    "available_providers": "src.image_providers",
+    "RateLimitError": "src.image_providers",
     # Voice
-    "generate_voice_segments",
-    "generate_voice",
+    "generate_voice_segments": "src.voice_generator",
+    "generate_voice": "src.voice_generator",
     # Video
-    "build_video",
-    "generate_thumbnail",
+    "build_video": "src.video_editor",
+    "generate_thumbnail": "src.video_editor",
     # Upload
-    "upload_all",
+    "upload_all": "src.uploader",
     # Niche / SEO
-    "get_random_topic",
-    "get_topic_category",
-    "generate_seo_tags",
-    "generate_seo_package",
+    "get_random_topic": "src.niche_strategy",
+    "get_topic_category": "src.niche_strategy",
+    "generate_seo_tags": "src.niche_strategy",
+    "generate_seo_package": "src.seo_generator",
     # Quality / Spam
-    "QualityChecker",
-    "USAPeakTimeScheduler",
-    "AntiSpamSystem",
+    "QualityChecker": "src.quality_checker",
+    "USAPeakTimeScheduler": "src.scheduler",
+    "AntiSpamSystem": "src.anti_spam",
     # Analytics
-    "predict_ctr",
-    "score_thumbnail",
+    "predict_ctr": "src.seo_analytics",
+    "score_thumbnail": "src.seo_analytics",
     # Shorts
-    "build_shorts_report",
-    "generate_srt",
+    "build_shorts_report": "src.shorts_enhancer",
+    "generate_srt": "src.shorts_enhancer",
     # Validation
-    "validate_scene_image",
-    "probe_video",
-]
+    "validate_scene_image": "src.media_validator",
+    "probe_video": "src.media_validator",
+}
 
+__all__ = sorted(_LAZY_EXPORTS)
+
+
+def __getattr__(name):
+    """Resolve public API names on first access (PEP 562)."""
+    if name in _LAZY_EXPORTS:
+        import importlib
+        import os
+        import sys
+        # Modules inside src/ use flat sibling imports (`from seo_generator
+        # import ...`), which only resolve with src/ itself on sys.path —
+        # same trick src/main.py has always used.
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        if _src_dir not in sys.path:
+            sys.path.insert(0, _src_dir)
+        module = importlib.import_module(_LAZY_EXPORTS[name])
+        attr = getattr(module, name)
+        globals()[name] = attr  # cache for subsequent lookups
+        return attr
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))

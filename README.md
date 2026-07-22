@@ -1,90 +1,95 @@
-# Image Fallback System — Duniya ke Bade Platforms, 50 tak
+# SKILLOR — Automated YouTube Shorts Pipeline (US Audience)
 
-## Ab kya hai (8 providers, sab real aur working code)
+Fully automated body-science YouTube Shorts factory, running 3×/day on
+GitHub Actions:
 
-| # | Provider | Key chahiye? | Notes |
-|---|----------|-------------|-------|
-| 1 | Pollinations (flux) | ❌ | free, no signup |
-| 2 | Pollinations (turbo) | ❌ | free, no signup, alag seed/model |
-| 3 | Hugging Face | ✅ `HF_API_KEY` | free monthly credit |
-| 4 | Google Gemini | ✅ `GEMINI_API_KEY` | ~50 free req/day, no card |
-| 5 | DeepAI | ✅ `DEEPAI_API_KEY` | free tier |
-| 6 | Craiyon | ❌ | free, no signup |
-| 7 | ModelsLab | ✅ `MODELSLAB_API_KEY` | 10,000+ models, free key, no card |
-| 8 | Replicate | ✅ `REPLICATE_API_TOKEN` | bada platform, free trial credits |
-
-Ye sab `src/image_providers.py` mein ek hi `PROVIDER_REGISTRY` list mein hain.
-Jaise hi ek fail/rate-limit ho, agla try hota hai — dono `image_generator.py`
-(live per-video generation) aur `generate_fallback_images.py` (500-image pool
-builder) isi list ko use karte hain.
-
-## Honest reality check — "50 tools" ka matlab
-
-Duniya mein 50 image-gen platforms exist karte hain, lekin:
-- Har ek ki apni free-tier policy hai, aur ye policies har 2-3 mahine mein
-  badalti rehti hain (jaisa aapke log mein dikha — HuggingFace credits khatam
-  ho gaye, Gemini quota exceed ho gaya).
-- Kuch (Stability AI, OpenAI DALL-E, Adobe Firefly) ab **bilkul free nahi**
-  hain — sirf trial credit dete hain, phir paid ho jate hain.
-- Isliye "50 simultaneously free" ka wada koi bhi honestly nahi de sakta.
-
-**Jo maine banaya hai wo isse behtar hai**: ek architecture jahan aap jitne
-bhi free-tier keys bana sakte hain (zyada tar sirf email se free milti hain),
-unhe 5 minute mein registry mein daal sakte hain — system khud unke beech
-rotate karega. Neeche list hai kis tarah 50 tak pahunchein.
-
-## 50 tak kaise pahunchein — agle candidates
-
-Inme se har ek ki free/trial key bana kar `PROVIDER_REGISTRY` mein TEMPLATE
-pattern se add kar dein (`src/image_providers.py` ke end mein `gen_TEMPLATE`
-copy karke):
-
-| Platform | Free access | Env var suggestion |
-|----------|-------------|---------------------|
-| Stability AI | $5-25 one-time trial credit | `STABILITY_API_KEY` |
-| Leonardo AI | daily free tokens | `LEONARDO_API_KEY` |
-| Segmind | free credits on signup | `SEGMIND_API_KEY` |
-| Together AI | free trial credit | `TOGETHER_API_KEY` |
-| Fireworks AI | free trial credit | `FIREWORKS_API_KEY` |
-| Cloudflare Workers AI | free tier on Cloudflare account | `CF_API_TOKEN` |
-| Ideogram | 10 free credits/week | `IDEOGRAM_API_KEY` |
-| Getimg.ai | free daily credits | `GETIMG_API_KEY` |
-| Fal.ai | free trial credit | `FAL_API_KEY` |
-| Playground AI | free daily generations | `PLAYGROUND_API_KEY` |
-| StableDiffusionAPI.com | free trial credits | `SDAPI_KEY` |
-| OpenAI DALL-E | paid only, last-resort layer if you already pay for GPT | `OPENAI_API_KEY` |
-
-Har naye provider ke liye docs check karein (endpoints/format waqt ke sath
-badalte hain) — is repo mein maujood 8 providers ka code hi pattern hai
-jise copy karna hai.
-
-## GitHub Actions Secrets
-
-Repo → **Settings → Secrets and variables → Actions** → jo bhi keys banayein
-unhe wahan add karein, phir workflow YAML mein:
-
-```yaml
-env:
-  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-  HF_API_KEY: ${{ secrets.HF_API_KEY }}
-  DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
-  MODELSLAB_API_KEY: ${{ secrets.MODELSLAB_API_KEY }}
-  REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+```
+Body Glitch topic → Llama script (Groq) → AI images (9-provider fallback)
+→ Kokoro voice (US English) → MoviePy render → SEO package
+→ YouTube upload (private → auto-publishes at next US peak slot)
 ```
 
-Jo key set nahi hogi uska provider automatically skip ho jayega
-(`available_providers()` khud check karta hai) — kuch bhi crash nahi hoga.
+## Production schedule (America/New_York)
 
-## Fallback pool bhi zaroor banayein
+| Generation run starts | Auto-publishes (publishAt) |
+|---|---|
+| 04:30 NY | 06:00 NY |
+| 11:00 NY | 12:30 NY |
+| 18:30 NY | 20:00 NY |
 
-Live providers fail hone par final safety net `assets/fallback_images/`
-folder hai. Ye khali hai to system same `assets/placeholder.png` baar baar
-use karta hai (yehi aapke channel ka masla tha). Ek baar chalayein:
+- Exactly **3 runs/day year-round** — the gate matches the New York hour
+  (`04|11|18`), so the off-season DST cron skips itself (no double uploads).
+- Videos upload **private** with YouTube `publishAt`; YouTube itself flips
+  them public at the slot — you can review/delete during the private window.
+- `ENFORCE_POSTING_GAP=true` refuses runs closer than 2 h to the last post.
+
+## Quick start
 
 ```bash
-python scripts/generate_fallback_images.py
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt        # core pipeline (CPU-safe)
+cp env.example .env                     # fill in keys (see table below)
+python -m unittest discover -s tests -v # offline regression tests
+python src/main.py                      # run one video locally
 ```
 
-Ye sab 8 providers ke beech rotate karke 500 unique images banayega. Inhe
-commit kar dein — ab final fallback bhi kabhi repeat nahi hoga (jab tak
-scenes > 500 na ho jayein ek hi run mein).
+Voice cloning (GPU only) and the screenshot fallback are **optional** extras:
+`pip install -r requirements-optional.txt`.
+
+## Required GitHub Secrets
+
+| Secret | Why |
+|---|---|
+| `GROQ_API_KEY` | script generation (Llama 3.1) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `REFRESH_TOKEN` | YouTube OAuth upload |
+| Optional: `HF_API_KEY`, `GEMINI_API_KEY`, `DEEPAI_API_KEY`, `MODELSLAB_API_KEY`, `REPLICATE_API_TOKEN`, `AI_HORDE_API_KEY`, `PEXELS_API_KEY`, `PIXABAY_API_KEY`, `YOUTUBE_API_KEY`, Reddit pair | more image providers / trend sources — system auto-skips missing ones |
+
+The workflow **fails fast** (in seconds) if a required secret is missing,
+instead of burning ~60 min of compute first. Get secrets via
+`python scripts/get_refresh_token.py` (backup goes to `~/.skillor/`,
+**never** into this repo — token files are git-ignored).
+
+## Image generation — 9-provider fallback chain
+
+`src/image_providers.py` `PROVIDER_REGISTRY` (order = fallback order):
+
+1. AI-Horde (no key) · 2. Pollinations-flux (no key) · 3. Pollinations-turbo
+(no key) · 4. Hugging Face · 5. Gemini · 6. DeepAI · 7. ModelsLab ·
+8. Replicate · (9th reserved for your next free-tier key — copy any
+`gen_*` function and add one registry line).
+
+Honest note: free tiers change every few months. The registry pattern lets
+you add any new free key in ~5 minutes instead of promising impossible
+"50 always-free providers". A channel-wide media hash ledger
+(`data/media_hash_history.json`) prevents any image/clip from ever repeating
+across videos. Local pool: `python scripts/generate_fallback_images.py`
+(the pool dir is git-ignored by design — it's regenerable on any machine).
+
+## Config that actually works
+
+Every variable in `env.example` is **read by code** — verified in CI tests.
+Key US-audience settings: `TTS_ENGINE=kokoro`, `KOKORO_LANG_CODE=a`,
+`KOKORO_VOICE=am_adam`, `TREND_REGION=US`, `CONTENT_SERIES=body_glitches`.
+(Anything previously decorative — e.g. `YT_SCHEDULE_PUBLISH` — is now wired
+or removed; see `docs/archive/` for the old patch notes.)
+
+## Repo layout
+
+```
+src/            pipeline modules (script, images, voice, video, SEO, upload, analytics)
+scripts/        maintenance & local tooling
+tests/          offline regression tests (run on every CI run)
+docs/archive/   historical patch notes
+data/           durable channel state (committed by skillor-bot)
+```
+
+## Legal / policy
+
+- `MIT` license — see `LICENSE`.
+- Every upload sets `containsSyntheticMedia: true` (YouTube AI disclosure),
+  `selfDeclaredMadeForKids: false`, and auto-generates a science disclaimer
+  when the medical-accuracy check trips.
+- Music in `assets/music/` — see `assets/music/ATTRIBUTION.md` and verify
+  each track's license before monetizing.
+- Never commit `assets/voice_reference.wav` or any OAuth/token file
+  (git-ignored). Rotate anything that has ever been pushed by accident.

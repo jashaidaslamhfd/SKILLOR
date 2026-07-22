@@ -9,6 +9,21 @@
 .env.local
 .env.production
 
+# ---- Auth / token artifacts (CRITICAL — never commit these) ----
+# scripts/get_refresh_token.py historically wrote oauth_backup.json into the
+# repo root. One careless `git add .` would publish a YouTube refresh token
+# (= full account takeover). These patterns close that trap.
+oauth_backup.json
+client_secrets*.json
+client_secret*.json
+token*.json
+*.token
+secrets*.json
+**/oauth_backup.json
+
+# Private voice-clone reference — keep locally, never on a public repo.
+assets/voice_reference.wav
+
 # ---- Python ----
 __pycache__/
 *.py[cod]

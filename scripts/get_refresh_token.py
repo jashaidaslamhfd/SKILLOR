@@ -40,13 +40,24 @@ def main():
     print(f"GOOGLE_CLIENT_SECRET: {creds.client_secret}")
     print("\n💾 Save these NOW. You won't see the refresh token again.")
     
-    with open("oauth_backup.json", "w") as f:
+    # SECURITY: never write credentials into the repository — one `git add .`
+    # would publish a full YouTube account-takeover token. Keep the backup in
+    # the user's home directory with owner-only permissions instead.
+    backup_dir = os.path.join(os.path.expanduser("~"), ".skillor")
+    os.makedirs(backup_dir, exist_ok=True)
+    backup_path = os.path.join(backup_dir, "oauth_backup.json")
+    with open(backup_path, "w") as f:
         json.dump({
             "refresh_token": creds.refresh_token,
             "client_id": creds.client_id,
             "client_secret": creds.client_secret,
         }, f, indent=2)
-    print("\n💾 Backed up to oauth_backup.json (keep safe!)")
+    try:
+        os.chmod(backup_path, 0o600)
+    except OSError:
+        pass
+    print(f"\n💾 Backed up to {backup_path} (OUTSIDE the repo, mode 600)")
+    print("⚠️  Never copy this file into the repository.")
 
 if __name__ == "__main__":
     main()

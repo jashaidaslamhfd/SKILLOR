@@ -350,7 +350,18 @@ class SKILLORPipeline:
                     try:
                         last_dt = datetime.fromisoformat(last_posted_at)
                         if not self.scheduler.validate_posting_interval(last_dt):
+                            # Was a toothless warning before: a back-to-back
+                            # manual dispatch could hammer the channel with
+                            # uploads minutes apart despite our anti-spam
+                            # policy. ENFORCE_POSTING_GAP=true (default) now
+                            # SKIPS the run instead of just logging.
                             logger.warning("⚠️ Posting sooner than recommended 2h gap")
+                            if os.environ.get("ENFORCE_POSTING_GAP", "true").lower() == "true":
+                                logger.warning(
+                                    "ENFORCE_POSTING_GAP=true → skipping this run. "
+                                    "Set ENFORCE_POSTING_GAP=false to override (not recommended)."
+                                )
+                                return {"success": False, "skipped": "posting_interval"}
                     except Exception as e:
                         logger.warning(f"Could not validate posting interval: {e}")
 
@@ -459,9 +470,12 @@ class SKILLORPipeline:
             # Phase 3: Voice Generation
             logger.info("\n🔊 PHASE 3: VOICE GENERATION")
             try:
+                # Voice/lang are env-driven now (KOKORO_VOICE / KOKORO_LANG_CODE
+                # / TTS_ENGINE). Previously hardcoded "am_adam" here overrode
+                # the workflow's voice config without anyone noticing.
                 audio_segments = generate_voice_segments(
                     script_data['scenes'],
-                    voice="am_adam",
+                    voice=os.environ.get("KOKORO_VOICE") or None,
                     speed=1.0
                 )
                 logger.info(f"✅ Generated {len(audio_segments)} audio segments")

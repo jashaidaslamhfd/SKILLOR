@@ -63,6 +63,29 @@ CHATTERBOX_TEMPERATURE = _env_float("CHATTERBOX_TEMPERATURE", 0.60, 0.05, 1.5)
 # artificial. FFmpeg accepts 0.5–2.0 for one atempo filter.
 CHATTERBOX_TEMPO = _env_float("CHATTERBOX_TEMPO", 0.96, 0.5, 2.0)
 
+# ---------------------------------------------------------------------------
+# KOKORO FALLBACK ENGINE CONFIG — these env vars are honored NOW.
+# Previously KOKORO_LANG_CODE / KOKORO_VOICE / TTS_ENGINE were set in the
+# GitHub workflow (French voice ff_siwis for the FR experiment) but were
+# NEVER read by any code — the pipeline silently used hardcoded
+# lang_code='a' and voice='am_adam'. The wiring below makes the environment
+# the single source of truth.
+#
+# US AUDIENCE (current strategy): lang_code='a', voice='am_adam'
+# (American English male). Other examples: lang_code 'b' (British),
+# voices 'af_heart' (US female), 'bf_emma' (UK female).
+# ---------------------------------------------------------------------------
+KOKORO_LANG_CODE = os.environ.get("KOKORO_LANG_CODE", "a").strip() or "a"
+KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "am_adam").strip() or "am_adam"
+
+# Engine priority:
+#   'chatterbox' (default) = clone-first, Kokoro fallback  (GPU / self-hosted)
+#   'kokoro'               = skip Chatterbox entirely      (GitHub CPU runners)
+TTS_ENGINE = os.environ.get("TTS_ENGINE", "chatterbox").strip().lower()
+if TTS_ENGINE not in {"chatterbox", "kokoro"}:
+    logger.warning("Unknown TTS_ENGINE=%r; using 'chatterbox'", TTS_ENGINE)
+    TTS_ENGINE = "chatterbox"
+
 # Number of times Chatterbox retries per segment before giving up and
 # falling back to Kokoro. Retries use the cloned voice reference every
 # time — if the reference is bad the first attempt will fail, and retrying
@@ -324,7 +347,9 @@ def _get_kokoro():
     try:
         from kokoro import KPipeline
         logger.info("Loading Kokoro TTS model (fallback engine, first use only)...")
-        _kokoro_tts = KPipeline(lang_code='a')  # 'a' = American English
+        # Language is env-driven (was hardcoded 'a' — the FR workflow's
+        # KOKORO_LANG_CODE was silently ignored before this fix).
+        _kokoro_tts = KPipeline(lang_code=KOKORO_LANG_CODE)
         logger.info("Kokoro loaded successfully.")
     except Exception as e:
         logger.error(f"Failed to load Kokoro: {e}")
@@ -426,25 +451,35 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
 
     narration_text = prepare_natural_narration(text)
 
-    # ---- STEP 1: Chatterbox with the creator's voice reference ----
-    chatterbox_errors = []
-    for attempt in range(1, CHATTERBOX_MAX_RETRIES + 1):
-        try:
-            audio, sr = _synthesize_chatterbox(narration_text, attempt=attempt)
-            engine = "chatterbox_clone" if _voice_reference_ok() else "chatterbox_default"
-            logger.info(f"Chatterbox SUCCESS on attempt {attempt}/{CHATTERBOX_MAX_RETRIES} ({engine})")
-            return audio, sr, engine
-        except Exception as e:
-            chatterbox_errors.append(str(e))
-            logger.warning(f"Chatterbox attempt {attempt}/{CHATTERBOX_MAX_RETRIES} FAILED: {e}")
-            if attempt < CHATTERBOX_MAX_RETRIES:
-                logger.info(f"Waiting {CHATTERBOX_RETRY_DELAY}s before retry...")
-                time.sleep(CHATTERBOX_RETRY_DELAY)
+    # Resolve fallback voice at call time so an explicit argument wins and an
+    # empty/`None` argument still lands on the env-configured voice.
+    voice = (voice or "").strip() or KOKORO_VOICE
 
-    logger.error(
-        f"All {CHATTERBOX_MAX_RETRIES} Chatterbox attempts failed. Errors: "
-        + " | ".join(chatterbox_errors)
-    )
+    # ---- STEP 1: Chatterbox with the creator's voice reference ----
+    # Skipped entirely when TTS_ENGINE=kokoro (CPU production path): burning
+    # minutes on a guaranteed-slow/timing-out clone attempt is exactly what
+    # made CI runs fragile on GitHub-hosted runners.
+    chatterbox_errors = []
+    if TTS_ENGINE == "kokoro":
+        logger.info("TTS_ENGINE=kokoro → skipping Chatterbox clone attempt (CPU path)")
+    else:
+        for attempt in range(1, CHATTERBOX_MAX_RETRIES + 1):
+            try:
+                audio, sr = _synthesize_chatterbox(narration_text, attempt=attempt)
+                engine = "chatterbox_clone" if _voice_reference_ok() else "chatterbox_default"
+                logger.info(f"Chatterbox SUCCESS on attempt {attempt}/{CHATTERBOX_MAX_RETRIES} ({engine})")
+                return audio, sr, engine
+            except Exception as e:
+                chatterbox_errors.append(str(e))
+                logger.warning(f"Chatterbox attempt {attempt}/{CHATTERBOX_MAX_RETRIES} FAILED: {e}")
+                if attempt < CHATTERBOX_MAX_RETRIES:
+                    logger.info(f"Waiting {CHATTERBOX_RETRY_DELAY}s before retry...")
+                    time.sleep(CHATTERBOX_RETRY_DELAY)
+
+        logger.error(
+            f"All {CHATTERBOX_MAX_RETRIES} Chatterbox attempts failed. Errors: "
+            + " | ".join(chatterbox_errors)
+        )
 
     # ---- STEP 2: Kokoro fallback (one shot) ----
     logger.info("Falling back to Kokoro TTS engine...")
@@ -471,7 +506,7 @@ def _synthesize(text: str, voice: str = "am_adam", speed: float = 1.0):
         raise RuntimeError(error_msg)
 
 
-def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output/voice.wav", speed: float = 1.0) -> str:
+def generate_voice(text: str, voice: str = None, output_path: str = "output/voice.wav", speed: float = 1.0) -> str:
     """Generate clear, natural YouTube narration.
 
     Chatterbox with the approved creator reference is always tried first.
@@ -491,7 +526,7 @@ def generate_voice(text: str, voice: str = "am_adam", output_path: str = "output
 
 def generate_voice_segments(
     scenes: List[dict],
-    voice: str = "am_adam",  # only used if a segment falls back to Kokoro
+    voice: str = None,           # only used if a segment falls back to Kokoro; None → KOKORO_VOICE env
     output_dir: str = "output/segments",
     speed: float = 1.0,      # only used if a segment falls back to Kokoro
 ) -> List[Dict]:

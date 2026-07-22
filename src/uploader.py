@@ -3,6 +3,8 @@ import json
 import logging
 import time
 import hashlib
+from datetime import datetime, timedelta
+import pytz
 import google.oauth2.credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -34,6 +36,37 @@ MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
 YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "private").strip().lower()
 if YT_PRIVACY_STATUS not in {"private", "unlisted", "public"}:
     raise ValueError("YT_PRIVACY_STATUS must be private, unlisted, or public")
+
+# ---------------------------------------------------------------------------
+# SCHEDULED PUBLISHING (publishAt) — this env var existed in the workflow
+# for months but NO code read it, so every video published the moment the
+# run finished and the "PublishAt will handle" comments were wishful
+# thinking. Implemented for real now:
+#   YT_SCHEDULE_PUBLISH=true  →  upload as private with a publishAt timestamp
+#   YouTube then flips it to public automatically at the next US peak slot
+#   (06:00 / 12:30 / 20:00 America/New_York — kept in sync with
+#   scheduler.USAPeakTimeScheduler.PEAK_TIMES and the workflow cron table).
+# ---------------------------------------------------------------------------
+YT_SCHEDULE_PUBLISH = os.environ.get("YT_SCHEDULE_PUBLISH", "false").lower() == "true"
+_PUBLISH_TZ = pytz.timezone("America/New_York")
+_PUBLISH_SLOTS = [(6, 0), (12, 30), (20, 0)]  # (hour, minute) New York time
+_PUBLISH_MIN_LEAD_MINUTES = 30  # video must sit privately at least this long
+
+
+def _compute_publish_at(now: datetime = None) -> str:
+    """Next US peak slot in UTC RFC-3339 ('…Z'), always at least
+    _PUBLISH_MIN_LEAD_MINUTES in the future. Scans today's and tomorrow's
+    slots so a late-evening run rolls cleanly into tomorrow 06:00."""
+    now_ny = (now or datetime.now(_PUBLISH_TZ)).astimezone(_PUBLISH_TZ)
+    candidates = []
+    for day_offset in (0, 1):
+        for hour, minute in _PUBLISH_SLOTS:
+            slot = now_ny.replace(hour=hour, minute=minute, second=0, microsecond=0) + timedelta(days=day_offset)
+            if slot >= now_ny + timedelta(minutes=_PUBLISH_MIN_LEAD_MINUTES):
+                candidates.append(slot)
+    best = min(candidates) if candidates else (now_ny + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+    return best.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 
 def _build_youtube_description(script_data: dict, tags: list) -> str:
@@ -229,6 +262,19 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
             'containsSyntheticMedia': True,  # YouTube AI/altered-content disclosure
         }
     }
+
+    if YT_SCHEDULE_PUBLISH:
+        publish_at = _compute_publish_at()
+        # YouTube requires privacyStatus='private' whenever publishAt is set;
+        # the platform itself flips the video to public at publishAt.
+        body['status']['privacyStatus'] = 'private'
+        body['status']['publishAt'] = publish_at
+        logger.info(
+            "YT_SCHEDULE_PUBLISH=true → video uploads PRIVATE and YouTube "
+            "auto-publishes at %s (next US peak slot). Manual review is "
+            "possible until then.",
+            publish_at,
+        )
 
     fingerprint = _content_fingerprint(script_data)
     upload_state = _load_upload_state()
