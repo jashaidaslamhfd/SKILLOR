@@ -133,5 +133,20 @@
     "predicted_ctr": 9.2,
     "hook_score": 85,
     "predicted_retention": 0.732
+  },
+  {
+    "content_fingerprint": "dcfa4bd7c932f986ac666f2d92fa4f225fca948037f03fe6cf9c9188be9b985c",
+    "title": "Why Deja Vu Feels Strangely Familiar \ud83e\udec0",
+    "topic": "Why deja vu feels strangely familiar",
+    "trend_source": "proven_channel_pillar",
+    "trend_url": null,
+    "voiceover": "Have you ever felt like you've lived a. Deja vu can be unsettling, but what's behind it? Many people think it's a glitch in memory, but is it? Researchers believe deja vu is connected to misfires in the brain's memory network The brain processes memories and sensory input through interconnected nodes In a normal brain, memories are stored and retrieved without issue Deja vu occurs when the brain's memory network misfires, creating a false sense of familiarity This explains why deja vu feels stra",
+    "posted_at": "2026-07-22T09:01:49.616444+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "OuakWz2vLcs",
+    "seo_score": 87,
+    "predicted_ctr": 9.2,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
