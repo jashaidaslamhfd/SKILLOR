@@ -127,7 +127,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-          FB_UPLOAD_ENABLED: "false"
+          FB_UPLOAD_ENABLED: "true"
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           FB_PAGE_ID_ALT: ${{ secrets.FB_PAGE_ID }}
           FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
@@ -211,10 +211,14 @@ jobs:
           YT_SCHEDULE_PUBLISH: "true"
           # ---- Anti-spam ----
           ENFORCE_POSTING_GAP: "true"
-          # ---- Facebook (off until YouTube flow is verified) ----
+          # ---- Facebook Reels (ON — secrets verified in repo) ----
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN || secrets.FB_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID || secrets.FB_PAGE_ID }}
-          FB_UPLOAD_ENABLED: "false"
+          FB_UPLOAD_ENABLED: "true"
+          # Reel publishes 2h after the YouTube slot (Meta same-day boost
+          # fires in its own window); spoken CTA + caption auto-switch to the
+          # FB-safe, engagement-bait-free variant when this is true.
+          FB_STAGGER_MINUTES: "120"
           # ---- Quality gates ----
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
