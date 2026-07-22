@@ -1,59 +1,101 @@
-name: "SKILLOR - YouTube Analytics Learning"
+"""Best-effort Facebook Reels analytics updater.
 
-on:
-  workflow_dispatch:
-  schedule:
-    # Daily update; videos must be at least 24h old before querying metrics.
-    - cron: "20 9 * * *"
+Reads completed Reel IDs from data/upload_state.json and writes metrics to
+ data/facebook_analytics.json. Missing/expired Meta permissions are logged and
+never make the scheduled analytics workflow fail.
+"""
+from __future__ import annotations
 
-permissions:
-  contents: write
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-concurrency:
-  group: skillor-channel-state
-  cancel-in-progress: false
+import requests
 
-jobs:
-  update-analytics:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+log = logging.getLogger(__name__)
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
+STATE_PATH = Path(os.environ.get("UPLOAD_STATE_PATH", "data/upload_state.json"))
+OUTPUT_PATH = Path(os.environ.get("FACEBOOK_ANALYTICS_PATH", "data/facebook_analytics.json"))
+API_VERSION = os.environ.get("FB_API_VERSION", "v23.0")
+TOKEN = os.environ.get("FB_ACCESS_TOKEN")
 
-      - name: Install analytics dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install \
-            'google-api-python-client>=2.100.0' \
-            'google-auth>=2.25.0' \
-            'google-auth-oauthlib>=1.1.0' \
-            'google-auth-httplib2>=0.2.0' \
-            'numpy>=1.24.0' 'Pillow>=10.0.0'
+# Meta can change availability by account/API version; query independently so
+# one unsupported metric does not discard the metrics that still work.
+METRICS = (
+    "total_video_views",
+    "total_video_avg_time_watched",
+    "total_video_view_total_time",
+    "post_impressions",
+    "post_reactions_by_type_total",
+)
 
-      - name: Update real YouTube metrics
-        env:
-          VIDEO_HISTORY_PATH: data/video_history.json
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-        run: python src/analytics_updater.py
 
-      - name: Persist analytics state
-        run: |
-          set -euo pipefail
-          if [ -z "$(git status --porcelain -- data/)" ]; then
-            echo "No analytics changes to persist."
-            exit 0
-          fi
-          git config user.name "skillor-bot"
-          git config user.email "skillor-bot@users.noreply.github.com"
-          git add data/
-          git commit -m "chore: update SKILLOR analytics [skip ci]"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+def _load_json(path: Path, default: Any) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Could not read %s: %s", path, exc)
+        return default
+
+
+def _completed_reels() -> dict[str, str]:
+    state = _load_json(STATE_PATH, {})
+    result = {}
+    for fingerprint, item in state.items() if isinstance(state, dict) else []:
+        fb = item.get("facebook", {}) if isinstance(item, dict) else {}
+        if fb.get("status") == "completed" and fb.get("video_id"):
+            result[fingerprint] = str(fb["video_id"])
+    return result
+
+
+def fetch(video_id: str) -> dict:
+    if not TOKEN:
+        return {"error": "FB_ACCESS_TOKEN is not configured"}
+    values: dict[str, Any] = {}
+    errors = []
+    for metric in METRICS:
+        url = f"https://graph.facebook.com/{API_VERSION}/{video_id}/insights"
+        try:
+            response = requests.get(
+                url,
+                params={"metric": metric, "access_token": TOKEN},
+                timeout=30,
+            )
+            data = response.json()
+            if response.status_code >= 400 or "error" in data:
+                errors.append(f"{metric}: {data.get('error', {}).get('message', response.status_code)}")
+                continue
+            rows = data.get("data", [])
+            if rows and rows[0].get("values"):
+                values[metric] = rows[0]["values"][-1].get("value")
+        except (requests.RequestException, ValueError) as exc:
+            errors.append(f"{metric}: {exc}")
+    result = {"video_id": video_id, "fetched_at": datetime.now(timezone.utc).isoformat(), **values}
+    if errors:
+        result["warnings"] = errors
+    return result
+
+
+def main() -> int:
+    current = _load_json(OUTPUT_PATH, {})
+    if not isinstance(current, dict):
+        current = {}
+    updated = 0
+    for fingerprint, video_id in _completed_reels().items():
+        result = fetch(video_id)
+        current[fingerprint] = result
+        if "error" not in result:
+            updated += 1
+        log.info("Facebook analytics %s: %s", video_id, result)
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_PATH.write_text(json.dumps(current, indent=2, ensure_ascii=False), encoding="utf-8")
+    log.info("Facebook analytics updated: %d", updated)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
