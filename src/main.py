@@ -237,12 +237,10 @@ class SKILLORPipeline:
                     generated['series_number'] = trend_record.get('series_number')
                     generated['series_title'] = trend_record.get('series_title')
                     generated['thumbnail_text'] = trend_record.get('thumbnail_text', '')
-                    # Viewer-facing title stays short (e.g. "Eye Twitch 👁️"). The
-                    # permanent episode number remains in metadata/history,
-                    # while the repeated micro-niche is reinforced by topic,
-                    # visuals and upload cadence.
-                    if trend_record.get('series_title'):
-                        generated['title'] = trend_record['series_title']
+                    # series_title stays in metadata/history for episode numbering —
+                    # it must NOT override the LLM's curiosity title: short branded
+                    # labels like "Throat Lump" / "Time Compression" measured low
+                    # CTR (2-38 views) vs the 6-word curiosity titles (38+ views).
                 script_data = result['script_data']
 
                 # Hook quality check

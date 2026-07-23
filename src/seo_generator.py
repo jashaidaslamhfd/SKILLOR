@@ -79,6 +79,16 @@ def _title_words(value: str) -> List[str]:
     return re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?", value or "")
 
 
+_EN_DANGLING_ENDINGS = {
+    "your", "yours", "the", "a", "an", "to", "of", "with", "when", "while",
+    "seems", "seem", "makes", "gets", "does", "is", "are", "was", "were",
+    "will", "can", "just", "really", "actually", "ever", "every", "you",
+    "we", "they", "it", "this", "that", "these", "those", "my", "our",
+    "their", "his", "her", "feel", "feels", "says", "telling", "why",
+    "how", "what", "and", "or", "if", "so", "too", "very", "into", "on",
+}
+
+
 def _five_word_title(value: str, *, fallback: str = "Science Made Simple Today") -> str:
     """Create a clean title of no more than five words and 60 characters.
 
@@ -88,7 +98,15 @@ def _five_word_title(value: str, *, fallback: str = "Science Made Simple Today")
     words = _title_words(value)[:TITLE_MAX_WORDS]
     if not words:
         words = _title_words(fallback)[:TITLE_MAX_WORDS]
-    return " ".join(words)[:TITLE_MAX_LEN].strip()
+    out = " ".join(words)
+    if len(out) > TITLE_MAX_LEN:
+        out = out[:TITLE_MAX_LEN].rsplit(" ", 1)[0]
+    # Never end on a dangling connector/verb — a title clipped mid-thought
+    # ("Why Your Body Freezes When") reads broken in the feed.
+    parts = out.split()
+    while len(parts) > 1 and parts[-1].lower().rstrip("?!.") in _EN_DANGLING_ENDINGS:
+        parts.pop()
+    return (" ".join(parts) or fallback).strip()
 
 
 def _topic_keywords(topic: str, limit: int = 2) -> str:
