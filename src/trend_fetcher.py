@@ -322,8 +322,8 @@ def get_body_glitch_topics() -> List[Dict]:
             "thumbnail_text": item.get("thumbnail_text"),
         })
         result.append(record)
-    if len(result) != 500:
-        raise RuntimeError(f"Body Glitch catalogue must contain 500 valid topics; found {len(result)}")
+    if len(result) < 500:
+        raise RuntimeError(f"Body Glitch catalogue must contain at least 500 valid topics; found {len(result)}")
     return result
 
 
