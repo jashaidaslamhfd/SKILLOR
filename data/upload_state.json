@@ -75,5 +75,16 @@
       "video_id": "27722335547405806",
       "completed_at": 1784763700.5779607
     }
+  },
+  "1f2dae481737371341141a76f5f2ce8497ff890e5fc3868a0de59c2c17b02536": {
+    "status": "completed",
+    "title": "Time Compression \ud83e\udec0",
+    "youtube_video_id": "FUgcHHnhLSM",
+    "completed_at": 1784783125.2170212,
+    "facebook": {
+      "status": "completed",
+      "video_id": "1754294192265457",
+      "completed_at": 1784783142.1020133
+    }
   }
 }

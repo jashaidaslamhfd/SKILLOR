@@ -178,5 +178,20 @@
     "predicted_ctr": 6.8,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "1f2dae481737371341141a76f5f2ce8497ff890e5fc3868a0de59c2c17b02536",
+    "title": "Time Compression \ud83e\udec0",
+    "topic": "feeling like hours passed in minutes or vice versa",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "Have you ever felt like hours flew by. Or minutes dragged on for what felt like hours? We often assume time flies when we're having fun or passes slowly when we're bored. However, our brain's internal clock is influenced by a network of neurons. When we're enjoying ourselves, our brain releases feel-good chemicals, speeding up our internal clock. But in everyday situations, our internal clock usually runs smoothly, matching our external clock. So, feeling like time distorts is usually due to our",
+    "posted_at": "2026-07-23T05:05:42.105502+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "FUgcHHnhLSM",
+    "seo_score": 73,
+    "predicted_ctr": 6.8,
+    "hook_score": 85,
+    "predicted_retention": 0.732
   }
 ]
