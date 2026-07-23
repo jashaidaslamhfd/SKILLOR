@@ -152,7 +152,13 @@ TOPIC: {topic}
 Use EXACTLY eight scenes and return the JSON schema below.
 
 STORY ARC:
-1. HOOK — scene 1; 6–8 words. State the surprising everyday body glitch.
+1. HOOK — scene 1; 6–8 words. A PATTERN INTERRUPT in second person ("you/your"):
+   name the everyday moment, then snap to the unexpected twist. It must create
+   an open loop the viewer cannot scroll past. GOOD: "Why does your voice sound
+   dead every single morning?" / "Your body freezes you before a scary sound."
+   BAD (never do this): "Morning voice happens to everyone." / "Let's talk
+   about throat lumps." — flat statements are swipe death (channel analytics:
+   73.9% swipe-away on calm openers).
 2. SUSPENSE — scene 2; show why the answer matters and open one honest question.
 3. PROBLEM — scene 3; state the relatable confusion or misconception.
 4. EXPLANATION — scenes 4–5; explain the mechanism in simple, connected steps.
@@ -164,8 +170,15 @@ HARD FORMAT RULES:
 - Total spoken captions: {MIN_WORDS}–{MAX_WORDS} words.
 - Scene 1: {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} words. Scenes 2–8: {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} words each.
 - `hook` must match scene 1 caption exactly.
+- Scene 1 `visual`: a tight CLOSE-UP of a real human moment (mouth frowning at
+  a mirror, hand on a chest, wide-open sleepy eyes) — faces/body close-ups stop
+  the scroll; abstract wide shots don't.
 - Every scene must have a distinct 5–12 word visual description with no text, logos or UI.
-- Title: exactly five simple, specific words. Do not use generic hype, emojis or fake urgency.
+- Title: five to eight words that OPEN A CURIOSITY LOOP with a "Why/What happens
+  when/Your …" frame — like a question the viewer suddenly NEEDS answered.
+  GOOD: "Why You Hear Your Heartbeat at Night" · "Why Your Body Freezes When
+  Scared". BAD (auto-rejected): plain 1-3 word labels like "Morning Voice",
+  "Throat Lump", "Time Compression" — those get zero clicks.
 - `thumbnail_text`: 2–4 clear words that complement—not repeat—the title.
 - `cta`: one brief, natural follow/subscribe prompt. It is metadata, not narration.
 - `description`: one accurate sentence summarising the real payoff.
