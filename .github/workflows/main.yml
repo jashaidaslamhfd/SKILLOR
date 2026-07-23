@@ -8,35 +8,15 @@ on:
         required: false
         type: string
   schedule:
-    # ---------------------------------------------------------------------
-    # US publish slots (America/New_York): 06:00, 12:30, 20:00 — these power
-    # uploader._compute_publish_at(); keep the three tables in sync:
-    #   1. these crons            2. the gate below          3. _PUBLISH_SLOTS
-    # Each slot has a summer (EDT, UTC-4) and a winter (EST, UTC-5) cron that
-    # fires ~90 min before publish time so the video is ready for its slot.
-    #
-    # TWO failure modes killed this channel before, both fixed here:
-    #
-    #   A) OLD 30-min "delay tolerance": GitHub crons routinely arrive 30-70
-    #      min late under load, so most scheduled runs were silently SKIPPED
-    #      → output collapsed to ~1 Short/day. Wide generation windows below
-    #      absorb those delays.
-    #
-    #   B) Summer duplicates: with wide windows, the off-season twin cron
-    #      (fires 60 min after the in-season one) would also run. That is
-    #      blocked by ENFORCE_POSTING_GAP=true in src/main.py — a second run
-    #      <2h after a successful post exits without uploading. Distinct
-    #      slots (≥6.5h apart) are unaffected.
-    #
-    #   publishAt snaps publishing to the exact slot regardless of when
-    #   generation runs inside the window, so timing stays perfect.
-    # ---------------------------------------------------------------------
-    - cron: "30 8 * * *"    # 04:30 NY summer → publish 06:00
-    - cron: "30 9 * * *"    # 04:30 NY winter → publish 06:00
-    - cron: "0 15 * * *"    # 11:00 NY summer → publish 12:30
-    - cron: "0 16 * * *"    # 11:00 NY winter → publish 12:30
-    - cron: "30 22 * * *"   # 18:30 NY summer → publish 20:00
-    - cron: "30 23 * * *"   # 18:30 NY winter → publish 20:00
+    # 3 videos/day for a US audience, auto-published at New York peaks
+    # (06:00 / 12:30 / 20:00 America/New_York) via status.publishAt — the code
+    # snaps each upload to the exact next NY slot, so the cron only needs to
+    # start generation a bit before the slot. ONE cron per slot, year-round
+    # (the winter/summer twin-cron system + delay-tolerant gate were removed
+    # per owner request — publishAt already makes them unnecessary).
+    - cron: "30 8 * * *"    # generation ~04:30 NY -> publish 06:00
+    - cron: "0 15 * * *"    # generation ~11:00 NY -> publish 12:30
+    - cron: "30 22 * * *"   # generation ~18:30 NY -> publish 20:00
 
 permissions:
   contents: write
@@ -50,36 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Gate the run to US generation windows (delay-tolerant, deduped)
-        id: gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          ny_hour="$(TZ=America/New_York date +%H)"
-          ny_full="$(TZ=America/New_York date '+%H:%M %Z')"
-          echo "Current New York time: $ny_full"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Generation windows before each US publish slot (publishAt handles
-          # the exact publish time). Late GitHub crons stay inside the window
-          # instead of being silently dropped; the in-window duplicate cron is
-          # blocked downstream by ENFORCE_POSTING_GAP (2h minimum between posts).
-          #   04-05 NY → 06:00 slot · 10-12 NY → 12:30 slot · 18-19 NY → 20:00 slot
-          should_run="false"
-          case "$ny_hour" in
-            04|05|10|11|12|18|19) should_run="true" ;;
-            *) echo "::notice::Skipping - New York $ny_full outside generation windows (expected: off-season DST cron)" ;;
-          esac
-          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
-
       - name: Checkout repository
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -87,7 +41,6 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Cache TTS model downloads
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -98,7 +51,6 @@ jobs:
             skillor-tts-models-${{ runner.os }}-
 
       - name: Install system dependencies
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -111,7 +63,6 @@ jobs:
           for i in 1 2 3; do python -m pip install -r requirements.txt && break || { echo "retry $i"; sleep 15; }; done
 
       - name: Run offline quality regression tests
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -120,7 +71,6 @@ jobs:
           python -m unittest discover -s tests -v
 
       - name: Validate required secrets (fail fast, before burning compute)
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -167,7 +117,6 @@ jobs:
           exit "$missing"
 
       - name: Generate and upload Short
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -249,7 +198,7 @@ jobs:
           done
 
       - name: Persist durable channel state (with rebase retry)
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -274,7 +223,7 @@ jobs:
           done
 
       - name: Upload video, thumbnail, state backup and logs
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: skillor-run-${{ github.run_id }}
