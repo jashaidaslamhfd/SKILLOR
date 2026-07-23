@@ -42,7 +42,8 @@ from seo_generator import _EN_DANGLING_ENDINGS, TITLE_MAX_LEN, generate_descript
 from seo_generator import generate_upload_tags  # noqa: E402
 from niche_strategy import get_topic_category  # noqa: E402
 
-_SUBJECT_STRIP = re.compile(r"^(?:body|glitch|shorts|watch|new)$|^(?:#\d+[:#]?|\d+[:#])$", re.I)
+_SUBJECT_STRIP = re.compile(r"^(?:shorts|watch|new)$|^(?:#\d+[:#]?|\d+[:#])$", re.I)
+_JUNK_TAIL = {"hacked", "uncovered", "exposed", "revealed", "now", "today", "explained"}
 _CURIOSITY_STARTERS = ("why", "what", "how", "the science", "the real", "this is",
                        "your body", "did you", "ever wonder", "science")
 
@@ -128,7 +129,7 @@ def _looks_truncated(title: str) -> bool:
 
 
 def _is_label_title(title: str) -> bool:
-    words = [w for w in _alnum_words(title) if not _SUBJECT_STRIP.match(w)]
+    words = _subject_from(title).split()
     if not words:
         return True
     if len(words) > 3:
@@ -140,12 +141,19 @@ def _subject_from(title: str) -> str:
     """2-4 word Title-Case subject from a label title (emoji/junk stripped)."""
     words = []
     for w in _alnum_words(title):
-        if _SUBJECT_STRIP.match(w):
+        if _SUBJECT_STRIP.match(w) or set(w) <= {"#", ":", "-", "|"}:
             continue
-        if set(w) <= {"#", ":", "-", "|"}:
-            continue
-        words.append(w.strip("#:|\"'"))
-    words = [w for w in words if w and not _SUBJECT_STRIP.match(w)]
+        w = w.strip("#:|\"'")
+        if w and not _SUBJECT_STRIP.match(w):
+            words.append(w)
+    # series prefix: "Body Glitch ..." / "Glitch ..." — strip only as a pair/lead
+    if words and words[0].lower() == "glitch":
+        words = words[1:]
+    elif len(words) > 1 and words[0].lower() == "body" and words[1].lower() == "glitch":
+        words = words[2:]
+    # clickbait-junk tail adjectives from the old style
+    while len(words) > 1 and words[-1].lower() in _JUNK_TAIL:
+        words.pop()
     subject = " ".join(w[:24] for w in words[:4])
     return subject.title() if subject else ""
 
@@ -287,8 +295,8 @@ def main() -> int:
         try:
             current = videos.get(vid)
             if not current:
-                failed += 1
-                plan_rows.append(f"FAIL  {vid} | video not found on channel (deleted/private?)")
+                skipped += 1
+                plan_rows.append(f"SKIP  {vid} | not on channel anymore (deleted/private)")
                 continue
             live_title = current["snippet"].get("title", "")
             changes = build_new_metadata(e, current)
