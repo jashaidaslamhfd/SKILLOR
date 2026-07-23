@@ -193,5 +193,20 @@
     "predicted_ctr": 6.8,
     "hook_score": 85,
     "predicted_retention": 0.732
+  },
+  {
+    "content_fingerprint": "fa2a1f444ac7309d9e2eabe862569d0c3506add9bf1c02a98dc5bc2c533ed28b",
+    "title": "Spreading Yawns \ud83e\udec0",
+    "topic": "yawning spreading instantly from person to person",
+    "trend_source": "body_glitch_series",
+    "trend_url": null,
+    "voiceover": "You yawn, and suddenly, your friend yawns too. But what happens in our brains to make this happen? We often think it's just a contagious habit, but there's more to it. When we yawn, our brain sends signals to other parts of our body. These signals can be picked up by others through a process called empathic resonance. This means that when we see someone yawn, our brain can mirror their feelings. So, the next time you yawn, and your friend yawns too, it's not just a coincidence. And that's why yo",
+    "posted_at": "2026-07-23T16:54:04.425464+00:00",
+    "facebook_success": true,
+    "youtube_video_id": "L3idewWMmPU",
+    "seo_score": 75,
+    "predicted_ctr": 7.0,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
