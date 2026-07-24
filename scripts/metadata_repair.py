@@ -231,6 +231,12 @@ def build_new_metadata(entry: dict, current: dict) -> dict | None:
         changes["tags"] = new_tags
 
     # --- DESCRIPTION ---
+    # Idempotency: a description already built by the CURRENT generator keeps
+    # its signatures ("#Shorts" + "science behind" context). Without this rule
+    # tag-shuffle noise would flag every video on every run forever.
+    old_desc_raw = snip.get("description") or ""
+    if "#Shorts" in old_desc_raw and "science behind" in old_desc_raw.lower():
+        return changes or None
     voiceover = (entry.get("voiceover") or "").strip().replace("\n", " ")
     theme = (topic or _subject_from(entry.get("title") or "") or _subject_from(old_title)).lower()
     if voiceover:
