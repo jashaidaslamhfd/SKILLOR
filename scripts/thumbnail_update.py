@@ -115,17 +115,30 @@ def main() -> int:
             continue
         jobs.append((vid, data))
 
+    # Resume state: never re-upload a thumbnail that already succeeded —
+    # each upload costs ~50 quota units; re-uploading 57 would waste ~3k.
+    DONE_FILE = ROOT / "data" / "thumbnails_done.json"
+    try:
+        done_ids = set(json.loads(DONE_FILE.read_text()))
+    except Exception:
+        done_ids = set()
+    jobs = [(v, d) for v, d in jobs if v not in done_ids]
+    if done_ids:
+        logger.info("Resume: %d already done, %d remaining", len(done_ids), len(jobs))
+
     if skips:
         for vid, why in skips:
             logger.warning("SKIP  %s (%s)", vid, why)
 
     ok, failed = 0, []
     if jobs:
-        token = _access_token()
         for vid, data in jobs:
             try:
                 _set_thumbnail(token, vid, data)
                 ok += 1
+                done_ids.add(vid)
+                DONE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                DONE_FILE.write_text(json.dumps(sorted(done_ids)))
                 logger.info("UPLOADED  %s  (%d KB)", vid, len(data) // 1024)
             except Exception as exc:  # noqa: BLE001 — report and continue
                 failed.append((vid, str(exc)))
