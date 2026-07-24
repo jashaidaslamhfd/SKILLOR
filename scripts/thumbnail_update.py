@@ -43,6 +43,35 @@ def _access_token() -> str:
         return json.load(r)["access_token"]
 
 
+def _uploads_playlist(token: str) -> str:
+    import urllib.request
+
+    req = urllib.request.Request("https://www.googleapis.com/youtube/v3/channels?part=contentDetails&mine=true")
+    req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.load(r)
+    return data["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+
+def _all_upload_ids(token: str, playlist_id: str) -> list:
+    import urllib.request
+
+    ids, page = [], None
+    while True:
+        url = ("https://www.googleapis.com/youtube/v3/playlistItems"
+               f"?part=contentDetails&playlistId={playlist_id}&maxResults=50")
+        if page:
+            url += f"&pageToken={page}"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            res = json.load(r)
+        ids += [i["contentDetails"]["videoId"] for i in res.get("items", [])]
+        page = res.get("nextPageToken")
+        if not page:
+            return ids
+
+
 def _set_thumbnail(token: str, video_id: str, jpeg: bytes) -> None:
     import urllib.error
     import urllib.request
@@ -61,9 +90,15 @@ def _set_thumbnail(token: str, video_id: str, jpeg: bytes) -> None:
 
 
 def main() -> int:
-    known = {e["youtube_video_id"] for e in json.loads(HISTORY.read_text())}
     images = sorted(THUMB_DIR.glob("*.jpg"))
-    logger.info("Thumbnails found: %d (history covers %d videos)", len(images), len(known))
+    token = _access_token()
+    # Membership guard = every video CURRENTLY on this channel (live list),
+    # not just pipeline history — legacy uploads are covered too.
+    try:
+        known = set(_all_upload_ids(token, _uploads_playlist(token)))
+    except Exception:  # noqa: BLE001 — fall back to history-only guard
+        known = {e["youtube_video_id"] for e in json.loads(HISTORY.read_text())}
+    logger.info("Thumbnails found: %d (channel covers %d videos)", len(images), len(known))
 
     jobs, skips = [], []
     for img in images:

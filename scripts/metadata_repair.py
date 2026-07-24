@@ -24,9 +24,11 @@ SAFETY:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -298,6 +300,9 @@ def main() -> int:
 
     for e in ordered:
         vid = e["youtube_video_id"]
+        # Deterministic tag generation per video — without this the generator's
+        # random pools flag the same videos on every run (metadata churn).
+        random.seed(int(hashlib.md5(vid.encode()).hexdigest()[:8], 16))
         try:
             current = videos.get(vid)
             if not current:
